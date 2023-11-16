@@ -1,3 +1,6 @@
+# Ignore the data directory - we just keep it around for testing
+data
+
 # Ignore setuptools_scm generated version file
 organelle_morphology/_version.py
 

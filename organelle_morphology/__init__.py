@@ -1,11 +1,6 @@
 # The version file is generated automatically by setuptools_scm
 from organelle_morphology._version import version as __version__
 
-
-def add_one(x: int):
-    """An example function that increases a number
-
-    :param x: The input parameter to increase
-    :return: The successor of the given number
-    """
-    return x + 1
+# Import the public API
+from organelle_morphology.organelle import organelle_types
+from organelle_morphology.project import Project
