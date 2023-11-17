@@ -1,6 +1,6 @@
-# The list of registered organelle (factory) subclasses
+# The dictionary of registered organelle subclasses, mapping names
+# to classes
 organelles = {}
-organelle_factories = {}
 
 
 def organelle_types() -> list[str]:
@@ -37,23 +37,11 @@ class Organelle:
         """Register a given subclass in the global dictionary 'organelles'"""
         if name is not None:
             organelles[name] = cls
-
-
-class OrganelleFactory:
-    """A factory class for organelles.
-
-    This is used to construct all instances of organelles.
-    """
-
-    def __init_subclass__(cls, name: str = None):
-        """Register a given subclass in the global dictionary 'organelle_factories'"""
-        if name is not None:
-            organelle_factories[name] = cls
             cls._name = name
 
     @classmethod
     def construct(cls, source: str, labels: list[int] = []):
-        """A trivial factory for organelle instances.
+        """A trivial factory method for organelle instances.
 
         It constructs an instance per label. The construction process for each
         organelle is independent of all others. Other organelles can subclass
@@ -73,8 +61,4 @@ class Mitochondrium(Organelle, name="mito"):
 
 
 class EndoplasmicReticulum(Organelle, name="er"):
-    pass
-
-
-class EndoplasmicReticulumFactory(OrganelleFactory, name="er"):
     pass
