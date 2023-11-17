@@ -66,6 +66,18 @@ class Project:
 
         raise NotImplementedError
 
+    @property
+    def metadata(self):
+        """The project metadata stored in the project JSON file"""
+
+        raise NotImplementedError
+
+    @property
+    def clipping(self):
+        """The subcube of the original data that we work with"""
+
+        raise NotImplementedError
+
     def organelles(
         self, ids: str = "*", return_ids: bool = False
     ) -> list[Organelle] | list[str]:

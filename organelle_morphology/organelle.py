@@ -29,9 +29,9 @@ class Organelle:
         :param organelle_id:
             The string ID that is used to refer to this organelle.
         """
-        self.source = source
-        self.source_label = source_label
-        self.organelle_id = organelle_id
+        self._source = source
+        self._source_label = source_label
+        self._organelle_id = organelle_id
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -54,6 +54,12 @@ class Organelle:
                 source_label=label,
                 organelle_id=f"{cls._name}_{str(label).zfill(4)}",
             )
+
+    @property
+    def id(self):
+        """Get the organelle ID of this organelle"""
+
+        return self._organelle_id
 
 
 class Mitochondrium(Organelle, name="mito"):
