@@ -1,13 +1,42 @@
-from organelle_morphology.organelle import Organelle
+from organelle_morphology.organelle import Organelle, organelle_types
+from organelle_morphology.source import DataSource
 
+import json
 import os
 import pathlib
+
+
+def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
+    """Load the project metadata JSON file
+
+    :param project_path:
+        The path to the project directory. The project metadata JSON file
+        is expected to be in this directory.
+    """
+
+    # This might be a CebraEM project
+    if os.path.exists(project_path / "project.json"):
+        with open(project_path / "project.json", "r") as f:
+            data = json.load(f)
+            if len(data["datasets"]) != 1:
+                raise ValueError("Only single dataset projects are supported")
+
+            return load_metadata(project_path / data["datasets"][0])
+
+    # This might be a mobie project
+    if os.path.exists(project_path / "dataset.json"):
+        with open(project_path / "dataset.json", "r") as f:
+            return project_path, json.load(f)
+
+    raise FileNotFoundError(
+        "Could not find project.json or dataset.json in the given directory"
+    )
 
 
 class Project:
     def __init__(
         self,
-        project_path: pathlib.Path = os.getcwd(),
+        project_path: pathlib.Path | str = os.getcwd(),
         clipping: tuple[tuple[float]] | None = None,
     ):
         """Instantiate an EM project
@@ -24,11 +53,17 @@ class Project:
             upper right corner as the bounding box of the clipping. Coordinates are
             expected to be in micrometer.
         """
-        # Identify the directory that containes project metadata JSON
-        self._project_json_directory = None
 
-        # The project metadata JSON
-        self._project_metadata = {}
+        if isinstance(project_path, str):
+            project_path = pathlib.Path(project_path)
+
+        # Identify the directory that containes project metadata JSON
+        self._dataset_json_directory, self._project_metadata = load_metadata(
+            project_path
+        )
+
+        # The dictionary of data sources that we have added
+        self._sources = {}
 
         # The compression level at which we operate
         self._compression_level = 0
@@ -36,7 +71,7 @@ class Project:
     def available_sources(self) -> list[str]:
         """List the data sources that are available in the project."""
 
-        raise NotImplementedError
+        return list(self.metadata["sources"].keys())
 
     def add_source(self, source: str = None, organelle: str = None) -> None:
         """Connect a data source in the project with an organelle type
@@ -50,7 +85,27 @@ class Project:
             Must be on the strings returned by organelle_morphology.organelle_types
         """
 
-        raise NotImplementedError
+        if source not in self.available_sources():
+            raise ValueError(f"Unknown data source {source}")
+
+        if organelle not in organelle_types():
+            raise ValueError(f"Unknown organelle type {organelle}")
+
+        # Instantiate the new source
+        source_path = self.metadata["sources"][source]["image"]["imageData"]["bdv.n5"][
+            "relativePath"
+        ]
+        source_obj = DataSource(
+            self, self._dataset_json_directory / source_path, organelle
+        )
+
+        # Double-check that it provides the current compression level
+        if self.compression_level >= len(source_obj.metadata["downsampling"]):
+            raise ValueError(
+                f"Compression level {self.compression_level} is not available for source {source}"
+            )
+
+        self._sources[source] = source_obj
 
     @property
     def compression_level(self):
@@ -64,13 +119,22 @@ class Project:
         # data sources. For sources added later, add_sources checks whether they
         # provide the current compression level.
 
-        raise NotImplementedError
+        if compression_level < 0:
+            raise ValueError(f"Compression level must be >= 0, got {compression_level}")
+
+        for source in self._sources.values():
+            if compression_level >= len(source.metadata["downsampling"]):
+                raise ValueError(
+                    f"Compression level {compression_level} is not available for source {source}"
+                )
+
+        self._compression_level = compression_level
 
     @property
     def metadata(self):
         """The project metadata stored in the project JSON file"""
 
-        raise NotImplementedError
+        return self._project_metadata
 
     @property
     def clipping(self):
@@ -97,4 +161,9 @@ class Project:
             Whether to only return ids or the actual organelle objects.
         """
 
-        raise NotImplementedError
+        result = []
+
+        for source in self._sources.values():
+            result.extend(source.organelles(ids, return_ids))
+
+        return result
