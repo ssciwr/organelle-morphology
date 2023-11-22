@@ -70,14 +70,13 @@ def generate_synthetic_dataset(
         json.dump(timepoint0_dict, f)
 
     # create xml file
-    xml_dict = _create_xml_file(voxel_array.shape, resolution)
+    xml_str = _create_xml_file(voxel_array.shape, resolution)
 
-    xml = dict2xml.dict2xml(xml_dict)
     with open(temp_dir / "images/bdv-n5" / "synth_data.xml", "wb") as f:
-        f.write(xml.encode())
+        f.write(xml_str.encode())
 
     # create dataset_json
-    relativ_path = pathlib.Path("images/bdv-n5/synth_data.n5")
+    relativ_path = pathlib.Path("images/bdv-n5/synth_data.xml")
     dataset_dict = _create_dataset_json(str(relativ_path))
     with open(temp_dir / "dataset.json", "w") as f:
         json.dump(dataset_dict, f)
@@ -92,8 +91,8 @@ def _create_dataset_json(relativ_path):
             "synth_data": {
                 "image": {
                     "imageData": {
-                        "bdv.5": {
-                            "relativPath": relativ_path,
+                        "bdv.n5": {
+                            "relativePath": relativ_path,
                         }
                     }
                 }
@@ -108,9 +107,9 @@ def _create_dataset_json(relativ_path):
                         "imageDisplay": {
                             "color": "white",
                             "contrastLimits": [0, 255],
-                            "name": "em-raw",
+                            "name": "synth_data",
                             "opacity": 1.0,
-                            "sources": ["em-raw"],
+                            "sources": ["synth_data"],
                         }
                     }
                 ],
@@ -137,43 +136,46 @@ def _create_dataset_json(relativ_path):
 
 
 def _create_xml_file(size, resolution):
-    xml_dict = {
-        "SpimData": {
-            "version": "0.2",
-            "BasePath": {"type": "relative", "text": "."},
-            "SequenceDescription": {
-                "ImageLoader": {
-                    "format": "bdv.n5",
-                    "n5": {"type": "relative", "text": "synth_data.n5"},
-                },
-                "ViewSetups": {
-                    "Attributes": {"name": "channel", "Channel": {"id": "0"}},
-                    "ViewSetup": {
-                        "id": "0",
-                        "name": "synth_data",
-                        "size": f"{size[0]} {size[1]} {size[2]}",
-                        "voxelSize": {
-                            "unit": "micrometer",
-                            "size": f"{resolution[0]} {resolution[1]} {resolution[2]}",
-                        },
-                        "attributes": {"channel": "0"},
-                    },
-                },
-                "Timepoints": {"type": "range", "first": "0", "last": "0"},
-            },
-            "ViewRegistrations": {
-                "ViewRegistration": {
-                    "timepoint": "0",
-                    "setup": "0",
-                    "ViewTransform": {
-                        "type": "affine",
-                        "affine": f"{resolution[0]} 0.0 0.0 0.0 0.0 {resolution[1]} 0.0 0.0 0.0 0.0 {resolution[2]} 0.0",
-                    },
-                }
-            },
-        }
-    }
-    return xml_dict
+    xml_str = f"""
+        <SpimData version="0.2">
+        <BasePath type="relative">.</BasePath>
+        <SequenceDescription>
+            <ImageLoader format="bdv.n5">
+            <n5 type="relative">synth_data.n5</n5>
+            </ImageLoader>
+            <ViewSetups>
+            <Attributes name="channel">
+                <Channel>
+                <id>0</id>
+                </Channel>
+            </Attributes>
+            <ViewSetup>
+                <id>0</id>
+                <name>synth_data</name>
+                <size>{size[0]} {size[1]} {size[2]}</size>
+                <voxelSize>
+                <unit>micrometer</unit>
+                <size>{resolution[0]} {resolution[1]} {resolution[2]}</size>
+                </voxelSize>
+                <attributes>
+                <channel>0</channel>
+                </attributes>
+            </ViewSetup>
+            </ViewSetups>
+            <Timepoints type="range">
+            <first>0</first>
+            <last>0</last>
+            </Timepoints>
+        </SequenceDescription>
+        <ViewRegistrations>
+            <ViewRegistration timepoint="0" setup="0">
+            <ViewTransform type="affine">
+                <affine>{resolution[0]} 0.0 0.0 0.0 0.0 {resolution[1]} 0.0 0.0 0.0 0.0 {resolution[2]} 0.0</affine>
+            </ViewTransform>
+            </ViewRegistration>
+        </ViewRegistrations>
+        </SpimData>   """
+    return xml_str
 
 
 def generate_synthetic_mesh_set(
