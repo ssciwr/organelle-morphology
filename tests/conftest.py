@@ -1,3 +1,5 @@
+from organelle_morphology import Project
+
 import pytest
 from .synthetic_data_generator import generate_synthetic_dataset
 
@@ -30,11 +32,12 @@ def cebra_project_original_meshes(synthetic_data):
 def cebra_project(cebra_project_path):
     """A fixture for a valid Cebra project instance"""
 
-    raise NotImplementedError
+    return Project(cebra_project_path)
 
 
 @pytest.fixture
 def cebra_project_with_sources(cebra_project):
     """A fixture for a valid Cebra project instance, incl. added sources"""
 
-    raise NotImplementedError
+    cebra_project.add_source("synth_data", "mito")
+    return cebra_project
