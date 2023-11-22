@@ -2,6 +2,29 @@ from organelle_morphology.project import *
 from organelle_morphology.organelle import Organelle
 
 import pytest
+import pathlib
+
+
+def test_synthetic_data_generation(
+    synthetic_data, cebra_project_path, cebra_project_original_meshes
+):
+    """Check that the synthetic data is correctly generated"""
+    project_path, original_meshes = synthetic_data
+    assert project_path
+    assert original_meshes
+
+    assert cebra_project_path == project_path
+    assert cebra_project_original_meshes == original_meshes
+
+    project_path = pathlib.Path(project_path)
+
+    assert (project_path / "dataset.json").exists()
+    assert (project_path / "images" / "bdv-n5" / "synth_data.n5").exists()
+    assert (project_path / "images" / "bdv-n5" / "synth_data.xml").exists()
+
+    organell_path = project_path / "images" / "bdv-n5" / "synth_data.n5"
+    assert (organell_path / "setup0" / "timepoint0" / "s0").exists()
+    assert (organell_path / "setup0" / "timepoint0" / "s3").exists()
 
 
 def test_valid_project_init(cebra_project_path):
