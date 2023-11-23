@@ -1,0 +1,17 @@
+name:
+    morph
+channels:
+    - conda-forge
+dependencies:
+    - pandas
+    - dash
+    - plotly
+    - pip
+    - scikit-image
+    - python-elf
+    - numpy
+    - trimesh
+    - pytest
+    - pytest-cov
+    - nbval
+    - python-fcl
