@@ -65,9 +65,14 @@ def test_invalid_project_init(tmp_path):
 
 def test_add_source(cebra_project):
     """Check adding source to a given project"""
+    print(cebra_project.available_sources())
+    source_dict = {"synth_data": "mito", "synth_data": "unknown"}
+    for source, oid in source_dict.items():
+        if oid == "unknown":
+            with pytest.raises(ValueError):
+                cebra_project.add_source(source=source, organelle=oid)
+            continue
 
-    # TODO: Get the pairs for the test data here
-    for oid, source in dict().items():
         cebra_project.add_source(source=source, organelle=oid)
 
         # Check that we actually added organelles
@@ -81,17 +86,34 @@ def test_add_source(cebra_project):
         cebra_project.add_source("correct_source_todo", "wrong_organelle")
 
 
-def test_compression_level(cebra_project_with_sources):
+def test_compression_level(cebra_project):
     """Check the reading/writing of the compression level"""
 
-    p = cebra_project_with_sources
+    p = cebra_project
 
     # Default compression level should be 0
     assert p.compression_level == 0
 
+    # test impossible compression without added source
+
+    p.compression_level = 42
+    with pytest.raises(ValueError):
+        p.add_source(source="synth_data", organelle="mito")
+
+    # add source
+    p.compression_level = 2
+    p.add_source(source="synth_data", organelle="mito")
+
+    # compression level shoulnd't be changed after adding source
+    assert p.compression_level == 2
+
     # Change it to 1
     p.compression_level = 1
     assert p.compression_level == 1
+
+    # change it to 42
+    with pytest.raises(ValueError):
+        p.compression_level = 42
 
 
 def test_project_organelles(cebra_project_with_sources):
@@ -104,3 +126,11 @@ def test_project_organelles(cebra_project_with_sources):
         assert o.id.startswith("m")
 
     assert p.organelles("m*", return_ids=True)
+
+
+def test_project_sources_data(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    assert p._sources["synth_data"].data
+    assert p._sources["synth_data"].data_resolution
+    assert p._sources["synth_data"].resolution

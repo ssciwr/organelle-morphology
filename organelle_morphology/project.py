@@ -125,7 +125,7 @@ class Project:
         for source in self._sources.values():
             if compression_level >= len(source.metadata["downsampling"]):
                 raise ValueError(
-                    f"Compression level {compression_level} is not available for source {source}"
+                    f"Compression level {compression_level} is not available for source {source.metadata['data_root']}"
                 )
 
         self._compression_level = compression_level
