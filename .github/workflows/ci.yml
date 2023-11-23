@@ -34,7 +34,7 @@ jobs:
         auto-update-conda: true
         auto-activate-base: false
         python-version: ${{ matrix.python-version }}
-        activate-environment: base
+        activate-environment: morph
 
     - name: install conda dependencies
       run: |
