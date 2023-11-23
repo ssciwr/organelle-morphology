@@ -4,6 +4,7 @@ from organelle_morphology.source import DataSource
 import json
 import os
 import pathlib
+import numpy as np
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
@@ -61,6 +62,19 @@ class Project:
         self._dataset_json_directory, self._project_metadata = load_metadata(
             project_path
         )
+
+        if clipping is not None:
+            clipping = np.array(clipping)
+            if np.any(clipping[0] > clipping[1]):
+                raise ValueError("Clipping lower left must be smaller than upper right")
+
+            if np.any(clipping[0] < 0) or np.any(clipping[1] > 1):
+                raise ValueError("Clipping must be in [0, 1]^3")
+
+            if len(clipping) != 2 or len(clipping[0]) != 3 or len(clipping[1]) != 3:
+                raise ValueError("Clipping must be a tuple of two tuples of length 3")
+
+        self._clipping = clipping
 
         # The dictionary of data sources that we have added
         self._sources = {}
@@ -140,7 +154,11 @@ class Project:
     def clipping(self):
         """The subcube of the original data that we work with"""
 
-        raise NotImplementedError
+        if self._clipping is None:
+            print("No clipping was selected for this project.")
+            return None
+        else:
+            return self._clipping
 
     def organelles(
         self, ids: str = "*", return_ids: bool = False
