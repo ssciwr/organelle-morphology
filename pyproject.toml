@@ -28,6 +28,10 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
+    "trimesh",
+    "scipy",
+    "scikit-image",
+    "python-fcl",
 ]
 
 [project.optional-dependencies]

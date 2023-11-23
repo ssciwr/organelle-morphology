@@ -1,6 +1,6 @@
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
-organelles = {}
+organelle_registry = {}
 
 
 def organelle_types() -> list[str]:
@@ -9,7 +9,7 @@ def organelle_types() -> list[str]:
     The strings used here to encode the organelles are expected in
     various APIs when refering to a specific organelle.
     """
-    return organelles.keys()
+    return organelle_registry.keys()
 
 
 class Organelle:
@@ -36,11 +36,11 @@ class Organelle:
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
         if name is not None:
-            organelles[name] = cls
+            organelle_registry[name] = cls
             cls._name = name
 
     @classmethod
-    def construct(cls, source: str, labels: list[int] = []):
+    def construct(cls, source: str, labels: tuple[int] = ()):
         """A trivial factory method for organelle instances.
 
         It constructs an instance per label. The construction process for each
@@ -49,7 +49,7 @@ class Organelle:
         all organelle instances.
         """
         for label in labels:
-            yield organelles[cls._name](
+            yield organelle_registry[cls._name](
                 source=source,
                 source_label=label,
                 organelle_id=f"{cls._name}_{str(label).zfill(4)}",
