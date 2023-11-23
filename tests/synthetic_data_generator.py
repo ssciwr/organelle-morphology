@@ -5,7 +5,6 @@ import z5py
 import pathlib
 from skimage.measure import block_reduce
 import json
-import dict2xml
 
 
 def _array_trim(arr, ignore=[], margin=0):
