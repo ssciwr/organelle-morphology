@@ -100,7 +100,6 @@ def test_project_clipping(cebra_project_path):
 
 def test_add_source(cebra_project):
     """Check adding source to a given project"""
-    print(cebra_project.available_sources())
     source_dict = {"mito": "synth_data", "unknown": "synth_data"}
     for oid, source in source_dict.items():
         if oid == "unknown":

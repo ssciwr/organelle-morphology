@@ -65,7 +65,6 @@ class Project:
 
         if clipping is not None:
             clipping = np.array(clipping)
-            print(clipping[0], clipping[1])
             if not np.all(clipping[0] < clipping[1]):
                 raise ValueError("Clipping lower left must be smaller than upper right")
 
