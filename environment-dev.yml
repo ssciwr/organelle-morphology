@@ -4,6 +4,7 @@ channels:
     - conda-forge
 dependencies:
     - pip
+    - setuptools=65.7.0
     - scipy
     - scikit-image
     - python-elf
