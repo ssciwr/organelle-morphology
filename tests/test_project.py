@@ -65,6 +65,9 @@ def test_project_clipping(cebra_project_path):
             project_path=cebra_project_path,
             clipping=((0.2, 0.6, 0.2), (0.8, 0, 5, 0.8)),
         )
+    # add a source and check that the clipping is correctly propagated
+    project.add_source(source="synth_data", organelle="mito")
+    assert project._sources["synth_data"].data.shape == (34, 37, 41)
 
 
 def test_add_source(cebra_project):
