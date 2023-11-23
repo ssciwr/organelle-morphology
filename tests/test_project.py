@@ -74,6 +74,7 @@ def test_project_clipping(cebra_project_path):
     # Incorrect clippings throw
     with pytest.raises(ValueError):
         Project(project_path=cebra_project_path, clipping=(0.2, 0.2, 0.2))
+
     with pytest.raises(ValueError):
         Project(project_path=cebra_project_path, clipping=((0.2, 0.2), (0.8, 0.8)))
     with pytest.raises(ValueError):

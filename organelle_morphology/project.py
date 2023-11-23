@@ -65,10 +65,11 @@ class Project:
 
         if clipping is not None:
             clipping = np.array(clipping)
-            if np.any(clipping[0] > clipping[1]):
+            print(clipping[0], clipping[1])
+            if not np.all(clipping[0] < clipping[1]):
                 raise ValueError("Clipping lower left must be smaller than upper right")
 
-            if np.any(clipping[0] < 0) or np.any(clipping[1] > 1):
+            if not np.all(clipping[0] > 0) or not np.all(clipping[1] < 1):
                 raise ValueError("Clipping must be in [0, 1]^3")
 
             if len(clipping) != 2 or len(clipping[0]) != 3 or len(clipping[1]) != 3:
