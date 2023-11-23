@@ -3,10 +3,8 @@ name:
 channels:
     - conda-forge
 dependencies:
-    - pandas
-    - dash
-    - plotly
     - pip
+    - scipy
     - scikit-image
     - python-elf
     - numpy
@@ -14,4 +12,5 @@ dependencies:
     - pytest
     - pytest-cov
     - nbval
-    - python-fcl
+    - pip:
+        - python-fcl
