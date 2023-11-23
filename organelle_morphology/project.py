@@ -19,7 +19,7 @@ def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
         with open(project_path / "project.json", "r") as f:
             data = json.load(f)
             if len(data["datasets"]) != 1:
-                raise ValueError("Only single dataset projects are supported")
+                raise ValueError("Only single dataset projects are supported")  # noqa
 
             return load_metadata(project_path / data["datasets"][0])
 
@@ -125,7 +125,7 @@ class Project:
         for source in self._sources.values():
             if compression_level >= len(source.metadata["downsampling"]):
                 raise ValueError(
-                    f"Compression level {compression_level} is not available for source {source}"
+                    f"Compression level {compression_level} is not available for source {source.metadata['data_root']}"
                 )
 
         self._compression_level = compression_level
@@ -140,7 +140,7 @@ class Project:
     def clipping(self):
         """The subcube of the original data that we work with"""
 
-        raise NotImplementedError
+        raise NotImplementedError  # noqa
 
     def organelles(
         self, ids: str = "*", return_ids: bool = False

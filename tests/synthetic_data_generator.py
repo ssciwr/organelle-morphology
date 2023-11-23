@@ -7,15 +7,12 @@ from skimage.measure import block_reduce
 import json
 
 
-def _array_trim(arr, ignore=[], margin=0):
+def _array_trim(arr, margin=0):
     # small helper function to trim 3d arrays
     all = np.where(arr != 0)
     idx = ()
     for i in range(len(all)):
-        if i in ignore:
-            idx += (np.s_[:],)
-        else:
-            idx += (np.s_[all[i].min() - margin : all[i].max() + margin + 1],)
+        idx += (np.s_[all[i].min() - margin : all[i].max() + margin + 1],)
     return arr[idx]
 
 
@@ -39,7 +36,9 @@ def generate_synthetic_dataset(
 
     resolution = [1, 1, 1]
 
-    filename = temp_dir / "images/bdv-n5" / "synth_data.n5"
+    cebra_dir = temp_dir / "CebraEM"
+
+    filename = cebra_dir / "images/bdv-n5" / "synth_data.n5"
     f = z5py.File(filename, use_zarr_format=False)
     group = f.create_group("setup0/timepoint0")
 
@@ -71,14 +70,23 @@ def generate_synthetic_dataset(
     # create xml file
     xml_str = _create_xml_file(voxel_array.shape, resolution)
 
-    with open(temp_dir / "images/bdv-n5" / "synth_data.xml", "wb") as f:
+    with open(cebra_dir / "images/bdv-n5" / "synth_data.xml", "wb") as f:
         f.write(xml_str.encode())
 
     # create dataset_json
     relativ_path = pathlib.Path("images/bdv-n5/synth_data.xml")
     dataset_dict = _create_dataset_json(str(relativ_path))
-    with open(temp_dir / "dataset.json", "w") as f:
+    with open(cebra_dir / "dataset.json", "w") as f:
         json.dump(dataset_dict, f)
+
+    project_json_dict = {
+        "datasets": ["CebraEM"],
+        "defaultDataset": "CebraEM",
+        "imageDataFormats": ["bdv.n5"],
+        "specVersion": "0.2.0",
+    }
+    with open(temp_dir / "project.json", "w") as f:
+        json.dump(project_json_dict, f)
 
     return temp_dir, meshes
 
