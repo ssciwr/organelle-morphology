@@ -66,17 +66,16 @@ def test_invalid_project_init(tmp_path):
 def test_add_source(cebra_project):
     """Check adding source to a given project"""
     print(cebra_project.available_sources())
-    source_dict = {"synth_data": "mito", "synth_data": "unknown"}
-    for source, oid in source_dict.items():
+    source_dict = {"mito": "synth_data", "unknown": "synth_data"}
+    for oid, source in source_dict.items():
         if oid == "unknown":
             with pytest.raises(ValueError):
                 cebra_project.add_source(source=source, organelle=oid)
             continue
-
-        cebra_project.add_source(source=source, organelle=oid)
-
-        # Check that we actually added organelles
-        assert cebra_project.organelles(ids=f"{oid}_*", return_ids=True)
+        else:
+            cebra_project.add_source(source=source, organelle=oid)
+            # Check that we actually added organelles
+            assert cebra_project.organelles(ids=f"{oid}_*", return_ids=True)
 
     # Wrong organelle/source identifier should lead to error
     with pytest.raises(ValueError):
@@ -114,6 +113,10 @@ def test_compression_level(cebra_project):
     # change it to 42
     with pytest.raises(ValueError):
         p.compression_level = 42
+
+    # change to -1
+    with pytest.raises(ValueError):
+        p.compression_level = -1
 
 
 def test_project_organelles(cebra_project_with_sources):
