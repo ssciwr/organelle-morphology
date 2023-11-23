@@ -1,0 +1,17 @@
+name:
+    morph
+channels:
+    - conda-forge
+dependencies:
+    - pip
+    - scipy
+    - scikit-image
+    - python-elf
+    - numpy
+    - trimesh
+    - pytest
+    - pytest-cov
+    - nbval
+    - pip:
+        - python-fcl
+        - setuptools==65.7.0
