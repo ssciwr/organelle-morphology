@@ -234,7 +234,7 @@ def generate_synthetic_mesh_set(
                 meshes_to_remove.append(collision_partner)
 
                 # Remove the collision partner from the collision manager
-                collision_manager.remove_object(collision_partner)
+                # collision_manager.remove_object(collision_partner)
 
         # Calculate volume and area
         volume = mesh.volume
@@ -295,8 +295,11 @@ def generate_synthetic_mesh_set(
             position[1] : end_position[1],
             position[2] : end_position[2],
         ] += voxelized.matrix * (i + 1)
-
+        meshes[i]["id"] = i + 1
     voxel_array = _array_trim(voxel_array)
     voxel_array = voxel_array.astype(np.uint16)
 
-    return voxel_array, meshes
+    # convert meshes to dict
+    mesh_dict = {mesh["id"]: mesh for mesh in meshes}
+
+    return voxel_array, mesh_dict

@@ -65,6 +65,9 @@ class Project:
         # The dictionary of data sources that we have added
         self._sources = {}
 
+        self._basic_geometric_properties = {}
+        self._mesh_properties = {}
+        self._meshes = {}
         # The compression level at which we operate
         self._compression_level = 0
 
@@ -73,7 +76,9 @@ class Project:
 
         return list(self.metadata["sources"].keys())
 
-    def add_source(self, source: str = None, organelle: str = None) -> None:
+    def add_source(
+        self, source: str = None, organelle: str = None, background_label: int = 0
+    ) -> None:
         """Connect a data source in the project with an organelle type
 
         :param source:
@@ -83,6 +88,9 @@ class Project:
         :param organelle:
             The name of the organelle that is labelled in the data source.
             Must be on the strings returned by organelle_morphology.organelle_types
+        :param background_label:
+            The label in the data source that is used to encode the background.
+            Assumed to be 0.
         """
 
         if source not in self.available_sources():
@@ -96,7 +104,10 @@ class Project:
             "relativePath"
         ]
         source_obj = DataSource(
-            self, self._dataset_json_directory / source_path, organelle
+            self,
+            self._dataset_json_directory / source_path,
+            organelle,
+            background_label,
         )
 
         # Double-check that it provides the current compression level
@@ -129,6 +140,41 @@ class Project:
                 )
 
         self._compression_level = compression_level
+
+    @property
+    def basic_geometric_properties(self):
+        """The basic geometric properties of the organelles"""
+
+        # results should be saved on a source level
+        for source_key, source in self._sources.items():
+            if source_key not in self._basic_geometric_properties:
+                self._basic_geometric_properties[
+                    source_key
+                ] = source.basic_geometric_properties
+
+        return self._basic_geometric_properties
+
+    @property
+    def mesh_properties(self):
+        """The mesh properties of the organelles"""
+
+        # results should be saved on a source level
+        for source_key, source in self._sources.items():
+            if source_key not in self._mesh_properties:
+                self._mesh_properties[source_key] = source.mesh_properties
+
+        return self._mesh_properties
+
+    @property
+    def meshes(self):
+        """The meshes of the organelles"""
+
+        # results should be saved on a source level
+        for source_key, source in self._sources.items():
+            if source_key not in self._meshes:
+                self._meshes[source_key] = source.meshes
+
+        return self._meshes
 
     @property
     def metadata(self):

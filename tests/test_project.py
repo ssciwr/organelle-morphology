@@ -6,6 +6,7 @@ import pytest
 import pathlib
 import tempfile
 import numpy as np
+import trimesh
 
 
 def test_synthetic_data_generation(
@@ -18,7 +19,7 @@ def test_synthetic_data_generation(
     # test data from custom dir
     tmp_dir = pathlib.Path(tempfile.mkdtemp())
     project_path_custom, original_meshes_custom = generate_synthetic_dataset(
-        working_dir=tmp_dir, seed=42, n_objects=10, object_size=10, object_distance=20
+        working_dir=tmp_dir, n_objects=30, object_size=20, object_distance=100, seed=42
     )
 
     # test default data
@@ -29,7 +30,9 @@ def test_synthetic_data_generation(
 
     # assert custom meshes and original meshes are the same.
     # for this we will only compare the area of the meshes
-    for mesh_custom, mesh_orig in zip(original_meshes_custom, original_meshes):
+    for mesh_custom, mesh_orig in zip(
+        original_meshes_custom.values(), original_meshes.values()
+    ):
         assert np.isclose(mesh_custom["area"], mesh_orig["area"])
 
     project_path = pathlib.Path(project_path)
@@ -113,6 +116,7 @@ def test_compression_level(cebra_project):
     # test impossible compression without added source
 
     p.compression_level = 42
+
     with pytest.raises(ValueError):
         p.add_source(source="synth_data", organelle="mito")
 
@@ -154,3 +158,52 @@ def test_project_sources_data(cebra_project_with_sources):
     assert p._sources["synth_data"].data
     assert p._sources["synth_data"].data_resolution
     assert p._sources["synth_data"].resolution
+
+
+def test_basic_geometric_properties(
+    cebra_project_with_sources, cebra_project_original_meshes
+):
+    p = cebra_project_with_sources
+
+    assert p.basic_geometric_properties
+    assert p.mesh_properties
+
+    for source_key in p._sources.keys():
+        assert source_key in p.basic_geometric_properties
+        assert source_key in p.mesh_properties
+
+        assert sorted(p.basic_geometric_properties[source_key].keys()) == sorted(
+            p.mesh_properties[source_key].keys()
+        )
+
+        for org_key in p.mesh_properties[source_key].keys():
+            basi_properties = p.basic_geometric_properties[source_key][org_key]
+            mesh_properties = p.mesh_properties[source_key][org_key]
+            mesh_id = int(org_key.split("_")[-1])
+            original_mesh = cebra_project_original_meshes[mesh_id]
+
+            assert np.isclose(
+                original_mesh["volume"], basi_properties["area"], rtol=0.25, atol=500
+            )
+            assert np.isclose(
+                original_mesh["volume"],
+                mesh_properties["mesh_volume"],
+                rtol=0.25,
+                atol=500,
+            )
+            assert np.isclose(
+                original_mesh["area"], mesh_properties["mesh_area"], rtol=0.40, atol=100
+            )
+
+
+def test_show_mesh_scene(cebra_project_with_sources):
+    p = cebra_project_with_sources
+    meshes = p.meshes
+
+    scene = trimesh.scene.Scene()
+    for source_key in meshes.keys():
+        for org_key in meshes[source_key].keys():
+            mesh = meshes[source_key][org_key]
+            mesh.visual.face_colors = trimesh.visual.random_color()
+            scene.add_geometry(mesh)
+    scene.show()  # don't run this on ci

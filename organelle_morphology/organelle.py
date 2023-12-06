@@ -1,3 +1,8 @@
+import numpy as np
+import trimesh
+from skimage import measure
+import logging
+
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
 organelle_registry = {}
@@ -32,6 +37,8 @@ class Organelle:
         self._source = source
         self._source_label = source_label
         self._organelle_id = organelle_id
+        self._mesh_properties = {}
+        self._mesh = None
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -55,11 +62,71 @@ class Organelle:
                 organelle_id=f"{cls._name}_{str(label).zfill(4)}",
             )
 
+    def _generate_mesh(self, smooth=True):
+        try:
+            verts, faces, _, _ = measure.marching_cubes(
+                self.data, spacing=self._source.resolution
+            )
+        except RuntimeError:
+            logging.warning("Could not generate mesh for label %s", self.id)
+            return None
+        mesh = trimesh.Trimesh(verts, faces, process=False)
+        mesh.fix_normals()
+        if smooth:
+            trimesh.smoothing.filter_humphrey(mesh)
+        self._mesh = mesh
+
+    @property
+    def mesh(self):
+        """Get the mesh for this organelle"""
+        if self._mesh is None:
+            self._generate_mesh()
+        return self._mesh
+
     @property
     def id(self):
         """Get the organelle ID of this organelle"""
 
         return self._organelle_id
+
+    @property
+    def geometric_data(self):
+        """Get the geometric data for this organelle
+        Possible keywords are:
+        "area",  # for 3d this is the volume
+        "bbox",
+        "slice",  # the slice of the bounding box
+        "centroid",
+        "moments",
+        "extent",  # how much volume of the bounding box is occupied by the object
+        "solidity",  # ratio of pixels in the convex hull to those in the region
+
+        """
+        return self._source.basic_geometric_properties[self.id]
+
+    @property
+    def mesh_properties(self):
+        """Get the mesh data for this organelle"""
+
+        if self._mesh is None:
+            self._generate_mesh()
+
+        if self._mesh_properties == {}:
+            self._mesh_properties["mesh_volume"] = self.mesh.volume
+            self._mesh_properties["mesh_area"] = self.mesh.area
+            self._mesh_properties["mesh_centroid"] = self.mesh.centroid
+            self._mesh_properties["mesh_inertia"] = self.mesh.moment_inertia
+
+        return self._mesh_properties
+
+    @property
+    def data(self):
+        """Get the raw data for this organelle
+        by filtering the data of the source object"""
+        source_ds = self._source.data[:]
+        org_ds = np.where(source_ds == self._source_label, source_ds, 0)
+
+        return org_ds
 
 
 class Mitochondrium(Organelle, name="mito"):

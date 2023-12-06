@@ -7,10 +7,13 @@ import json
 import numpy as np
 import pathlib
 import xml.etree.ElementTree as ET
+from skimage.measure import regionprops
 
 
 class DataSource:
-    def __init__(self, project, xml_path: pathlib.Path, organelle: str):
+    def __init__(
+        self, project, xml_path: pathlib.Path, organelle: str, background_label: int = 0
+    ):
         """Initialize a data source.
 
         This method initializes a data source for organelle morphology analysis.
@@ -31,11 +34,15 @@ class DataSource:
         self._project = project
         self._xml_path = xml_path
         self._organelle = organelle
+        self.background_label = background_label
 
         # The data will be loaded lazily
         self._data = None
         self._coarse_data = None
         self._metadata = None
+        self._basic_geometric_properties = None
+        self._mesh_properties = {}
+        self._meshes = {}
 
         # The computed organelles are stored
         self._organelles = None
@@ -105,6 +112,49 @@ class DataSource:
         return self._metadata
 
     @property
+    def basic_geometric_properties(self):
+        """get basic properties from scikit-image"""
+        if self._basic_geometric_properties is None:
+            basic_geometric_properties = regionprops(self.data)
+
+            # filter region props for useful properties
+            # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
+            filtered_region_props = [
+                "area",  # for 3d this is the volume
+                "bbox",
+                "slice",  # the slice of the bounding box
+                "centroid",
+                "moments",
+                "extent",  # how much volume of the bounding box is occupied by the object
+                "solidity",  # ratio of pixels in the convex hull to those in the region
+            ]
+
+            self._basic_geometric_properties = {
+                f"{self._organelle}_{str(region['label']).zfill(4)}": {
+                    prop: region[prop] for prop in filtered_region_props
+                }
+                for region in basic_geometric_properties
+            }
+
+        return self._basic_geometric_properties
+
+    @property
+    def mesh_properties(self):
+        """Get the mesh data for this organelle"""
+
+        if self._mesh_properties == {}:
+            for organelle in self.organelles():
+                self._mesh_properties[organelle.id] = organelle.mesh_properties
+        return self._mesh_properties
+
+    @property
+    def meshes(self):
+        if self._meshes == {}:
+            for organelle in self.organelles():
+                self._meshes[organelle.id] = organelle.mesh
+        return self._meshes
+
+    @property
     def data(self) -> np.ndarray:
         """Load the raw data."""
 
@@ -154,8 +204,12 @@ class DataSource:
     @property
     def labels(self) -> tuple[int]:
         """Return the list of labels present in the data source."""
-
-        return tuple(np.unique(self.coarse_data))
+        labels = tuple(np.unique(self.data))
+        if self.background_label in labels:
+            labels = tuple(
+                [label for label in labels if label != self.background_label]
+            )
+        return labels
 
     def organelles(
         self, ids: str = "*", return_ids: bool = False
@@ -180,9 +234,9 @@ class DataSource:
             self._organelles = {}
 
             # Iterate available organelle classes and construct organelles
-            for orgclass in organelle_registry.values():
-                for organelle in orgclass.construct(self, self.labels):
-                    self._organelles[organelle.id] = organelle
+            orgclass = organelle_registry[self._organelle]
+            for organelle in orgclass.construct(self, self.labels):
+                self._organelles[organelle.id] = organelle
 
         # Filter the organelles with the given ids pattern
         filtered_ids = fnmatch.filter(self._organelles.keys(), ids)
