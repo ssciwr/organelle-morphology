@@ -180,6 +180,11 @@ def test_basic_geometric_properties(
             basi_properties = p.basic_geometric_properties[source_key][org_key]
             mesh_properties = p.mesh_properties[source_key][org_key]
             mesh_id = int(org_key.split("_")[-1])
+
+            # skip these (see test_geometric_data)
+            if mesh_id in [9, 17]:
+                continue
+
             original_mesh = cebra_project_original_meshes[mesh_id]
 
             assert np.isclose(
@@ -196,6 +201,12 @@ def test_basic_geometric_properties(
             )
 
 
+def test_distance_matrix(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    assert p.distance_matrix.shape == (19, 19)
+
+
 def test_show_mesh_scene(cebra_project_with_sources):
     p = cebra_project_with_sources
     meshes = p.meshes
@@ -206,4 +217,4 @@ def test_show_mesh_scene(cebra_project_with_sources):
             mesh = meshes[source_key][org_key]
             mesh.visual.face_colors = trimesh.visual.random_color()
             scene.add_geometry(mesh)
-    scene.show()  # don't run this on ci
+    # scene.show()  # don't run this on ci

@@ -5,6 +5,10 @@ import json
 import os
 import pathlib
 
+import numpy as np
+import pandas as pd
+import trimesh
+
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
     """Load the project metadata JSON file
@@ -39,19 +43,20 @@ class Project:
         project_path: pathlib.Path | str = os.getcwd(),
         clipping: tuple[tuple[float]] | None = None,
     ):
-        """Instantiate an EM project
+        """def test_basic_geometric_properties(
+        Instantiate an EM project
 
-        The given path is expected to contain either a CebraEM or Mobie
-        project JSON file. This is a lazy operation. No data except metadata
-        is loaded until it is required.
+                The given path is expected to contain either a CebraEM or Mobie
+                project JSON file. This is a lazy operation. No data except metadata
+                is loaded until it is required.
 
-        :param project_path:
-            The location of the CebraEM/Mobie project
+                :param project_path:
+                    The location of the CebraEM/Mobie project
 
-        :param clipping:
-            If not None, the data is clipped with the given lower left and the given
-            upper right corner as the bounding box of the clipping. Coordinates are
-            expected to be in micrometer.
+                :param clipping:
+                    If not None, the data is clipped with the given lower left and the given
+                    upper right corner as the bounding box of the clipping. Coordinates are
+                    expected to be in micrometer.
         """
 
         if isinstance(project_path, str):
@@ -68,6 +73,8 @@ class Project:
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
         self._meshes = {}
+        self._distance_matrix = None
+
         # The compression level at which we operate
         self._compression_level = 0
 
@@ -175,6 +182,41 @@ class Project:
                 self._meshes[source_key] = source.meshes
 
         return self._meshes
+
+    @property
+    def distance_matrix(self):
+        if self._distance_matrix is not None:
+            return self._distance_matrix
+
+        # flatten mesh dict:
+        flat_mesh_dict = {}
+
+        for source_key, source in self.meshes.items():
+            for mesh_label, mesh in source.items():
+                flat_mesh_dict[(source_key, mesh_label)] = mesh
+
+        num_rows = len(flat_mesh_dict)
+        distance_matrix = np.zeros((num_rows, num_rows))
+
+        mesh_list = list(flat_mesh_dict.values())
+
+        for i in np.arange(num_rows):
+            for j in np.arange(i + 1, num_rows):
+                col_manager_test = trimesh.collision.CollisionManager()
+                col_manager_test.add_object(f"mesh{1}", mesh_list[i])
+                col_manager_test.add_object(f"mesh{2}", mesh_list[j])
+                distance = col_manager_test.min_distance_internal()
+
+                distance_matrix[i, j] = distance
+                distance_matrix[j, i] = distance
+
+        distance_df = pd.DataFrame(
+            distance_matrix,
+            index=flat_mesh_dict.keys(),
+            columns=flat_mesh_dict.keys(),
+        )
+        self._distance_matrix = distance_df
+        return self._distance_matrix
 
     @property
     def metadata(self):

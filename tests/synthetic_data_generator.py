@@ -299,6 +299,11 @@ def generate_synthetic_mesh_set(
     voxel_array = _array_trim(voxel_array)
     voxel_array = voxel_array.astype(np.uint16)
 
+    # remove any voxels that are labled higher than the len of meshes.
+    # this can happen if meshes are merged at the same point
+
+    voxel_array[voxel_array > len(meshes)] = 0
+
     # convert meshes to dict
     mesh_dict = {mesh["id"]: mesh for mesh in meshes}
 

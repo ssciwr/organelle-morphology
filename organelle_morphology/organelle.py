@@ -117,6 +117,13 @@ class Organelle:
             self._mesh_properties["mesh_centroid"] = self.mesh.centroid
             self._mesh_properties["mesh_inertia"] = self.mesh.moment_inertia
 
+            self._mesh_properties["water_tight"] = self.mesh.is_watertight
+            self._mesh_properties["sphericity"] = (
+                36 * np.pi * self.mesh.volume**2
+            ) ** (1 / 3) / self.mesh.area
+            dimensions = self.mesh.bounding_box_oriented.extents
+            self._mesh_properties["flatness_ratio"] = min(dimensions) / max(dimensions)
+
         return self._mesh_properties
 
     @property
