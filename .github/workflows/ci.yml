@@ -38,17 +38,11 @@ jobs:
         auto-activate-base: false
         python-version: ${{ matrix.python-version }}
         activate-environment: morph
-        #environment-file: environment-dev.yml
-
-
-    - name: add conda only dependencies
-      run:
-        conda install -c conda-forge python-elf
-
+        environment-file: environment-dev.yml
 
     - name: Install Python package
       run: |
-        python -m pip install .[tests]
+        python -m pip install --no-deps .
 
     - name: Run Python tests
       run: |

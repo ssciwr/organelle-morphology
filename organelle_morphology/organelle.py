@@ -142,7 +142,7 @@ class Organelle:
         """Get the mesh data for this organelle"""
         comp_level = self._source._project.compression_level
 
-        morph_radius = 0.0005
+        morph_radius = 0.3
 
         if comp_level not in self._morphology_map:
             mesh = self.mesh
