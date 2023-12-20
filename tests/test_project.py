@@ -227,7 +227,17 @@ def test_properties_compression_level(cebra_project_with_sources):
     assert basic_properties_1 != basic_properties_2
     assert mesh_properties_1 != mesh_properties_2
     assert meshes_1 != meshes_2
-    assert morph_map_1 != morph_map_2
+
+    for source_key in meshes_1.keys():
+        assert source_key in meshes_2
+        for org_key in meshes_1[source_key].keys():
+            if (
+                morph_map_2[source_key][org_key] is not None
+                and morph_map_1[source_key][org_key] is not None
+            ):
+                assert len(morph_map_2[source_key][org_key]) != len(
+                    morph_map_1[source_key][org_key]
+                )
 
 
 def test_distance_matrix(cebra_project_with_sources):
