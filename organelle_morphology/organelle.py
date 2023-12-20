@@ -38,7 +38,7 @@ class Organelle:
         self._source_label = source_label
         self._organelle_id = organelle_id
         self._mesh_properties = {}
-        self._mesh = None
+        self._mesh = {}
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -69,19 +69,20 @@ class Organelle:
             )
         except RuntimeError:
             logging.warning("Could not generate mesh for label %s", self.id)
+            self._mesh[self._source._project.compression_level] = None
             return None
         mesh = trimesh.Trimesh(verts, faces, process=False)
         mesh.fix_normals()
         if smooth:
             trimesh.smoothing.filter_humphrey(mesh)
-        self._mesh = mesh
+        self._mesh[self._source._project.compression_level] = mesh
 
     @property
     def mesh(self):
         """Get the mesh for this organelle"""
-        if self._mesh is None:
+        if self._source._project.compression_level not in self._mesh:
             self._generate_mesh()
-        return self._mesh
+        return self._mesh[self._source._project.compression_level]
 
     @property
     def id(self):
@@ -107,24 +108,33 @@ class Organelle:
     @property
     def mesh_properties(self):
         """Get the mesh data for this organelle"""
+        comp_level = self._source._project.compression_level
 
-        if self._mesh is None:
+        if comp_level not in self._mesh:
             self._generate_mesh()
 
-        if self._mesh_properties == {}:
-            self._mesh_properties["mesh_volume"] = self.mesh.volume
-            self._mesh_properties["mesh_area"] = self.mesh.area
-            self._mesh_properties["mesh_centroid"] = self.mesh.centroid
-            self._mesh_properties["mesh_inertia"] = self.mesh.moment_inertia
+        if self.mesh is None:
+            self._mesh_properties[comp_level] = {"could_not_generate_mesh": True}
+            return self._mesh_properties[comp_level]
 
-            self._mesh_properties["water_tight"] = self.mesh.is_watertight
-            self._mesh_properties["sphericity"] = (
+        if comp_level not in self._mesh_properties:
+            self._mesh_properties[comp_level] = {}
+
+            self._mesh_properties[comp_level]["mesh_volume"] = self.mesh.volume
+            self._mesh_properties[comp_level]["mesh_area"] = self.mesh.area
+            self._mesh_properties[comp_level]["mesh_centroid"] = self.mesh.centroid
+            self._mesh_properties[comp_level]["mesh_inertia"] = self.mesh.moment_inertia
+
+            self._mesh_properties[comp_level]["water_tight"] = self.mesh.is_watertight
+            self._mesh_properties[comp_level]["sphericity"] = (
                 36 * np.pi * self.mesh.volume**2
             ) ** (1 / 3) / self.mesh.area
             dimensions = self.mesh.bounding_box_oriented.extents
-            self._mesh_properties["flatness_ratio"] = min(dimensions) / max(dimensions)
+            self._mesh_properties[comp_level]["flatness_ratio"] = min(dimensions) / max(
+                dimensions
+            )
 
-        return self._mesh_properties
+        return self._mesh_properties[comp_level]
 
     @property
     def data(self):

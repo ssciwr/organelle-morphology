@@ -154,10 +154,10 @@ class Project:
 
         # results should be saved on a source level
         for source_key, source in self._sources.items():
-            if source_key not in self._basic_geometric_properties:
-                self._basic_geometric_properties[
-                    source_key
-                ] = source.basic_geometric_properties
+            # if source_key not in self._basic_geometric_properties:
+            self._basic_geometric_properties[
+                source_key
+            ] = source.basic_geometric_properties
 
         return self._basic_geometric_properties
 
@@ -167,8 +167,7 @@ class Project:
 
         # results should be saved on a source level
         for source_key, source in self._sources.items():
-            if source_key not in self._mesh_properties:
-                self._mesh_properties[source_key] = source.mesh_properties
+            self._mesh_properties[source_key] = source.mesh_properties
 
         return self._mesh_properties
 
@@ -178,8 +177,8 @@ class Project:
 
         # results should be saved on a source level
         for source_key, source in self._sources.items():
-            if source_key not in self._meshes:
-                self._meshes[source_key] = source.meshes
+            # if source_key not in self._meshes:
+            self._meshes[source_key] = source.meshes
 
         return self._meshes
 

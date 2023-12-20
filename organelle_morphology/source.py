@@ -37,10 +37,10 @@ class DataSource:
         self.background_label = background_label
 
         # The data will be loaded lazily
-        self._data = None
+        self._data = {}
         self._coarse_data = None
         self._metadata = None
-        self._basic_geometric_properties = None
+        self._basic_geometric_properties = {}
         self._mesh_properties = {}
         self._meshes = {}
 
@@ -114,8 +114,10 @@ class DataSource:
     @property
     def basic_geometric_properties(self):
         """get basic properties from scikit-image"""
-        if self._basic_geometric_properties is None:
-            basic_geometric_properties = regionprops(self.data)
+        comp_level = self._project.compression_level
+
+        if comp_level not in self._basic_geometric_properties:
+            geometric_properties = regionprops(self.data)
 
             # filter region props for useful properties
             # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
@@ -129,40 +131,38 @@ class DataSource:
                 "solidity",  # ratio of pixels in the convex hull to those in the region
             ]
 
-            self._basic_geometric_properties = {
+            self._basic_geometric_properties[comp_level] = {
                 f"{self._organelle}_{str(region['label']).zfill(4)}": {
                     prop: region[prop] for prop in filtered_region_props
                 }
-                for region in basic_geometric_properties
+                for region in geometric_properties
             }
 
-        return self._basic_geometric_properties
+        return self._basic_geometric_properties[comp_level]
 
     @property
     def mesh_properties(self):
         """Get the mesh data for this organelle"""
 
-        if self._mesh_properties == {}:
-            for organelle in self.organelles():
-                self._mesh_properties[organelle.id] = organelle.mesh_properties
+        for organelle in self.organelles():
+            self._mesh_properties[organelle.id] = organelle.mesh_properties
         return self._mesh_properties
 
     @property
     def meshes(self):
-        if self._meshes == {}:
-            for organelle in self.organelles():
+        for organelle in self.organelles():
+            if organelle.id not in self._meshes:
                 self._meshes[organelle.id] = organelle.mesh
         return self._meshes
 
     @property
     def data(self) -> np.ndarray:
         """Load the raw data."""
-
-        if self._data is None:
+        comp_level = self._project.compression_level
+        if self._project.compression_level not in self._data:
             with open_file(str(self.metadata["data_root"]), "r") as f:
-                self._data = f[f"setup0/timepoint0/s{self._project.compression_level}"]
-
-        return self._data
+                self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"]
+        return self._data[comp_level]
 
     @property
     def coarse_data(self) -> np.ndarray:

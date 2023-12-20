@@ -7,6 +7,7 @@ import pathlib
 import tempfile
 import numpy as np
 import trimesh
+import copy
 
 
 def test_synthetic_data_generation(
@@ -177,7 +178,7 @@ def test_basic_geometric_properties(
         )
 
         for org_key in p.mesh_properties[source_key].keys():
-            basi_properties = p.basic_geometric_properties[source_key][org_key]
+            basic_properties = p.basic_geometric_properties[source_key][org_key]
             mesh_properties = p.mesh_properties[source_key][org_key]
             mesh_id = int(org_key.split("_")[-1])
 
@@ -188,7 +189,7 @@ def test_basic_geometric_properties(
             original_mesh = cebra_project_original_meshes[mesh_id]
 
             assert np.isclose(
-                original_mesh["volume"], basi_properties["area"], rtol=0.25, atol=500
+                original_mesh["volume"], basic_properties["area"], rtol=0.25, atol=500
             )
             assert np.isclose(
                 original_mesh["volume"],
@@ -199,6 +200,21 @@ def test_basic_geometric_properties(
             assert np.isclose(
                 original_mesh["area"], mesh_properties["mesh_area"], rtol=0.40, atol=100
             )
+
+
+def test_properties_compression_level(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    p.compression_level = 2
+    basic_properties_1 = p.basic_geometric_properties.copy()
+    mesh_properties_1 = copy.deepcopy(p.mesh_properties)
+
+    p.compression_level = 3
+    basic_properties_2 = p.basic_geometric_properties.copy()
+    mesh_properties_2 = copy.deepcopy(p.mesh_properties)
+
+    assert basic_properties_1 != basic_properties_2
+    assert mesh_properties_1 != mesh_properties_2
 
 
 def test_distance_matrix(cebra_project_with_sources):
