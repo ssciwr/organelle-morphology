@@ -202,19 +202,32 @@ def test_basic_geometric_properties(
             )
 
 
+def test_morphology_map(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    assert p.morphology_map
+    assert len(p.morphology_map["synth_data"]) == 19
+
+
 def test_properties_compression_level(cebra_project_with_sources):
     p = cebra_project_with_sources
 
     p.compression_level = 2
     basic_properties_1 = p.basic_geometric_properties.copy()
     mesh_properties_1 = copy.deepcopy(p.mesh_properties)
+    meshes_1 = copy.deepcopy(p.meshes)
+    morph_map_1 = copy.deepcopy(p.morphology_map)
 
     p.compression_level = 3
     basic_properties_2 = p.basic_geometric_properties.copy()
     mesh_properties_2 = copy.deepcopy(p.mesh_properties)
+    meshes_2 = copy.deepcopy(p.meshes)
+    morph_map_2 = copy.deepcopy(p.morphology_map)
 
     assert basic_properties_1 != basic_properties_2
     assert mesh_properties_1 != mesh_properties_2
+    assert meshes_1 != meshes_2
+    assert morph_map_1 != morph_map_2
 
 
 def test_distance_matrix(cebra_project_with_sources):

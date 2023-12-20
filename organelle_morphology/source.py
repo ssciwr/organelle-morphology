@@ -9,6 +9,10 @@ import pathlib
 import xml.etree.ElementTree as ET
 from skimage.measure import regionprops
 
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, append=True)
+
 
 class DataSource:
     def __init__(
@@ -43,6 +47,7 @@ class DataSource:
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
         self._meshes = {}
+        self._morphology_map = {}
 
         # The computed organelles are stored
         self._organelles = None
@@ -142,11 +147,18 @@ class DataSource:
 
     @property
     def mesh_properties(self):
-        """Get the mesh data for this organelle"""
+        """Get the mesh data for all organelles"""
 
         for organelle in self.organelles():
             self._mesh_properties[organelle.id] = organelle.mesh_properties
         return self._mesh_properties
+
+    @property
+    def morphology_map(self):
+        """Get the morphology map for all organelles"""
+        for organelle in self.organelles():
+            self._morphology_map[organelle.id] = organelle.morphology_map
+        return self._morphology_map
 
     @property
     def meshes(self):

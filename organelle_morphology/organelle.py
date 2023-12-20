@@ -39,6 +39,7 @@ class Organelle:
         self._organelle_id = organelle_id
         self._mesh_properties = {}
         self._mesh = {}
+        self._morphology_map = {}
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -135,6 +136,27 @@ class Organelle:
             )
 
         return self._mesh_properties[comp_level]
+
+    @property
+    def morphology_map(self):
+        """Get the mesh data for this organelle"""
+        comp_level = self._source._project.compression_level
+
+        morph_radius = 0.003
+
+        if comp_level not in self._morphology_map:
+            mesh = self.mesh
+            if mesh is None:
+                self._morphology_map[comp_level] = None
+                return self._morphology_map[comp_level]
+
+            sample_points = mesh.vertices
+            curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
+                mesh, sample_points, radius=morph_radius
+            )
+
+            self._morphology_map[comp_level] = curvature_vertices
+        return self._morphology_map[comp_level]
 
     @property
     def data(self):

@@ -72,3 +72,11 @@ def test_organelle_mesh(cebra_project_with_sources, cebra_project_original_meshe
             assert np.isclose(original_mesh["area"], new_mesh.area, rtol=0.3, atol=100)
 
         assert sorted(list(organelle.mesh_properties.keys())) == sorted(label_list)
+
+
+def test_organelle_morphology(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    org_list = p.organelles()
+    for organelle in org_list:
+        assert organelle.morphology_map is not None

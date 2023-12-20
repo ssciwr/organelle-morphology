@@ -74,6 +74,7 @@ class Project:
         self._mesh_properties = {}
         self._meshes = {}
         self._distance_matrix = None
+        self._morphology_map = {}
 
         # The compression level at which we operate
         self._compression_level = 0
@@ -170,6 +171,16 @@ class Project:
             self._mesh_properties[source_key] = source.mesh_properties
 
         return self._mesh_properties
+
+    @property
+    def morphology_map(self):
+        """Get the morphology map for all organelles"""
+
+        # results should be saved on a source level
+        for source_key, source in self._sources.items():
+            self._morphology_map[source_key] = source.morphology_map
+
+        return self._morphology_map
 
     @property
     def meshes(self):
