@@ -7,10 +7,17 @@ import json
 import numpy as np
 import pathlib
 import xml.etree.ElementTree as ET
+from skimage.measure import regionprops
+
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
 
 class DataSource:
-    def __init__(self, project, xml_path: pathlib.Path, organelle: str):
+    def __init__(
+        self, project, xml_path: pathlib.Path, organelle: str, background_label: int = 0
+    ):
         """Initialize a data source.
 
         This method initializes a data source for organelle morphology analysis.
@@ -31,11 +38,16 @@ class DataSource:
         self._project = project
         self._xml_path = xml_path
         self._organelle = organelle
+        self.background_label = background_label
 
         # The data will be loaded lazily
-        self._data = None
+        self._data = {}
         self._coarse_data = None
         self._metadata = None
+        self._basic_geometric_properties = {}
+        self._mesh_properties = {}
+        self._meshes = {}
+        self._morphology_map = {}
 
         # The computed organelles are stored
         self._organelles = None
@@ -105,14 +117,77 @@ class DataSource:
         return self._metadata
 
     @property
+    def basic_geometric_properties(self):
+        """get basic properties from scikit-image"""
+        comp_level = self._project.compression_level
+
+        if comp_level not in self._basic_geometric_properties:
+            geometric_properties = regionprops(self.data, spacing=self.resolution)
+
+            # filter region props for useful properties
+            # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
+            filtered_region_props = {
+                "voxel_volume": "area",  # for 3d this is the volume
+                "voxel_bbox": "bbox",
+                "voxel_slice": "slice",  # the slice of the bounding box
+                "voxel_centroid": "centroid",
+                "voxel_extent": "extent",  # how much volume of the bounding box is occupied by the object
+                "voxel_solidity": "solidity",  # ratio of pixels in the convex hull to those in the region
+            }
+
+            self._basic_geometric_properties[comp_level] = {
+                f"{self._organelle}_{str(region['label']).zfill(4)}": {
+                    prop_name: region[prop]
+                    for prop_name, prop in filtered_region_props.items()
+                }
+                for region in geometric_properties
+            }
+
+        return self._basic_geometric_properties[comp_level]
+
+    @property
+    def mesh_properties(self):
+        """Get the mesh data for all organelles"""
+
+        for organelle in self.organelles():
+            self._mesh_properties[organelle.id] = organelle.mesh_properties
+        return self._mesh_properties
+
+    @property
+    def morphology_map(self):
+        """Get the morphology map for all organelles"""
+        for organelle in self.organelles():
+            self._morphology_map[organelle.id] = organelle.morphology_map
+        return self._morphology_map
+
+    @property
+    def meshes(self):
+        for organelle in self.organelles():
+            if organelle.id not in self._meshes:
+                self._meshes[organelle.id] = organelle.mesh
+        return self._meshes
+
+    @property
     def data(self) -> np.ndarray:
         """Load the raw data."""
+        comp_level = self._project.compression_level
 
-        if self._data is None:
+        if self._project.compression_level not in self._data:
             with open_file(str(self.metadata["data_root"]), "r") as f:
-                self._data = f[f"setup0/timepoint0/s{self._project.compression_level}"]
+                self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"]
 
-        return self._data
+        if self._project.clipping is not None:
+            lower_corner, upper_corner = self._project.clipping
+            data_shape = self._data[comp_level].shape
+            clipped_low_corner = np.floor(lower_corner * data_shape).astype(int)
+            clipped_high_corner = np.ceil(upper_corner * data_shape).astype(int)
+            cube_slice = tuple(
+                slice(clip_low, clip_high, 1)
+                for clip_low, clip_high in zip(clipped_low_corner, clipped_high_corner)
+            )
+            self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"][cube_slice]
+
+        return self._data[comp_level]
 
     @property
     def coarse_data(self) -> np.ndarray:
@@ -154,8 +229,12 @@ class DataSource:
     @property
     def labels(self) -> tuple[int]:
         """Return the list of labels present in the data source."""
-
-        return tuple(np.unique(self.coarse_data))
+        labels = tuple(np.unique(self.data))
+        if self.background_label in labels:
+            labels = tuple(
+                [label for label in labels if label != self.background_label]
+            )
+        return labels
 
     def organelles(
         self, ids: str = "*", return_ids: bool = False
@@ -180,9 +259,9 @@ class DataSource:
             self._organelles = {}
 
             # Iterate available organelle classes and construct organelles
-            for orgclass in organelle_registry.values():
-                for organelle in orgclass.construct(self, self.labels):
-                    self._organelles[organelle.id] = organelle
+            orgclass = organelle_registry[self._organelle]
+            for organelle in orgclass.construct(self, self.labels):
+                self._organelles[organelle.id] = organelle
 
         # Filter the organelles with the given ids pattern
         filtered_ids = fnmatch.filter(self._organelles.keys(), ids)
