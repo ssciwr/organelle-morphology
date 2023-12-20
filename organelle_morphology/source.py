@@ -173,7 +173,19 @@ class DataSource:
         comp_level = self._project.compression_level
         if self._project.compression_level not in self._data:
             with open_file(str(self.metadata["data_root"]), "r") as f:
-                self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"]
+                self._data = f[f"setup0/timepoint0/s{self._project.compression_level}"]
+
+        if self._project.clipping is not None:
+            lower_corner, upper_corner = self._project.clipping
+            data_shape = self._data.shape
+            clipped_low_corner = np.floor(lower_corner * data_shape).astype(int)
+            clipped_high_corner = np.ceil(upper_corner * data_shape).astype(int)
+            cube_slice = tuple(
+                slice(clip_low, clip_high, 1)
+                for clip_low, clip_high in zip(clipped_low_corner, clipped_high_corner)
+            )
+            self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"][cube_slice]
+
         return self._data[comp_level]
 
     @property

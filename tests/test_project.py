@@ -67,26 +67,43 @@ def test_invalid_project_init(tmp_path):
         project = Project(project_path=tmp_path)
 
 
-# def test_project_clipping(cebra_project_path):
-#     """Checks that the clipping values are correctly validated"""
+def test_project_clipping(cebra_project_path):
+    """Checks that the clipping values are correctly validated"""
 
-#     # A correct clipping
-#     clip = ((0.2, 0.2, 0.2), (0.8, 0.8, 0.8))
-#     project = Project(project_path=cebra_project_path, clipping=clip)
-#     assert project.clipping == clip
+    # A correct clipping
+    clip = ((0.2, 0.2, 0.2), (0.8, 0.8, 0.8))
+    project = Project(project_path=cebra_project_path, clipping=clip)
+    assert np.all(project.clipping == clip)
 
-#     # Incorrect clippings throw
-#     with pytest.raises(ValueError):
-#         project = Project(project_path=cebra_project_path, clipping=(0.2, 0.2, 0.2))
-#     with pytest.raises(ValueError):
-#         project = Project(
-#             project_path=cebra_project_path, clipping=((0.2, 0.2), (0.8, 0.8))
-#         )
+    # Incorrect clippings throw
+    with pytest.raises(ValueError):
+        Project(project_path=cebra_project_path, clipping=(0.2, 0.2, 0.2))
+
+    with pytest.raises(ValueError):
+        Project(project_path=cebra_project_path, clipping=((0.2, 0.2), (0.8, 0.8)))
+
+    with pytest.raises(ValueError):
+        Project(
+            project_path=cebra_project_path,
+            clipping=((0.2, 0.6, 0.2), (0.8, 0.5, 0.8)),
+        )
+    with pytest.raises(ValueError):
+        Project(
+            project_path=cebra_project_path,
+            clipping=((-0.2, 0.2, 0.2), (0.8, 0.5, 0.8)),
+        )
+    with pytest.raises(ValueError):
+        Project(
+            project_path=cebra_project_path,
+            clipping=((0.2, 0.2, 0.2), (0.8, 1.5, 0.8)),
+        )
+    # add a source and check that the clipping is correctly propagated
+    project.add_source(source="synth_data", organelle="mito")
+    assert project._sources["synth_data"].data.shape == (34, 37, 41)
 
 
 def test_add_source(cebra_project):
     """Check adding source to a given project"""
-    print(cebra_project.available_sources())
     source_dict = {"mito": "synth_data", "unknown": "synth_data"}
     for oid, source in source_dict.items():
         if oid == "unknown":
