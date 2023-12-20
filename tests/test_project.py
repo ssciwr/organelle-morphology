@@ -6,6 +6,9 @@ import pytest
 import pathlib
 import tempfile
 import numpy as np
+import trimesh
+import copy
+import pandas as pd
 
 
 def test_synthetic_data_generation(
@@ -18,7 +21,7 @@ def test_synthetic_data_generation(
     # test data from custom dir
     tmp_dir = pathlib.Path(tempfile.mkdtemp())
     project_path_custom, original_meshes_custom = generate_synthetic_dataset(
-        working_dir=tmp_dir, seed=42, n_objects=10, object_size=10, object_distance=20
+        working_dir=tmp_dir, n_objects=30, object_size=20, object_distance=100, seed=42
     )
 
     # test default data
@@ -29,7 +32,9 @@ def test_synthetic_data_generation(
 
     # assert custom meshes and original meshes are the same.
     # for this we will only compare the area of the meshes
-    for mesh_custom, mesh_orig in zip(original_meshes_custom, original_meshes):
+    for mesh_custom, mesh_orig in zip(
+        original_meshes_custom.values(), original_meshes.values()
+    ):
         assert np.isclose(mesh_custom["area"], mesh_orig["area"])
 
     project_path = pathlib.Path(project_path)
@@ -95,7 +100,7 @@ def test_project_clipping(cebra_project_path):
         )
     # add a source and check that the clipping is correctly propagated
     project.add_source(source="synth_data", organelle="mito")
-    assert project._sources["synth_data"].data.shape == (34, 37, 41)
+    assert project._sources["synth_data"].data.shape == (141, 144, 198)
 
 
 def test_add_source(cebra_project):
@@ -130,6 +135,7 @@ def test_compression_level(cebra_project):
     # test impossible compression without added source
 
     p.compression_level = 42
+
     with pytest.raises(ValueError):
         p.add_source(source="synth_data", organelle="mito")
 
@@ -171,3 +177,97 @@ def test_project_sources_data(cebra_project_with_sources):
     assert p._sources["synth_data"].data
     assert p._sources["synth_data"].data_resolution
     assert p._sources["synth_data"].resolution
+
+
+def test_geometric_properties(
+    cebra_project_with_sources, cebra_project_original_meshes
+):
+    p = cebra_project_with_sources
+
+    assert len(p.geometric_properties) == len(cebra_project_original_meshes)
+
+    for org_key in p.geometric_properties.index:
+        geometric_properties = p.geometric_properties.loc[org_key]
+        print(org_key)
+        mesh_id = int(org_key.split("_")[-1])
+
+        # skip these (see test_geometric_data)
+        if mesh_id in [9, 17]:
+            continue
+
+        original_mesh = cebra_project_original_meshes[mesh_id]
+
+        assert np.isclose(
+            original_mesh["volume"],
+            geometric_properties["voxel_volume"],
+            rtol=0.25,
+            atol=500,
+        )
+        assert np.isclose(
+            original_mesh["volume"],
+            geometric_properties["mesh_volume"],
+            rtol=0.25,
+            atol=500,
+        )
+        assert np.isclose(
+            original_mesh["area"],
+            geometric_properties["mesh_area"],
+            rtol=0.40,
+            atol=100,
+        )
+
+
+def test_morphology_map(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    assert p.morphology_map
+    assert len(p.morphology_map["synth_data"]) == 19
+
+
+def test_properties_compression_level(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    p.compression_level = 2
+    properties_1 = copy.deepcopy(p.geometric_properties)
+    meshes_1 = copy.deepcopy(p.meshes)
+    morph_map_1 = copy.deepcopy(p.morphology_map)
+
+    p.compression_level = 3
+    properties_2 = copy.deepcopy(p.geometric_properties)
+    meshes_2 = copy.deepcopy(p.meshes)
+    morph_map_2 = copy.deepcopy(p.morphology_map)
+
+    with pytest.raises(AssertionError):
+        pd.testing.assert_frame_equal(properties_1, properties_2)
+
+    assert meshes_1 != meshes_2
+
+    for source_key in meshes_1.keys():
+        assert source_key in meshes_2
+        for org_key in meshes_1[source_key].keys():
+            if (
+                morph_map_2[source_key][org_key] is not None
+                and morph_map_1[source_key][org_key] is not None
+            ):
+                assert len(morph_map_2[source_key][org_key]) != len(
+                    morph_map_1[source_key][org_key]
+                )
+
+
+def test_distance_matrix(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    assert p.distance_matrix.shape == (19, 19)
+
+
+def test_show_mesh_scene(cebra_project_with_sources):
+    p = cebra_project_with_sources
+    meshes = p.meshes
+
+    scene = trimesh.scene.Scene()
+    for source_key in meshes.keys():
+        for org_key in meshes[source_key].keys():
+            mesh = meshes[source_key][org_key]
+            mesh.visual.face_colors = trimesh.visual.random_color()
+            scene.add_geometry(mesh)
+    # scene.show()  # don't run this on ci

@@ -5,7 +5,7 @@ from .synthetic_data_generator import generate_synthetic_dataset
 
 
 @pytest.fixture(scope="session")
-def synthetic_data(seed=42, n_objects=10, object_size=10, object_distance=20):
+def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
     """A fixture for a synthetic dataset"""
     project, original_meshes = generate_synthetic_dataset(
         n_objects=n_objects,
