@@ -4,10 +4,12 @@ from organelle_morphology.source import DataSource
 import json
 import os
 import pathlib
+import numpy as np
 
 import numpy as np
 import pandas as pd
 import trimesh
+from functools import reduce
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
@@ -23,7 +25,7 @@ def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
         with open(project_path / "project.json", "r") as f:
             data = json.load(f)
             if len(data["datasets"]) != 1:
-                raise ValueError("Only single dataset projects are supported")  # noqa
+                raise ValueError("Only single dataset projects are supported")
 
             return load_metadata(project_path / data["datasets"][0])
 
@@ -67,11 +69,27 @@ class Project:
             project_path
         )
 
+        if clipping is not None:
+            clipping = np.array(clipping)
+            if not np.all(clipping[0] < clipping[1]):
+                raise ValueError("Clipping lower left must be smaller than upper right")
+
+            if not np.all(clipping[0] > 0) or not np.all(clipping[1] < 1):
+                raise ValueError("Clipping must be in [0, 1]^3")
+
+            if len(clipping) != 2 or len(clipping[0]) != 3 or len(clipping[1]) != 3:
+                raise ValueError("Clipping must be a tuple of two tuples of length 3")
+
+        self._clipping = clipping
+
         # The dictionary of data sources that we have added
         self._sources = {}
 
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
+
+        self._geometric_properties = {}
+
         self._meshes = {}
         self._distance_matrix = None
         self._morphology_map = {}
@@ -150,27 +168,38 @@ class Project:
         self._compression_level = compression_level
 
     @property
-    def basic_geometric_properties(self):
-        """The basic geometric properties of the organelles"""
+    def geometric_properties(self):
+        """The geometry properties of the organelles
+        Possible keywords are:
+        "voxel_volume": for 3d this is the volume
+        "voxel_bbox",
+        "voxel_slice": the slice of the bounding box
+        "voxel_centroid"
+        "voxel_moments"
+        "voxel_extent": how much volume of the bounding box is occupied by the object
+        "voxel_solidity":ratio of pixels in the convex hull to those in the region
+        "mesh_volume"
+        "mesh_area"
+        "mesh_centroid"
+        "mesh_inertia"
+        "water_tight"
+        "sphericity": how spherical the mesh is (0-1)
+        "flatness_ratio": how cubic the mesh is (0-1)
 
-        # results should be saved on a source level
+        """
         for source_key, source in self._sources.items():
             # if source_key not in self._basic_geometric_properties:
-            self._basic_geometric_properties[
-                source_key
-            ] = source.basic_geometric_properties
 
-        return self._basic_geometric_properties
+            source_basic_geometric_properties = source.basic_geometric_properties
+            source_mesh_properties = source.mesh_properties
 
-    @property
-    def mesh_properties(self):
-        """The mesh properties of the organelles"""
+            for org_key in source_basic_geometric_properties.keys():
+                self._geometric_properties[org_key] = (
+                    source_mesh_properties[org_key]
+                    | source_basic_geometric_properties[org_key]
+                )
 
-        # results should be saved on a source level
-        for source_key, source in self._sources.items():
-            self._mesh_properties[source_key] = source.mesh_properties
-
-        return self._mesh_properties
+        return pd.DataFrame(self._geometric_properties).T
 
     @property
     def morphology_map(self):
@@ -238,7 +267,10 @@ class Project:
     def clipping(self):
         """The subcube of the original data that we work with"""
 
-        raise NotImplementedError  # noqa
+        if self._clipping is None:
+            return None
+        else:
+            return self._clipping
 
     def organelles(
         self, ids: str = "*", return_ids: bool = False

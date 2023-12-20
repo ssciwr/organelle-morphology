@@ -8,6 +8,7 @@ import tempfile
 import numpy as np
 import trimesh
 import copy
+import pandas as pd
 
 
 def test_synthetic_data_generation(
@@ -67,26 +68,43 @@ def test_invalid_project_init(tmp_path):
         project = Project(project_path=tmp_path)
 
 
-# def test_project_clipping(cebra_project_path):
-#     """Checks that the clipping values are correctly validated"""
+def test_project_clipping(cebra_project_path):
+    """Checks that the clipping values are correctly validated"""
 
-#     # A correct clipping
-#     clip = ((0.2, 0.2, 0.2), (0.8, 0.8, 0.8))
-#     project = Project(project_path=cebra_project_path, clipping=clip)
-#     assert project.clipping == clip
+    # A correct clipping
+    clip = ((0.2, 0.2, 0.2), (0.8, 0.8, 0.8))
+    project = Project(project_path=cebra_project_path, clipping=clip)
+    assert np.all(project.clipping == clip)
 
-#     # Incorrect clippings throw
-#     with pytest.raises(ValueError):
-#         project = Project(project_path=cebra_project_path, clipping=(0.2, 0.2, 0.2))
-#     with pytest.raises(ValueError):
-#         project = Project(
-#             project_path=cebra_project_path, clipping=((0.2, 0.2), (0.8, 0.8))
-#         )
+    # Incorrect clippings throw
+    with pytest.raises(ValueError):
+        Project(project_path=cebra_project_path, clipping=(0.2, 0.2, 0.2))
+
+    with pytest.raises(ValueError):
+        Project(project_path=cebra_project_path, clipping=((0.2, 0.2), (0.8, 0.8)))
+
+    with pytest.raises(ValueError):
+        Project(
+            project_path=cebra_project_path,
+            clipping=((0.2, 0.6, 0.2), (0.8, 0.5, 0.8)),
+        )
+    with pytest.raises(ValueError):
+        Project(
+            project_path=cebra_project_path,
+            clipping=((-0.2, 0.2, 0.2), (0.8, 0.5, 0.8)),
+        )
+    with pytest.raises(ValueError):
+        Project(
+            project_path=cebra_project_path,
+            clipping=((0.2, 0.2, 0.2), (0.8, 1.5, 0.8)),
+        )
+    # add a source and check that the clipping is correctly propagated
+    project.add_source(source="synth_data", organelle="mito")
+    assert project._sources["synth_data"].data.shape == (141, 144, 198)
 
 
 def test_add_source(cebra_project):
     """Check adding source to a given project"""
-    print(cebra_project.available_sources())
     source_dict = {"mito": "synth_data", "unknown": "synth_data"}
     for oid, source in source_dict.items():
         if oid == "unknown":
@@ -161,45 +179,42 @@ def test_project_sources_data(cebra_project_with_sources):
     assert p._sources["synth_data"].resolution
 
 
-def test_basic_geometric_properties(
+def test_geometric_properties(
     cebra_project_with_sources, cebra_project_original_meshes
 ):
     p = cebra_project_with_sources
 
-    assert p.basic_geometric_properties
-    assert p.mesh_properties
+    assert len(p.geometric_properties) == len(cebra_project_original_meshes)
 
-    for source_key in p._sources.keys():
-        assert source_key in p.basic_geometric_properties
-        assert source_key in p.mesh_properties
+    for org_key in p.geometric_properties.index:
+        geometric_properties = p.geometric_properties.loc[org_key]
+        print(org_key)
+        mesh_id = int(org_key.split("_")[-1])
 
-        assert sorted(p.basic_geometric_properties[source_key].keys()) == sorted(
-            p.mesh_properties[source_key].keys()
+        # skip these (see test_geometric_data)
+        if mesh_id in [9, 17]:
+            continue
+
+        original_mesh = cebra_project_original_meshes[mesh_id]
+
+        assert np.isclose(
+            original_mesh["volume"],
+            geometric_properties["voxel_volume"],
+            rtol=0.25,
+            atol=500,
         )
-
-        for org_key in p.mesh_properties[source_key].keys():
-            basic_properties = p.basic_geometric_properties[source_key][org_key]
-            mesh_properties = p.mesh_properties[source_key][org_key]
-            mesh_id = int(org_key.split("_")[-1])
-
-            # skip these (see test_geometric_data)
-            if mesh_id in [9, 17]:
-                continue
-
-            original_mesh = cebra_project_original_meshes[mesh_id]
-
-            assert np.isclose(
-                original_mesh["volume"], basic_properties["area"], rtol=0.25, atol=500
-            )
-            assert np.isclose(
-                original_mesh["volume"],
-                mesh_properties["mesh_volume"],
-                rtol=0.25,
-                atol=500,
-            )
-            assert np.isclose(
-                original_mesh["area"], mesh_properties["mesh_area"], rtol=0.40, atol=100
-            )
+        assert np.isclose(
+            original_mesh["volume"],
+            geometric_properties["mesh_volume"],
+            rtol=0.25,
+            atol=500,
+        )
+        assert np.isclose(
+            original_mesh["area"],
+            geometric_properties["mesh_area"],
+            rtol=0.40,
+            atol=100,
+        )
 
 
 def test_morphology_map(cebra_project_with_sources):
@@ -213,19 +228,18 @@ def test_properties_compression_level(cebra_project_with_sources):
     p = cebra_project_with_sources
 
     p.compression_level = 2
-    basic_properties_1 = p.basic_geometric_properties.copy()
-    mesh_properties_1 = copy.deepcopy(p.mesh_properties)
+    properties_1 = copy.deepcopy(p.geometric_properties)
     meshes_1 = copy.deepcopy(p.meshes)
     morph_map_1 = copy.deepcopy(p.morphology_map)
 
     p.compression_level = 3
-    basic_properties_2 = p.basic_geometric_properties.copy()
-    mesh_properties_2 = copy.deepcopy(p.mesh_properties)
+    properties_2 = copy.deepcopy(p.geometric_properties)
     meshes_2 = copy.deepcopy(p.meshes)
     morph_map_2 = copy.deepcopy(p.morphology_map)
 
-    assert basic_properties_1 != basic_properties_2
-    assert mesh_properties_1 != mesh_properties_2
+    with pytest.raises(AssertionError):
+        pd.testing.assert_frame_equal(properties_1, properties_2)
+
     assert meshes_1 != meshes_2
 
     for source_key in meshes_1.keys():

@@ -95,13 +95,13 @@ class Organelle:
     def geometric_data(self):
         """Get the geometric data for this organelle
         Possible keywords are:
-        "area",  # for 3d this is the volume
-        "bbox",
-        "slice",  # the slice of the bounding box
-        "centroid",
-        "moments",
-        "extent",  # how much volume of the bounding box is occupied by the object
-        "solidity",  # ratio of pixels in the convex hull to those in the region
+        "voxel_volume": for 3d this is the volume
+        "voxel_bbox",
+        "voxel_slice": the slice of the bounding box
+        "voxel_centroid"
+        "voxel_moments"
+        "voxel_extent": how much volume of the bounding box is occupied by the object
+        "voxel_solidity":ratio of pixels in the convex hull to those in the region
 
         """
         return self._source.basic_geometric_properties[self.id]

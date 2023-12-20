@@ -122,23 +122,23 @@ class DataSource:
         comp_level = self._project.compression_level
 
         if comp_level not in self._basic_geometric_properties:
-            geometric_properties = regionprops(self.data)
+            geometric_properties = regionprops(self.data, spacing=self.resolution)
 
             # filter region props for useful properties
             # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
-            filtered_region_props = [
-                "area",  # for 3d this is the volume
-                "bbox",
-                "slice",  # the slice of the bounding box
-                "centroid",
-                "moments",
-                "extent",  # how much volume of the bounding box is occupied by the object
-                "solidity",  # ratio of pixels in the convex hull to those in the region
-            ]
+            filtered_region_props = {
+                "voxel_volume": "area",  # for 3d this is the volume
+                "voxel_bbox": "bbox",
+                "voxel_slice": "slice",  # the slice of the bounding box
+                "voxel_centroid": "centroid",
+                "voxel_extent": "extent",  # how much volume of the bounding box is occupied by the object
+                "voxel_solidity": "solidity",  # ratio of pixels in the convex hull to those in the region
+            }
 
             self._basic_geometric_properties[comp_level] = {
                 f"{self._organelle}_{str(region['label']).zfill(4)}": {
-                    prop: region[prop] for prop in filtered_region_props
+                    prop_name: region[prop]
+                    for prop_name, prop in filtered_region_props.items()
                 }
                 for region in geometric_properties
             }
@@ -171,9 +171,22 @@ class DataSource:
     def data(self) -> np.ndarray:
         """Load the raw data."""
         comp_level = self._project.compression_level
+
         if self._project.compression_level not in self._data:
             with open_file(str(self.metadata["data_root"]), "r") as f:
                 self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"]
+
+        if self._project.clipping is not None:
+            lower_corner, upper_corner = self._project.clipping
+            data_shape = self._data[comp_level].shape
+            clipped_low_corner = np.floor(lower_corner * data_shape).astype(int)
+            clipped_high_corner = np.ceil(upper_corner * data_shape).astype(int)
+            cube_slice = tuple(
+                slice(clip_low, clip_high, 1)
+                for clip_low, clip_high in zip(clipped_low_corner, clipped_high_corner)
+            )
+            self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"][cube_slice]
+
         return self._data[comp_level]
 
     @property
