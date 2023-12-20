@@ -122,23 +122,23 @@ class DataSource:
         comp_level = self._project.compression_level
 
         if comp_level not in self._basic_geometric_properties:
-            geometric_properties = regionprops(self.data)
+            geometric_properties = regionprops(self.data, spacing=self.resolution)
 
             # filter region props for useful properties
             # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
-            filtered_region_props = [
-                "area",  # for 3d this is the volume
-                "bbox",
-                "slice",  # the slice of the bounding box
-                "centroid",
-                "moments",
-                "extent",  # how much volume of the bounding box is occupied by the object
-                "solidity",  # ratio of pixels in the convex hull to those in the region
-            ]
+            filtered_region_props = {
+                "voxel_volume": "area",  # for 3d this is the volume
+                "voxel_bbox": "bbox",
+                "voxel_slice": "slice",  # the slice of the bounding box
+                "voxel_centroid": "centroid",
+                "voxel_extent": "extent",  # how much volume of the bounding box is occupied by the object
+                "voxel_solidity": "solidity",  # ratio of pixels in the convex hull to those in the region
+            }
 
             self._basic_geometric_properties[comp_level] = {
                 f"{self._organelle}_{str(region['label']).zfill(4)}": {
-                    prop: region[prop] for prop in filtered_region_props
+                    prop_name: region[prop]
+                    for prop_name, prop in filtered_region_props.items()
                 }
                 for region in geometric_properties
             }

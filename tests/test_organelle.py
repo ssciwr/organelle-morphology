@@ -7,7 +7,14 @@ import numpy as np
 def test_geometric_data(cebra_project_with_sources, cebra_project_original_meshes):
     p = cebra_project_with_sources
 
-    label_list = ["area", "bbox", "slice", "centroid", "moments", "extent", "solidity"]
+    label_list = [
+        "voxel_volume",
+        "voxel_bbox",
+        "voxel_slice",
+        "voxel_centroid",
+        "voxel_extent",
+        "voxel_solidity",
+    ]
 
     org_list = p.organelles()
 
@@ -18,13 +25,16 @@ def test_geometric_data(cebra_project_with_sources, cebra_project_original_meshe
         id_num = int(organelle.id.split("_")[-1])
         mesh = cebra_project_original_meshes[id_num]
 
-        distance_vec = mesh["center"] - organelle.geometric_data["centroid"]
+        distance_vec = mesh["center"] - organelle.geometric_data["voxel_centroid"]
         distance_vecs.append(distance_vec)
 
         # these two voxel somehow get changed when voxelizing the original meshes, so i will skip them for now
         if id_num not in [9, 17]:
             assert np.isclose(
-                mesh["volume"], organelle.geometric_data["area"], rtol=0.15, atol=500
+                mesh["volume"],
+                organelle.geometric_data["voxel_volume"],
+                rtol=0.15,
+                atol=500,
             )
 
         assert sorted(list(organelle.geometric_data.keys())) == sorted(label_list)
