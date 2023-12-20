@@ -171,13 +171,14 @@ class DataSource:
     def data(self) -> np.ndarray:
         """Load the raw data."""
         comp_level = self._project.compression_level
+
         if self._project.compression_level not in self._data:
             with open_file(str(self.metadata["data_root"]), "r") as f:
-                self._data = f[f"setup0/timepoint0/s{self._project.compression_level}"]
+                self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"]
 
         if self._project.clipping is not None:
             lower_corner, upper_corner = self._project.clipping
-            data_shape = self._data.shape
+            data_shape = self._data[comp_level].shape
             clipped_low_corner = np.floor(lower_corner * data_shape).astype(int)
             clipped_high_corner = np.ceil(upper_corner * data_shape).astype(int)
             cube_slice = tuple(
