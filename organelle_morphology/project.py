@@ -146,10 +146,8 @@ class Project:
 
     def show(self, ids: str = "*", show_morphology: bool = False):
         # filter organelles
-        orgs = []
         return_ids = False
-        for source in self._sources.values():
-            orgs.extend(source.organelles(ids, return_ids))
+        orgs = self.organelles(ids, return_ids)
 
         # draw meshes
         scene = trimesh.scene.Scene()
