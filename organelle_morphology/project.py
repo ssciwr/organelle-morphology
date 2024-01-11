@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import trimesh
 from functools import reduce
+import copy
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
@@ -143,6 +144,26 @@ class Project:
             )
 
         self._sources[source] = source_obj
+
+    def show(self, ids: str = "*", show_morphology: bool = False):
+        # filter organelles
+        orgs = []
+        return_ids = False
+        for source in self._sources.values():
+            orgs.extend(source.organelles(ids, return_ids))
+
+        # draw meshes
+        scene = trimesh.scene.Scene()
+
+        for org in orgs:
+            mesh = org.mesh.copy()
+
+            if show_morphology:
+                morph_map = org.morphology_map
+                mesh.visual.vertex_colors = trimesh.visual.interpolate(morph_map, "bwr")
+            scene.add_geometry(mesh)
+
+        return scene.show()
 
     @property
     def compression_level(self):
