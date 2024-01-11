@@ -32,6 +32,8 @@ dependencies = [
     "scipy",
     "scikit-image",
     "python-fcl",
+    "plotly",
+    "nbformat",
 ]
 
 [project.optional-dependencies]

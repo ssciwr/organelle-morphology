@@ -12,6 +12,8 @@ dependencies:
     - pytest
     - pytest-cov
     - nbval
+    - plotly
+    - nbformat
     - pip:
         - python-fcl
         - setuptools==65.7.0
