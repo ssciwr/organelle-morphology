@@ -281,4 +281,4 @@ def test_create_plotly_meshes(cebra_project_with_sources):
     meshes = p._create_plotly_meshes(ids="*001")
     assert len(meshes) == 1
 
-    meshes = p._create_plotly_meshes(ids="*001", show_morphology_map=True)
+    meshes = p._create_plotly_meshes(ids="*001", show_morphology=True)
