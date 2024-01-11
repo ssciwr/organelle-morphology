@@ -271,3 +271,14 @@ def test_show_mesh_scene(cebra_project_with_sources):
             mesh.visual.face_colors = trimesh.visual.random_color()
             scene.add_geometry(mesh)
     # scene.show()  # don't run this on ci
+
+
+def test_create_plotly_meshes(cebra_project_with_sources):
+    p = cebra_project_with_sources
+    meshes = p._create_plotly_meshes()
+    assert len(meshes) == 19
+
+    meshes = p._create_plotly_meshes(ids="*001")
+    assert len(meshes) == 1
+
+    meshes = p._create_plotly_meshes(ids="*001", show_morphology_map=True)

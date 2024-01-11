@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import trimesh
 from functools import reduce
+import plotly.graph_objects as go
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
@@ -144,23 +145,68 @@ class Project:
 
         self._sources[source] = source_obj
 
-    def show(self, ids: str = "*", show_morphology: bool = False):
+    def _create_plotly_meshes(self, ids: str = "*", show_morphology: bool = False):
         # filter organelles
+
         return_ids = False
         orgs = self.organelles(ids, return_ids)
 
-        # draw meshes
-        scene = trimesh.scene.Scene()
+        meshes_to_draw = []
 
         for org in orgs:
-            mesh = org.mesh.copy()
+            verts = org.mesh.vertices
+            faces = org.mesh.faces
+
+            # prepare data for plotly
+            vertsT = np.transpose(verts)
+            facesT = np.transpose(faces)
 
             if show_morphology:
-                morph_map = org.morphology_map
-                mesh.visual.vertex_colors = trimesh.visual.interpolate(morph_map, "bwr")
-            scene.add_geometry(mesh)
+                curvature_vertices = org.morphology_map
+                intensity = curvature_vertices
+                colorscale = "Viridis"
+                opacity = 1
+            else:
+                intensity = None
+                colorscale = None
+                opacity = 1
 
-        return scene.show()
+            go_mesh = go.Mesh3d(
+                x=vertsT[0],
+                y=vertsT[1],
+                z=vertsT[2],
+                i=facesT[0],
+                j=facesT[1],
+                k=facesT[2],
+                name=org.id,
+                opacity=opacity,
+                # note: opacity below 1 seems to be an ongoing issue with plotly in 3d.
+                # shapes might not be drawn in the correct order and overlap wierdly when moving the camera,
+                intensity=intensity,
+                colorscale=colorscale,
+                showscale=False,
+            )
+            meshes_to_draw.append(go_mesh)
+
+        return meshes_to_draw
+
+    def show(self, ids: str = "*", show_morphology: bool = False):
+        meshes_to_draw = self._create_plotly_meshes(ids, show_morphology)
+
+        # draw figure
+        fig = go.Figure()
+        for mesh_ in meshes_to_draw:
+            fig.add_traces(mesh_)
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(title="", showticklabels=False, showgrid=False),
+                yaxis=dict(title="", showticklabels=False, showgrid=False),
+                zaxis=dict(title="", showticklabels=False, showgrid=False),
+                aspectmode="cube",
+            )
+        )
+
+        return fig
 
     @property
     def compression_level(self):
