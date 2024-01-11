@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import trimesh
 from functools import reduce
-import copy
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
