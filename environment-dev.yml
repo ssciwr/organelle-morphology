@@ -12,6 +12,9 @@ dependencies:
     - pytest
     - pytest-cov
     - nbval
+    - cachetools
     - pip:
         - python-fcl
         - setuptools==65.7.0
+        - shelved_cache
+        - xdg
