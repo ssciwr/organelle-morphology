@@ -64,7 +64,9 @@ class Project:
         if isinstance(project_path, str):
             project_path = pathlib.Path(project_path)
 
-        # Identify the directory that containes project metadata JSON
+        self._project_path = project_path
+
+        # Identify the directory that contains project metadata JSON
         self._dataset_json_directory, self._project_metadata = load_metadata(
             project_path
         )
@@ -96,6 +98,10 @@ class Project:
 
         # The compression level at which we operate
         self._compression_level = 0
+
+    @property
+    def path(self):
+        return self._project_path
 
     def available_sources(self) -> list[str]:
         """List the data sources that are available in the project."""
