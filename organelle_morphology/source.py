@@ -1,4 +1,5 @@
 from organelle_morphology.organelle import Organelle, organelle_registry
+from organelle_morphology.util import parallel_pool
 
 from elf.io import open_file
 
@@ -162,9 +163,14 @@ class DataSource:
 
     @property
     def meshes(self):
+        with parallel_pool() as pool:
+            for organelle in self.organelles():
+                pool.apply_async(lambda: organelle.mesh, ())
+
         for organelle in self.organelles():
             if organelle.id not in self._meshes:
                 self._meshes[organelle.id] = organelle.mesh
+
         return self._meshes
 
     @property
