@@ -32,6 +32,9 @@ dependencies = [
     "scipy",
     "scikit-image",
     "python-fcl",
+    "cachetools",
+    "shelved_cache",
+    "xdg",
 ]
 
 [project.optional-dependencies]

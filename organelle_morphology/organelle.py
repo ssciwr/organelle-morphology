@@ -1,3 +1,5 @@
+from organelle_morphology.util import disk_cache
+
 import numpy as np
 import trimesh
 from skimage import measure
@@ -76,14 +78,16 @@ class Organelle:
         mesh.fix_normals()
         if smooth:
             trimesh.smoothing.filter_humphrey(mesh)
-        self._mesh[self._source._project.compression_level] = mesh
+        return mesh
 
     @property
     def mesh(self):
         """Get the mesh for this organelle"""
-        if self._source._project.compression_level not in self._mesh:
-            self._generate_mesh()
-        return self._mesh[self._source._project.compression_level]
+        with disk_cache(self._source._project, f"mesh_{self._organelle_id}") as cache:
+            if self._source._project.compression_level not in cache:
+                cache[self._source._project.compression_level] = self._generate_mesh()
+
+            return cache[self._source._project.compression_level]
 
     @property
     def id(self):
