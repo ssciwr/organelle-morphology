@@ -1,5 +1,6 @@
 from organelle_morphology.organelle import Organelle, organelle_types
 from organelle_morphology.source import DataSource
+from organelle_morphology.util import disk_cache
 
 import json
 import os
@@ -230,38 +231,38 @@ class Project:
 
     @property
     def distance_matrix(self):
-        if self._distance_matrix is not None:
-            return self._distance_matrix
+        with disk_cache(self, "distance_matrix") as cache:
+            if f"distance_matrix_{self.compression_level}" not in cache:
+                # flatten mesh dict:
+                flat_mesh_dict = {}
 
-        # flatten mesh dict:
-        flat_mesh_dict = {}
+                for source_key, source in self.meshes.items():
+                    for mesh_label, mesh in source.items():
+                        flat_mesh_dict[(source_key, mesh_label)] = mesh
 
-        for source_key, source in self.meshes.items():
-            for mesh_label, mesh in source.items():
-                flat_mesh_dict[(source_key, mesh_label)] = mesh
+                num_rows = len(flat_mesh_dict)
+                distance_matrix = np.zeros((num_rows, num_rows))
 
-        num_rows = len(flat_mesh_dict)
-        distance_matrix = np.zeros((num_rows, num_rows))
+                mesh_list = list(flat_mesh_dict.values())
 
-        mesh_list = list(flat_mesh_dict.values())
+                for i in np.arange(num_rows):
+                    for j in np.arange(i + 1, num_rows):
+                        col_manager_test = trimesh.collision.CollisionManager()
+                        col_manager_test.add_object(f"mesh{1}", mesh_list[i])
+                        col_manager_test.add_object(f"mesh{2}", mesh_list[j])
+                        distance = col_manager_test.min_distance_internal()
 
-        for i in np.arange(num_rows):
-            for j in np.arange(i + 1, num_rows):
-                col_manager_test = trimesh.collision.CollisionManager()
-                col_manager_test.add_object(f"mesh{1}", mesh_list[i])
-                col_manager_test.add_object(f"mesh{2}", mesh_list[j])
-                distance = col_manager_test.min_distance_internal()
+                        distance_matrix[i, j] = distance
+                        distance_matrix[j, i] = distance
 
-                distance_matrix[i, j] = distance
-                distance_matrix[j, i] = distance
+                distance_df = pd.DataFrame(
+                    distance_matrix,
+                    index=flat_mesh_dict.keys(),
+                    columns=flat_mesh_dict.keys(),
+                )
+                cache[f"distance_matrix_{self.compression_level}"] = distance_df
 
-        distance_df = pd.DataFrame(
-            distance_matrix,
-            index=flat_mesh_dict.keys(),
-            columns=flat_mesh_dict.keys(),
-        )
-        self._distance_matrix = distance_df
-        return self._distance_matrix
+            return cache[f"distance_matrix_{self.compression_level}"]
 
     @property
     def metadata(self):
