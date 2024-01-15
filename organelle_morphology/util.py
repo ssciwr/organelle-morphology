@@ -1,7 +1,6 @@
 import contextlib
 import cachetools
 import shelved_cache
-import pathlib
 import xdg
 
 
@@ -10,7 +9,7 @@ def disk_cache(project, name, maxsize=10000):
     # Define the cache
     cache = shelved_cache.PersistentCache(
         cachetools.LRUCache,
-        xdg.xdg_cache_home() / "organelle_morphology" / name,
+        str(xdg.xdg_cache_home() / "organelle_morphology" / name),
         maxsize=maxsize,
     )
 
