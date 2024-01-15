@@ -1,5 +1,6 @@
 import contextlib
 import cachetools
+import hashlib
 import multiprocessing
 import shelved_cache
 import xdg
@@ -14,7 +15,12 @@ def disk_cache(project, name, maxsize=10000):
     # Define the cache
     cache = shelved_cache.PersistentCache(
         cachetools.LRUCache,
-        str(xdg.xdg_cache_home() / "organelle_morphology" / name),
+        str(
+            xdg.xdg_cache_home()
+            / "organelle_morphology"
+            / hashlib.sha256(str(project.path.absolute()).encode("utf-8")).hexdigest()
+            / name
+        ),
         maxsize=maxsize,
     )
 
