@@ -298,7 +298,7 @@ class Project:
             return self._clipping
 
     def organelles(
-        self, ids: str = "*", return_ids: bool = False
+        self, ids: list[str] = "*", return_ids: bool = False
     ) -> list[Organelle] | list[str]:
         """Return a list of organelles found in the dataset
 
@@ -317,8 +317,11 @@ class Project:
         """
 
         result = []
+        if isinstance(ids, str):
+            ids = [ids]
 
-        for source in self._sources.values():
-            result.extend(source.organelles(ids, return_ids))
+        for id in ids:
+            for source in self._sources.values():
+                result.extend(source.organelles(id, return_ids))
 
         return result
