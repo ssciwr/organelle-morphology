@@ -1,9 +1,7 @@
 from organelle_morphology.util import disk_cache
 
 
-def test_cache(cebra_project, tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-
+def test_cache(cebra_project):
     with disk_cache(cebra_project, "test_cache") as cache:
         assert cache["timestamp"] == cebra_project.path.stat().st_mtime
 
