@@ -34,6 +34,9 @@ dependencies = [
     "python-fcl",
     "plotly",
     "nbformat",
+    "cachetools",
+    "shelved_cache",
+    "xdg",
 ]
 
 [project.optional-dependencies]
