@@ -146,7 +146,11 @@ class Project:
         self._sources[source] = source_obj
 
     def show(
-        self, ids: str = "*", show_morphology: bool = False, show_skeleton: bool = False
+        self,
+        ids: str = "*",
+        show_morphology: bool = False,
+        show_skeleton: bool = False,
+        height: int = 800,
     ):
         orgs = self.organelles(ids=ids, return_ids=False)
 
@@ -164,7 +168,8 @@ class Project:
                 yaxis=dict(title="", showticklabels=False, showgrid=False),
                 zaxis=dict(title="", showticklabels=False, showgrid=False),
                 aspectmode="cube",
-            )
+            ),
+            height=height,
         )
 
         return fig
