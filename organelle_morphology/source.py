@@ -1,5 +1,4 @@
 from organelle_morphology.organelle import Organelle, organelle_registry
-from organelle_morphology.util import parallel_pool
 
 from elf.io import open_file
 
@@ -147,31 +146,11 @@ class DataSource:
         return self._basic_geometric_properties[comp_level]
 
     @property
-    def mesh_properties(self):
-        """Get the mesh data for all organelles"""
-
-        for organelle in self.organelles():
-            self._mesh_properties[organelle.id] = organelle.mesh_properties
-        return self._mesh_properties
-
-    @property
     def morphology_map(self):
         """Get the morphology map for all organelles"""
         for organelle in self.organelles():
             self._morphology_map[organelle.id] = organelle.morphology_map
         return self._morphology_map
-
-    @property
-    def meshes(self):
-        with parallel_pool() as pool:
-            for organelle in self.organelles():
-                pool.apply_async(lambda: organelle.mesh, ())
-
-        for organelle in self.organelles():
-            if organelle.id not in self._meshes:
-                self._meshes[organelle.id] = organelle.mesh
-
-        return self._meshes
 
     @property
     def data(self) -> np.ndarray:
