@@ -2,6 +2,7 @@ import numpy as np
 import trimesh
 from skimage import measure
 import logging
+import plotly.graph_objects as go
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
@@ -78,6 +79,47 @@ class Organelle:
             trimesh.smoothing.filter_humphrey(mesh)
         self._mesh[self._source._project.compression_level] = mesh
 
+    def plotly_mesh(self, show_morphology: bool = False, show_skeleton: bool = False):
+        # prepare the plotly mesh object for visualization
+        verts = self.mesh.vertices
+        faces = self.mesh.faces
+
+        # prepare data for plotly
+        vertsT = np.transpose(verts)
+        facesT = np.transpose(faces)
+
+        # initilize basic drawing settings
+        intensity = None
+        colorscale = None
+        opacity = 1
+
+        # override settings if special visualization is requested
+        if show_morphology:
+            curvature_vertices = self.morphology_map
+            intensity = curvature_vertices
+            colorscale = "Viridis"
+            opacity = 1
+
+        if show_skeleton:
+            raise NotImplementedError("Skeleton visualization not implemented yet")
+
+        go_mesh = go.Mesh3d(
+            x=vertsT[0],
+            y=vertsT[1],
+            z=vertsT[2],
+            i=facesT[0],
+            j=facesT[1],
+            k=facesT[2],
+            name=self.id,
+            opacity=opacity,
+            # note: opacity below 1 seems to be an ongoing issue with plotly in 3d.
+            # shapes might not be drawn in the correct order and overlap wierdly when moving the camera,
+            intensity=intensity,
+            colorscale=colorscale,
+            showscale=False,
+        )
+        return go_mesh
+
     @property
     def mesh(self):
         """Get the mesh for this organelle"""
@@ -142,6 +184,7 @@ class Organelle:
         """Get the mesh data for this organelle"""
         comp_level = self._source._project.compression_level
 
+        # morph radius can be 0 if vertices are used as sample points.
         morph_radius = 0.0
 
         if comp_level not in self._morphology_map:

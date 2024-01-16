@@ -145,58 +145,19 @@ class Project:
 
         self._sources[source] = source_obj
 
-    def _create_plotly_meshes(self, ids: str = "*", show_morphology: bool = False):
-        # filter organelles
-
-        return_ids = False
-        orgs = self.organelles(ids, return_ids)
-
-        meshes_to_draw = []
-
-        for org in orgs:
-            verts = org.mesh.vertices
-            faces = org.mesh.faces
-
-            # prepare data for plotly
-            vertsT = np.transpose(verts)
-            facesT = np.transpose(faces)
-
-            if show_morphology:
-                curvature_vertices = org.morphology_map
-                intensity = curvature_vertices
-                colorscale = "Viridis"
-                opacity = 1
-            else:
-                intensity = None
-                colorscale = None
-                opacity = 1
-
-            go_mesh = go.Mesh3d(
-                x=vertsT[0],
-                y=vertsT[1],
-                z=vertsT[2],
-                i=facesT[0],
-                j=facesT[1],
-                k=facesT[2],
-                name=org.id,
-                opacity=opacity,
-                # note: opacity below 1 seems to be an ongoing issue with plotly in 3d.
-                # shapes might not be drawn in the correct order and overlap wierdly when moving the camera,
-                intensity=intensity,
-                colorscale=colorscale,
-                showscale=False,
-            )
-            meshes_to_draw.append(go_mesh)
-
-        return meshes_to_draw
-
-    def show(self, ids: str = "*", show_morphology: bool = False):
-        meshes_to_draw = self._create_plotly_meshes(ids, show_morphology)
+    def show(
+        self, ids: str = "*", show_morphology: bool = False, show_skeleton: bool = False
+    ):
+        orgs = self.organelles(ids=ids, return_ids=False)
 
         # draw figure
         fig = go.Figure()
-        for mesh_ in meshes_to_draw:
-            fig.add_traces(mesh_)
+        for org in orgs:
+            fig.add_traces(
+                org.plotly_mesh(
+                    show_morphology=show_morphology, show_skeleton=show_skeleton
+                )
+            )
         fig.update_layout(
             scene=dict(
                 xaxis=dict(title="", showticklabels=False, showgrid=False),
