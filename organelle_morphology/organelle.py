@@ -5,6 +5,7 @@ import trimesh
 from skimage import measure
 import logging
 import plotly.graph_objects as go
+import skeletor as sk
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
@@ -121,6 +122,15 @@ class Organelle:
             showscale=False,
         )
         return go_mesh
+
+    def _generate_skeleton(self):
+        fixed_mesh = sk.pre.fix_mesh(self.mesh)
+        cont = sk.pre.contract(fixed_mesh, epsilon=0.1)
+        skel = sk.skeletonize.by_vertex_clusters(cont, sampling_dist=100)
+        skel.mesh = fixed_mesh
+        sk.post.radii(skel, method="knn")
+
+        return skel
 
     @property
     def mesh(self):
