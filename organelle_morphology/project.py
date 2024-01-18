@@ -151,6 +151,19 @@ class Project:
 
         self._sources[source] = source_obj
 
+    def generate_skeletons(
+        self,
+        ids: str = "*",
+        theta: float = 0.4,
+        epsilon: float = 0.05,
+        sampling_dist: float = 2.0,
+    ):
+        orgs = self.organelles(ids=ids, return_ids=False)
+        for org in orgs:
+            org.generate_skeleton(
+                theta=theta, epsilon=epsilon, sampling_dist=sampling_dist
+            )
+
     def show(
         self,
         ids: str = "*",
@@ -168,6 +181,9 @@ class Project:
                     show_morphology=show_morphology, show_skeleton=show_skeleton
                 )
             )
+            if show_skeleton:
+                fig.add_traces(org.plotly_skeleton())
+
         fig.update_layout(
             scene=dict(
                 xaxis=dict(title="", showticklabels=False, showgrid=False),
