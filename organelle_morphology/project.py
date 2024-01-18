@@ -40,6 +40,10 @@ def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
     )
 
 
+def _picklable_mesh_extractor(organelle):
+    return organelle.mesh
+
+
 class Project:
     def __init__(
         self,
@@ -170,7 +174,7 @@ class Project:
 
         with parallel_pool() as pool:
             for organelle in self.organelles():
-                pool.apply_async(lambda: organelle.mesh, ())
+                pool.apply_async(_picklable_mesh_extractor, (organelle,)).get()
 
     @property
     def geometric_properties(self):
