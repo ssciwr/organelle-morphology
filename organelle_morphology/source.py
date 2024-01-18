@@ -146,26 +146,11 @@ class DataSource:
         return self._basic_geometric_properties[comp_level]
 
     @property
-    def mesh_properties(self):
-        """Get the mesh data for all organelles"""
-
-        for organelle in self.organelles():
-            self._mesh_properties[organelle.id] = organelle.mesh_properties
-        return self._mesh_properties
-
-    @property
     def morphology_map(self):
         """Get the morphology map for all organelles"""
         for organelle in self.organelles():
             self._morphology_map[organelle.id] = organelle.morphology_map
         return self._morphology_map
-
-    @property
-    def meshes(self):
-        for organelle in self.organelles():
-            if organelle.id not in self._meshes:
-                self._meshes[organelle.id] = organelle.mesh
-        return self._meshes
 
     @property
     def data(self) -> np.ndarray:

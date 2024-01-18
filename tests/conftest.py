@@ -41,3 +41,9 @@ def cebra_project_with_sources(cebra_project):
 
     cebra_project.add_source("synth_data", "mito")
     return cebra_project
+
+
+@pytest.fixture(autouse=True)
+def temporary_cache_directory(tmp_path, monkeypatch):
+    """A fixture that sets the cache directory to a temporary directory"""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
