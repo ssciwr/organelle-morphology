@@ -70,6 +70,7 @@ class Organelle:
             )
 
     def _generate_mesh(self, smooth=True):
+        print("mesh for", self.id)
         try:
             verts, faces, _, _ = measure.marching_cubes(
                 self.data, spacing=self._source.resolution
@@ -99,33 +100,44 @@ class Organelle:
         """
 
         fixed_mesh = sk.pre.fix_mesh(self.mesh)
-        cont = sk.pre.contract(fixed_mesh, epsilon=epsilon, progress=False)
-        skel = sk.skeletonize.by_vertex_clusters(
-            cont, sampling_dist=sampling_dist, progress=False
-        )
-        skel.mesh = fixed_mesh
-        sk.post.clean_up(skel, inplace=True, theta=theta)
+        # cont = sk.pre.contract(fixed_mesh, epsilon=epsilon, progress=False)
+        # skel = sk.skeletonize.by_vertex_clusters(
+        #     cont, sampling_dist=sampling_dist, progress=False
+        # )
+        print(self.id)
 
-        self._skeleton = skel
+        try:
+            skel = sk.skeletonize.by_wavefront(
+                fixed_mesh, waves=1, progress=False, step_size=2
+            )
 
+            skel.mesh = fixed_mesh
+            sk.post.clean_up(skel, inplace=True, theta=theta)
+
+            self._skeleton = skel
+        except IndexError:
+            print(f"Can't generate skeleton for {self.id}")
+            self._skeleton = None
         # sample the skeleton
 
+    def sample_skeleton(self):
         # the sample points are points along the skeleton arms
         # and the reference points are the vertices of the skeleton from which these samples have been generated.
         # we need these to later calculate the normal vector for the plane which will intersect our mesh
         sampled_path = []
         reference_point = []
 
-        for edge in skel.edges:
+        for edge in self.skeleton.edges:
             edge_len = np.linalg.norm(
-                np.array(skel.vertices[edge[0]]) - np.array(skel.vertices[edge[1]])
+                np.array(self.skeleton.vertices[edge[0]])
+                - np.array(self.skeleton.vertices[edge[1]])
             )
             # set the distance between points for the path sampling
             distance_between_points = 0.1
 
             if edge_len > distance_between_points:
-                p1 = np.array(skel.vertices[edge[0]])
-                p2 = np.array(skel.vertices[edge[1]])
+                p1 = np.array(self.skeleton.vertices[edge[0]])
+                p2 = np.array(self.skeleton.vertices[edge[1]])
 
                 # find number of points to add bewteen the two vertices
                 n_points = np.ceil(edge_len / distance_between_points).astype(int)
@@ -143,6 +155,9 @@ class Organelle:
         self._sampled_skeleton = sampled_path, reference_point
 
     def plotly_skeleton(self):
+        if self._skeleton is None:
+            return None
+
         nodes = self.skeleton.vertices
         edges = self.skeleton.edges
 
@@ -176,6 +191,7 @@ class Organelle:
 
     def plotly_mesh(self, show_morphology: bool = False, show_skeleton: bool = False):
         # prepare the plotly mesh object for visualization
+
         verts = self.mesh.vertices
         faces = self.mesh.faces
 
@@ -218,10 +234,10 @@ class Organelle:
     @property
     def skeleton(self):
         """Get the skeleton for this organelle"""
-        if self._skeleton is None:
-            raise ValueError(
-                f"Skeleton has not been generated for {self.id} yet. Please run project.generate_skeletons() first."
-            )
+        # if self._skeleton is None:
+        #     raise ValueError(
+        #         f"Skeleton has not been generated for {self.id} yet. Please run project.generate_skeletons() first."
+        #     )
 
         return self._skeleton
 
@@ -235,7 +251,7 @@ class Organelle:
             raise ValueError(
                 f"Skeleton has not been generated for {self.id} yet. Please run project.generate_skeletons() first."
             )
-
+        self.sample_skeleton()
         return self._sampled_skeleton
 
     @property
@@ -244,6 +260,7 @@ class Organelle:
         with disk_cache(self._source._project, f"mesh_{self._organelle_id}") as cache:
             if self._source._project.compression_level not in cache:
                 cache[self._source._project.compression_level] = self._generate_mesh()
+            print("found in cache", self.id)
 
             return cache[self._source._project.compression_level]
 
