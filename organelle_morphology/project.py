@@ -1,5 +1,6 @@
 from organelle_morphology.organelle import Organelle, organelle_types
 from organelle_morphology.source import DataSource
+from organelle_morphology.util import disk_cache, parallel_pool
 
 import json
 import os
@@ -40,26 +41,35 @@ def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
     )
 
 
+def _picklable_mesh_extractor(organelle):
+    return organelle.mesh
+
+
 class Project:
     def __init__(
         self,
         project_path: pathlib.Path | str = os.getcwd(),
         clipping: tuple[tuple[float]] | None = None,
+        compression_level: int = 0,
     ):
-        """def test_basic_geometric_properties(
-        Instantiate an EM project
+        """Instantiate an EM project
 
-                The given path is expected to contain either a CebraEM or Mobie
-                project JSON file. This is a lazy operation. No data except metadata
-                is loaded until it is required.
+        The given path is expected to contain either a CebraEM or Mobie
+        project JSON file. This is a lazy operation. No data except metadata
+        is loaded until it is required.
 
-                :param project_path:
-                    The location of the CebraEM/Mobie project
+        :param project_path:
+            The location of the CebraEM/Mobie project
 
-                :param clipping:
-                    If not None, the data is clipped with the given lower left and the given
-                    upper right corner as the bounding box of the clipping. Coordinates are
-                    expected to be in micrometer.
+        :param clipping:
+            If not None, the data is clipped with the given lower left and the given
+            upper right corner as the bounding box of the clipping. Coordinates are
+            expected to be in micrometer.
+
+        :param compression_level:
+            The compression level at which we operate. This is used to determine
+            the resolution of the data that we work with. The default of 0
+            corresponds to the highest resolution.
         """
 
         if isinstance(project_path, str):
@@ -98,7 +108,10 @@ class Project:
         self._morphology_map = {}
 
         # The compression level at which we operate
-        self._compression_level = 0
+        if compression_level < 0:
+            raise ValueError(f"Compression level must be >= 0, got {compression_level}")
+
+        self._compression_level = compression_level
 
     @property
     def path(self):
@@ -186,22 +199,12 @@ class Project:
 
         return self._compression_level
 
-    @compression_level.setter
-    def compression_level(self, compression_level):
-        # Validate against the compression levels being in the already registered
-        # data sources. For sources added later, add_sources checks whether they
-        # provide the current compression level.
+    def calculate_meshes(self):
+        """Trigger the calculation of meshes for all organelles"""
 
-        if compression_level < 0:
-            raise ValueError(f"Compression level must be >= 0, got {compression_level}")
-
-        for source in self._sources.values():
-            if compression_level >= len(source.metadata["downsampling"]):
-                raise ValueError(
-                    f"Compression level {compression_level} is not available for source {source.metadata['data_root']}"
-                )
-
-        self._compression_level = compression_level
+        with parallel_pool() as pool:
+            for organelle in self.organelles():
+                pool.apply_async(_picklable_mesh_extractor, (organelle,)).get()
 
     @property
     def geometric_properties(self):
@@ -223,19 +226,17 @@ class Project:
         "flatness_ratio": how cubic the mesh is (0-1)
 
         """
-        for source_key, source in self._sources.items():
-            # if source_key not in self._basic_geometric_properties:
 
-            source_basic_geometric_properties = source.basic_geometric_properties
-            source_mesh_properties = source.mesh_properties
+        # Trigger the calculation of all meshes in a parallel pool
+        self.calculate_meshes()
 
-            for org_key in source_basic_geometric_properties.keys():
-                self._geometric_properties[org_key] = (
-                    source_mesh_properties[org_key]
-                    | source_basic_geometric_properties[org_key]
-                )
+        properties = {}
+        for organelle in self.organelles():
+            properties[organelle.id] = (
+                organelle.geometric_data | organelle.mesh_properties
+            )
 
-        return pd.DataFrame(self._geometric_properties).T
+        return pd.DataFrame(properties).T
 
     @property
     def morphology_map(self):
@@ -248,50 +249,39 @@ class Project:
         return self._morphology_map
 
     @property
-    def meshes(self):
-        """The meshes of the organelles"""
-
-        # results should be saved on a source level
-        for source_key, source in self._sources.items():
-            # if source_key not in self._meshes:
-            self._meshes[source_key] = source.meshes
-
-        return self._meshes
-
-    @property
     def distance_matrix(self):
-        if self._distance_matrix is not None:
-            return self._distance_matrix
+        # Trigger the calculation of all meshes in a parallel pool
+        self.calculate_meshes()
 
-        # flatten mesh dict:
-        flat_mesh_dict = {}
+        with disk_cache(self, "distance_matrix") as cache:
+            if f"distance_matrix_{self.compression_level}" not in cache:
+                meshes = []
+                organelles = []
+                for organelle in self.organelles():
+                    organelles.append(organelle.id)
+                    meshes.append(organelle.mesh)
 
-        for source_key, source in self.meshes.items():
-            for mesh_label, mesh in source.items():
-                flat_mesh_dict[(source_key, mesh_label)] = mesh
+                num_rows = len(meshes)
+                distance_matrix = np.zeros((num_rows, num_rows))
 
-        num_rows = len(flat_mesh_dict)
-        distance_matrix = np.zeros((num_rows, num_rows))
+                for i in np.arange(num_rows):
+                    for j in np.arange(i + 1, num_rows):
+                        col_manager_test = trimesh.collision.CollisionManager()
+                        col_manager_test.add_object("mesh1", meshes[i])
+                        col_manager_test.add_object("mesh2", meshes[j])
+                        distance = col_manager_test.min_distance_internal()
 
-        mesh_list = list(flat_mesh_dict.values())
+                        distance_matrix[i, j] = distance
+                        distance_matrix[j, i] = distance
 
-        for i in np.arange(num_rows):
-            for j in np.arange(i + 1, num_rows):
-                col_manager_test = trimesh.collision.CollisionManager()
-                col_manager_test.add_object(f"mesh{1}", mesh_list[i])
-                col_manager_test.add_object(f"mesh{2}", mesh_list[j])
-                distance = col_manager_test.min_distance_internal()
+                distance_df = pd.DataFrame(
+                    distance_matrix,
+                    index=organelles,
+                    columns=organelles,
+                )
+                cache[f"distance_matrix_{self.compression_level}"] = distance_df
 
-                distance_matrix[i, j] = distance
-                distance_matrix[j, i] = distance
-
-        distance_df = pd.DataFrame(
-            distance_matrix,
-            index=flat_mesh_dict.keys(),
-            columns=flat_mesh_dict.keys(),
-        )
-        self._distance_matrix = distance_df
-        return self._distance_matrix
+            return cache[f"distance_matrix_{self.compression_level}"]
 
     @property
     def metadata(self):

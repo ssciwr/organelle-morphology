@@ -124,41 +124,6 @@ def test_add_source(cebra_project):
         cebra_project.add_source("correct_source_todo", "wrong_organelle")
 
 
-def test_compression_level(cebra_project):
-    """Check the reading/writing of the compression level"""
-
-    p = cebra_project
-
-    # Default compression level should be 0
-    assert p.compression_level == 0
-
-    # test impossible compression without added source
-
-    p.compression_level = 42
-
-    with pytest.raises(ValueError):
-        p.add_source(source="synth_data", organelle="mito")
-
-    # add source
-    p.compression_level = 2
-    p.add_source(source="synth_data", organelle="mito")
-
-    # compression level shoulnd't be changed after adding source
-    assert p.compression_level == 2
-
-    # Change it to 1
-    p.compression_level = 1
-    assert p.compression_level == 1
-
-    # change it to 42
-    with pytest.raises(ValueError):
-        p.compression_level = 42
-
-    # change to -1
-    with pytest.raises(ValueError):
-        p.compression_level = -1
-
-
 def test_project_organelles(cebra_project_with_sources):
     """Check that the filtering of organelles works correctly"""
 
@@ -222,36 +187,6 @@ def test_morphology_map(cebra_project_with_sources):
 
     assert p.morphology_map
     assert len(p.morphology_map["synth_data"]) == 19
-
-
-def test_properties_compression_level(cebra_project_with_sources):
-    p = cebra_project_with_sources
-
-    p.compression_level = 2
-    properties_1 = copy.deepcopy(p.geometric_properties)
-    meshes_1 = copy.deepcopy(p.meshes)
-    morph_map_1 = copy.deepcopy(p.morphology_map)
-
-    p.compression_level = 3
-    properties_2 = copy.deepcopy(p.geometric_properties)
-    meshes_2 = copy.deepcopy(p.meshes)
-    morph_map_2 = copy.deepcopy(p.morphology_map)
-
-    with pytest.raises(AssertionError):
-        pd.testing.assert_frame_equal(properties_1, properties_2)
-
-    assert meshes_1 != meshes_2
-
-    for source_key in meshes_1.keys():
-        assert source_key in meshes_2
-        for org_key in meshes_1[source_key].keys():
-            if (
-                morph_map_2[source_key][org_key] is not None
-                and morph_map_1[source_key][org_key] is not None
-            ):
-                assert len(morph_map_2[source_key][org_key]) != len(
-                    morph_map_1[source_key][org_key]
-                )
 
 
 def test_distance_matrix(cebra_project_with_sources):

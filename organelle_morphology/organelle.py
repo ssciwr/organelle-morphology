@@ -157,13 +157,6 @@ class Organelle:
         """Get the mesh data for this organelle"""
         comp_level = self._source._project.compression_level
 
-        if comp_level not in self._mesh:
-            self._generate_mesh()
-
-        if self.mesh is None:
-            self._mesh_properties[comp_level] = {"could_not_generate_mesh": True}
-            return self._mesh_properties[comp_level]
-
         if comp_level not in self._mesh_properties:
             self._mesh_properties[comp_level] = {}
 
