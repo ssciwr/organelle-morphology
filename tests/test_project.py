@@ -221,3 +221,9 @@ def test_show(cebra_project_with_sources):
     p.show(ids="*1")
 
     p.show(show_morphology=True)
+
+    # no skeletons present
+    p.show(show_skeleton=True)
+
+    p.skeletonize_wavefront(skip_existing=True)
+    p.show(show_skeleton=True)

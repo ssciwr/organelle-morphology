@@ -90,3 +90,18 @@ def test_organelle_morphology(cebra_project_with_sources):
     org_list = p.organelles()
     for organelle in org_list:
         assert organelle.morphology_map is not None
+
+
+def test_skeletonize(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    org_list = p.organelles()[0:2]
+    for organelle in org_list:
+        with pytest.raises(ValueError):
+            organelle._generate_skeleton(skeletonization_type="something_wrong")
+        organelle._generate_skeleton(skeletonization_type="vertex_clusters")
+        assert organelle.skeleton.method == "vertex_clusters"
+        organelle._generate_skeleton(skeletonization_type="wavefront")
+        assert organelle.skeleton.method == "wavefront"
+
+        assert len(organelle.sampled_skeleton) > 0
