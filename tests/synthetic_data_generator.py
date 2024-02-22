@@ -260,7 +260,7 @@ def generate_synthetic_mesh_set(
 
     for mesh_dict in meshes:
         mesh = mesh_dict["mesh"]
-        voxel = mesh.voxelized(voxel_size)
+        voxel = mesh.voxelized(voxel_size, method="ray")
 
         voxel.fill()
         mesh_dict["voxelized"] = voxel
@@ -296,7 +296,7 @@ def generate_synthetic_mesh_set(
             position[2] : end_position[2],
         ] += voxelized.matrix * (i + 1)
         meshes[i]["id"] = i + 1
-    voxel_array = _array_trim(voxel_array)
+    voxel_array = _array_trim(voxel_array, margin=10)
     voxel_array = voxel_array.astype(np.uint16)
 
     # remove any voxels that are labled higher than the len of meshes.

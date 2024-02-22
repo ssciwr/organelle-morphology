@@ -157,8 +157,8 @@ def test_geometric_properties(
         mesh_id = int(org_key.split("_")[-1])
 
         # skip these (see test_geometric_data)
-        if mesh_id in [9, 17]:
-            continue
+        # if mesh_id in [9, 17]:
+        #     continue
 
         original_mesh = cebra_project_original_meshes[mesh_id]
 
@@ -193,3 +193,30 @@ def test_distance_matrix(cebra_project_with_sources):
     p = cebra_project_with_sources
 
     assert p.distance_matrix.shape == (19, 19)
+
+
+def test_visualization(cebra_project_with_sources, cebra_project_original_meshes):
+    p = cebra_project_with_sources
+    p.calculate_meshes()
+    import trimesh
+
+    scene = trimesh.Scene()
+
+    for organelle in p.organelles("mito_0009"):
+        mesh_1 = organelle.mesh
+        mesh_1.vertices -= mesh_1.centroid
+        trimesh.repair.fix_normals(mesh_1)
+        trimesh.repair.fix_inversion(mesh_1)
+        scene.add_geometry(mesh_1)
+
+    mesh_2 = cebra_project_original_meshes[9]["mesh"]
+    mesh_2.vertices -= mesh_2.centroid
+    mesh_2.vertices += (20, 0, 0)
+    trimesh.repair.fix_normals(mesh_2)
+    trimesh.repair.fix_inversion(mesh_2)
+    scene.add_geometry(mesh_2)
+
+    print(mesh_1.volume, mesh_2.volume)
+    print(mesh_1.is_watertight, mesh_2.is_watertight)
+    1 / 0
+    scene.show()
