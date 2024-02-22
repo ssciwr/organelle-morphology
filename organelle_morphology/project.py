@@ -264,14 +264,69 @@ class Project:
 
         return fig
 
+    def distance_filtering(
+        self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="names"
+    ):
+        """Filter the organelles based on the distance between two filtered organelle lists.
+              These can be from one or more types depending on the given filter.
+
+        :param ids_source: Filter string for the source ids, defaults to "*"
+        :type ids_source: str, optional
+        :param ids_target: filter string for the target ids, defaults to "*"
+        :type ids_target: str, optional
+        :param filter_distance: The distance in micro meter used for filtering, defaults to 0.01
+        :type filter_distance: float, optional
+        :param attribute: Show names or number of contact sites ("n_mcs), defaults to "names"
+        :type attribute: str, optional
+
+        :return: Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
+        :rtype: dict
+        """
+        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
+        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
+        # Filter the DataFrame by row values
+        filtered_df = distance_matrix[
+            distance_matrix.apply(lambda row: row.min() < filter_distance, axis=1)
+        ]
+
+        # Convert the filtered DataFrame to a dictionary
+        filtered_dict = filtered_df.to_dict("index")
+
+        # For each entry in the dictionary, replace the values with the column names that match the filter
+        keys_to_remove = []
+        for key in filtered_dict:
+            filtered_dict[key] = [
+                col
+                for col, value in filtered_dict[key].items()
+                if value < filter_distance
+            ]
+
+            # remove the self distance if present
+            if key in filtered_dict[key]:
+                filtered_dict[key].remove(key)
+
+            # remove the key if no value is present
+            if not filtered_dict[key]:
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del filtered_dict[key]
+
+        if attribute == "n_mcs":
+            for key in filtered_dict.keys():
+                filtered_dict[key] = len(filtered_dict[key])
+
+        return filtered_dict
+
     def distance_analysis(self, ids_source="*", ids_target="*", attribute="dist"):
         """get more information about the distance between two filtered organelle lists.
            These can be from one or more types depending on the given filter.
 
-        :param ids_1: _description_
-        :type ids_1: _type_
-        :param ids_2: _description_
-        :type ids_2: _type_
+        :param ids_source: Filter string for the source ids, defaults to "*"
+        :type ids_source: str, optional
+        :param ids_target: filter string for the target ids, defaults to "*"
+        :type ids_target: str, optional
         :param attribute: The attribute to be used for the distance analysis.
         Possible values are "dist", "min", "mean".
         dist: the distance matrix between the organelles
@@ -299,10 +354,11 @@ class Project:
             df_mean = pd.DataFrame(
                 distance_matrix.mean(axis=1).items(), columns=["id_source", "id_target"]
             )
-            df_mean["std of target distance"] = distance_matrix.std(axis=1).values
             df_mean.rename(
-                columns={0: "id_source", 1: "mean distance to target"}, inplace=True
+                columns={"id_target": "mean distance to target"}, inplace=True
             )
+            df_mean["std of target distance"] = distance_matrix.std(axis=1).values
+
             return df_mean
 
     def hist_distance_matrix(
@@ -419,7 +475,6 @@ class Project:
 
                 num_rows = len(meshes)
                 distance_matrix = np.zeros((num_rows, num_rows))
-                # num_distances = (num_rows * (num_rows - 1)) / 2
                 with parallel_pool(num_rows) as (pool, pbar):
                     for i in np.arange(num_rows):
                         # for j in np.arange(i + 1, num_rows):
