@@ -185,6 +185,21 @@ class Project:
         skip_existing=False,
         path_samplple_dist: float = 0.1,
     ):
+        """Note that some meshes will be skipped if they are too small to be skeletonized.
+
+        :param ids: _description_, defaults to "*"
+        :type ids: str, optional
+        :param theta: _description_, defaults to 0.4
+        :type theta: float, optional
+        :param waves: _description_, defaults to 1
+        :type waves: int, optional
+        :param step_size: _description_, defaults to 2
+        :type step_size: int, optional
+        :param skip_existing: _description_, defaults to False
+        :type skip_existing: bool, optional
+        :param path_samplple_dist: _description_, defaults to 0.1
+        :type path_samplple_dist: float, optional
+        """
         orgs = self.organelles(ids=ids, return_ids=False)
         for org in orgs:
             if skip_existing and org.skeleton is not None:
@@ -375,6 +390,42 @@ class Project:
             xaxis_title_text="Distance",
             yaxis_title_text="Count",
             title="Distance matrix histogram",
+        )
+        return fig
+
+    def hist_skeletons(self, ids="*", attribute="num_nodes"):
+        """Plot the histogram fromt he skeleton info.
+
+        :param ids: Filter id, defaults to "*"
+        :type ids: str, optional
+        :param attribute: which attribute to plot, defaults to "num_nodes".
+            can be:
+            "num_nodes": number of nodes in the skeleton
+            "num_branch_points": number of branch points in the skeleton
+            "end points": number of end points in the skeleton
+            "total_length": total length of the skeleton
+            "mean_length": mean length of the skeleton
+            "longest_path": longest path in the skeleton
+
+        :type attribute: str, optional
+        :return: _description_
+        :rtype: _type_
+        """
+        orgs = self.organelles(ids=ids, return_ids=False)
+        # drop organelles without skeleton
+        valid_orgs = []
+        for org in orgs:
+            if org.skeleton is not None:
+                valid_orgs.append(org.id)
+
+        skeleton_info = self.skeleton_info.loc[valid_orgs]
+        data = skeleton_info[attribute].values
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(x=data))
+        fig.update_layout(
+            xaxis_title_text=attribute,
+            yaxis_title_text="Count",
+            title=f"{attribute} histogram",
         )
         return fig
 
