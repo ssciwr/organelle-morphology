@@ -50,7 +50,6 @@ def set_parallel_cores():
 @contextlib.contextmanager
 def parallel_pool(total=None):
     """A context manager that runs the code in parallel"""
-
     # Create a process pool
     pool = multiprocessing.Pool(_multiprocessing_cores)
 

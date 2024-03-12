@@ -45,6 +45,18 @@ def _picklable_mesh_extractor(organelle):
     return organelle.mesh
 
 
+def _picklable_distance_calculation(meshes, i):
+    col_manager_test = trimesh.collision.CollisionManager()
+    col_manager_test.add_object("mesh1", meshes[i])
+    distances = []
+    for j in np.arange(i + 1, len(meshes)):
+        distances.append(col_manager_test.min_distance_single(meshes[j]))
+
+    # prox_query = trimesh.proximity.ProximityQuery(meshes[i])
+    # distance = prox_query.on_surface(meshes[j].vertices)[1]
+    return distances
+
+
 class Project:
     def __init__(
         self,
@@ -173,6 +185,21 @@ class Project:
         skip_existing=False,
         path_samplple_dist: float = 0.1,
     ):
+        """Note that some meshes will be skipped if they are too small to be skeletonized.
+
+        :param ids: _description_, defaults to "*"
+        :type ids: str, optional
+        :param theta: _description_, defaults to 0.4
+        :type theta: float, optional
+        :param waves: _description_, defaults to 1
+        :type waves: int, optional
+        :param step_size: _description_, defaults to 2
+        :type step_size: int, optional
+        :param skip_existing: _description_, defaults to False
+        :type skip_existing: bool, optional
+        :param path_samplple_dist: _description_, defaults to 0.1
+        :type path_samplple_dist: float, optional
+        """
         orgs = self.organelles(ids=ids, return_ids=False)
         for org in orgs:
             if skip_existing and org.skeleton is not None:
@@ -252,6 +279,156 @@ class Project:
 
         return fig
 
+    def distance_filtering(
+        self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="names"
+    ):
+        """Filter the organelles based on the distance between two filtered organelle lists.
+              These can be from one or more types depending on the given filter.
+
+        :param ids_source: Filter string for the source ids, defaults to "*"
+        :type ids_source: str, optional
+        :param ids_target: filter string for the target ids, defaults to "*"
+        :type ids_target: str, optional
+        :param filter_distance: The distance in micro meter used for filtering, defaults to 0.01
+        :type filter_distance: float, optional
+        :param attribute: Show names or number of contact sites ("n_mcs), defaults to "names"
+        :type attribute: str, optional
+
+        :return: Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
+        :rtype: dict
+        """
+        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
+        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
+        # Filter the DataFrame by row values
+        filtered_df = distance_matrix[
+            distance_matrix.apply(lambda row: row.min() < filter_distance, axis=1)
+        ]
+
+        # Convert the filtered DataFrame to a dictionary
+        filtered_dict = filtered_df.to_dict("index")
+
+        # For each entry in the dictionary, replace the values with the column names that match the filter
+        keys_to_remove = []
+        for key in filtered_dict:
+            filtered_dict[key] = [
+                col
+                for col, value in filtered_dict[key].items()
+                if value < filter_distance
+            ]
+
+            # remove the self distance if present
+            if key in filtered_dict[key]:
+                filtered_dict[key].remove(key)
+
+            # remove the key if no value is present
+            if not filtered_dict[key]:
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del filtered_dict[key]
+
+        if attribute == "n_mcs":
+            for key in filtered_dict.keys():
+                filtered_dict[key] = len(filtered_dict[key])
+
+        return filtered_dict
+
+    def distance_analysis(self, ids_source="*", ids_target="*", attribute="dist"):
+        """get more information about the distance between two filtered organelle lists.
+           These can be from one or more types depending on the given filter.
+
+        :param ids_source: Filter string for the source ids, defaults to "*"
+        :type ids_source: str, optional
+        :param ids_target: filter string for the target ids, defaults to "*"
+        :type ids_target: str, optional
+        :param attribute: The attribute to be used for the distance analysis.
+        Possible values are "dist", "min", "mean".
+        dist: the distance matrix between the organelles
+        min: the minimum distance between all sources for any target and the corresponding target id
+        mean: the mean distance between the organelles
+        :type attribute: _type_
+        """
+        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
+        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
+
+        if attribute == "dist":
+            return distance_matrix
+
+        elif attribute == "min":
+            distance_matrix = distance_matrix.loc[orgs_1, orgs_2]
+            df_min = pd.DataFrame(
+                distance_matrix.idxmin(axis=1).items(),
+                columns=["id_source", "id_target"],
+            )
+            df_min["distance"] = distance_matrix.min(axis=1).values
+            return df_min
+
+        elif attribute == "mean":
+            df_mean = pd.DataFrame(
+                distance_matrix.mean(axis=1).items(), columns=["id_source", "id_target"]
+            )
+            df_mean.rename(
+                columns={"id_target": "mean distance to target"}, inplace=True
+            )
+            df_mean["std of target distance"] = distance_matrix.std(axis=1).values
+
+            return df_mean
+
+    def hist_distance_matrix(
+        self,
+        ids_source="*",
+        ids_target="*",
+    ):
+        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
+        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(x=distance_matrix.mean().values.flatten()))
+        fig.update_layout(
+            xaxis_title_text="Distance",
+            yaxis_title_text="Count",
+            title="Distance matrix histogram",
+        )
+        return fig
+
+    def hist_skeletons(self, ids="*", attribute="num_nodes"):
+        """Plot the histogram fromt he skeleton info.
+
+        :param ids: Filter id, defaults to "*"
+        :type ids: str, optional
+        :param attribute: which attribute to plot, defaults to "num_nodes".
+            can be:
+            "num_nodes": number of nodes in the skeleton
+            "num_branch_points": number of branch points in the skeleton
+            "end points": number of end points in the skeleton
+            "total_length": total length of the skeleton
+            "mean_length": mean length of the skeleton
+            "longest_path": longest path in the skeleton
+
+        :type attribute: str, optional
+        :return: _description_
+        :rtype: _type_
+        """
+        orgs = self.organelles(ids=ids, return_ids=False)
+        # drop organelles without skeleton
+        valid_orgs = []
+        for org in orgs:
+            if org.skeleton is not None:
+                valid_orgs.append(org.id)
+
+        skeleton_info = self.skeleton_info.loc[valid_orgs]
+        data = skeleton_info[attribute].values
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(x=data))
+        fig.update_layout(
+            xaxis_title_text=attribute,
+            yaxis_title_text="Count",
+            title=f"{attribute} histogram",
+        )
+        return fig
+
     @property
     def compression_level(self):
         """The compression level used for our computations."""
@@ -323,11 +500,24 @@ class Project:
 
     @property
     def distance_matrix(self):
-        # Trigger the calculation of all meshes in a parallel pool
-        self.calculate_meshes()
+        """
+        Returns the distance matrix of all organeles in the project in micro meters.
 
-        with disk_cache(self, "distance_matrix") as cache:
-            if f"distance_matrix_{self.compression_level}" not in cache:
+        :return: _description_
+        :rtype: _type_
+        """
+
+        # Trigger the calculation of all meshes in a parallel pool
+        active_sources = list(self._sources.keys())
+        with disk_cache(
+            self, f"distance_matrix_{active_sources}_{self.compression_level}"
+        ) as cache:
+            if (
+                f"distance_matrix_{active_sources}_{self.compression_level}"
+                not in cache
+            ):
+                self.calculate_meshes()
+
                 meshes = []
                 organelles = []
                 for organelle in self.organelles():
@@ -336,25 +526,32 @@ class Project:
 
                 num_rows = len(meshes)
                 distance_matrix = np.zeros((num_rows, num_rows))
-
-                for i in np.arange(num_rows):
-                    for j in np.arange(i + 1, num_rows):
-                        col_manager_test = trimesh.collision.CollisionManager()
-                        col_manager_test.add_object("mesh1", meshes[i])
-                        col_manager_test.add_object("mesh2", meshes[j])
-                        distance = col_manager_test.min_distance_internal()
-
-                        distance_matrix[i, j] = distance
-                        distance_matrix[j, i] = distance
+                with parallel_pool(num_rows) as (pool, pbar):
+                    for i in np.arange(num_rows):
+                        # for j in np.arange(i + 1, num_rows):
+                        result = pool.apply_async(
+                            _picklable_distance_calculation,
+                            (
+                                meshes,
+                                i,
+                            ),
+                            callback=lambda _: pbar.update(),
+                        )
+                        distances = result.get()
+                        distance_matrix[i, i] = 0
+                        distance_matrix[i, i + 1 :] = distances
+                        distance_matrix[i + 1 :, i] = distances
 
                 distance_df = pd.DataFrame(
                     distance_matrix,
                     index=organelles,
                     columns=organelles,
                 )
-                cache[f"distance_matrix_{self.compression_level}"] = distance_df
+                cache[
+                    f"distance_matrix_{active_sources}_{self.compression_level}"
+                ] = distance_df
 
-            return cache[f"distance_matrix_{self.compression_level}"]
+            return cache[f"distance_matrix_{active_sources}_{self.compression_level}"]
 
     @property
     def metadata(self):
