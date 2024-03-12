@@ -193,3 +193,26 @@ def test_distance_matrix(cebra_project_with_sources):
     p = cebra_project_with_sources
 
     assert p.distance_matrix.shape == (19, 19)
+
+
+def test_show_mesh_scene(cebra_project_with_sources):
+    p = cebra_project_with_sources
+    meshes = p._meshes
+
+    scene = trimesh.scene.Scene()
+    for source_key in meshes.keys():
+        for org_key in meshes[source_key].keys():
+            mesh = meshes[source_key][org_key]
+            mesh.visual.face_colors = trimesh.visual.random_color()
+            scene.add_geometry(mesh)
+    # scene.show()  # don't run this on ci
+
+
+def test_show(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    p.show()
+
+    p.show(ids="*1")
+
+    p.show(show_morphology=True)

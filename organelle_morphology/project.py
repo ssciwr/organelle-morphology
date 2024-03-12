@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import trimesh
 from functools import reduce
+import plotly.graph_objects as go
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
@@ -163,6 +164,35 @@ class Project:
 
         self._sources[source] = source_obj
 
+    def show(
+        self,
+        ids: str = "*",
+        show_morphology: bool = False,
+        show_skeleton: bool = False,
+        height: int = 800,
+    ):
+        orgs = self.organelles(ids=ids, return_ids=False)
+
+        # draw figure
+        fig = go.Figure()
+        for org in orgs:
+            fig.add_traces(
+                org.plotly_mesh(
+                    show_morphology=show_morphology, show_skeleton=show_skeleton
+                )
+            )
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(title="", showticklabels=False, showgrid=False),
+                yaxis=dict(title="", showticklabels=False, showgrid=False),
+                zaxis=dict(title="", showticklabels=False, showgrid=False),
+                aspectmode="cube",
+            ),
+            height=height,
+        )
+
+        return fig
+
     @property
     def compression_level(self):
         """The compression level used for our computations."""
@@ -269,7 +299,7 @@ class Project:
             return self._clipping
 
     def organelles(
-        self, ids: str = "*", return_ids: bool = False
+        self, ids: list[str] = "*", return_ids: bool = False
     ) -> list[Organelle] | list[str]:
         """Return a list of organelles found in the dataset
 
@@ -288,8 +318,11 @@ class Project:
         """
 
         result = []
+        if isinstance(ids, str):
+            ids = [ids]
 
-        for source in self._sources.values():
-            result.extend(source.organelles(ids, return_ids))
+        for id in ids:
+            for source in self._sources.values():
+                result.extend(source.organelles(id, return_ids))
 
         return result

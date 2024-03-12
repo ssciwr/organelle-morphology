@@ -12,6 +12,7 @@ dependencies:
     - pytest
     - pytest-cov
     - nbval
+    - plotly
     - cachetools
     - pip:
         - python-fcl
