@@ -19,3 +19,4 @@ dependencies:
         - setuptools==65.7.0
         - shelved_cache
         - xdg
+        - skeletor

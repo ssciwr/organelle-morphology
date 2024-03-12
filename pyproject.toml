@@ -36,6 +36,7 @@ dependencies = [
     "cachetools",
     "shelved_cache",
     "xdg",
+    "skeletor",
 ]
 
 [project.optional-dependencies]

@@ -164,6 +164,49 @@ class Project:
 
         self._sources[source] = source_obj
 
+    def skeletonize_wavefront(
+        self,
+        ids: str = "*",
+        theta: float = 0.4,
+        waves: int = 1,
+        step_size: int = 2,
+        skip_existing=False,
+        path_samplple_dist: float = 0.1,
+    ):
+        orgs = self.organelles(ids=ids, return_ids=False)
+        for org in orgs:
+            if skip_existing and org.skeleton is not None:
+                continue
+
+            org._generate_skeleton(
+                skeletonization_type="wavefront",
+                theta=theta,
+                waves=waves,
+                step_size=step_size,
+                path_samplple_dist=path_samplple_dist,
+            )
+
+    def skeletonize_vertex_clusters(
+        self,
+        ids: str = "*",
+        theta: float = 0.4,
+        epsilon: float = 0.1,
+        sampling_dist: float = 0.1,
+        skip_existing=False,
+        path_samplple_dist: float = 0.1,
+    ):
+        orgs = self.organelles(ids=ids, return_ids=False)
+        for org in orgs:
+            if skip_existing and org.skeleton is not None:
+                continue
+            org._generate_skeleton(
+                skeletonization_type="vertex_clusters",
+                theta=theta,
+                epsilon=epsilon,
+                sampling_dist=sampling_dist,
+                path_samplple_dist=path_samplple_dist,
+            )
+
     def show(
         self,
         ids: str = "*",
@@ -181,6 +224,22 @@ class Project:
                     show_morphology=show_morphology, show_skeleton=show_skeleton
                 )
             )
+            if show_skeleton and org.skeleton is not None:
+                fig.add_traces(org.plotly_skeleton())
+                sampled_path = org.sampled_skeleton[0]
+                try:
+                    sampled_scatter = go.Scatter3d(
+                        x=sampled_path[:, 0],
+                        y=sampled_path[:, 1],
+                        z=sampled_path[:, 2],
+                        mode="markers",
+                        name=f"sampled_path_{org.id}",
+                        marker=dict(size=1, color="red"),
+                    )
+                    fig.add_trace(sampled_scatter)
+                except:
+                    print(org.id, sampled_path, org.skeleton)
+                    raise ValueError("sampled_path is not valid")
         fig.update_layout(
             scene=dict(
                 xaxis=dict(title="", showticklabels=False, showgrid=False),
@@ -202,9 +261,13 @@ class Project:
     def calculate_meshes(self):
         """Trigger the calculation of meshes for all organelles"""
 
-        with parallel_pool() as pool:
+        with parallel_pool(len(self.organelles())) as (pool, pbar):
             for organelle in self.organelles():
-                pool.apply_async(_picklable_mesh_extractor, (organelle,)).get()
+                pool.apply_async(
+                    _picklable_mesh_extractor,
+                    (organelle,),
+                    callback=lambda _: pbar.update(),
+                ).get()
 
     @property
     def geometric_properties(self):
@@ -237,6 +300,16 @@ class Project:
             )
 
         return pd.DataFrame(properties).T
+
+    @property
+    def skeleton_info(self):
+        skeleton_data = {}
+        for org in self.organelles():
+            if org.skeleton is not None:
+                skeleton_data[org.id] = org.skeleton_info
+        return pd.DataFrame(skeleton_data).T.sort_values(
+            by="num_nodes", ascending=False
+        )
 
     @property
     def morphology_map(self):

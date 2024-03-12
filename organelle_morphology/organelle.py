@@ -5,6 +5,8 @@ import trimesh
 from skimage import measure
 import logging
 import plotly.graph_objects as go
+import skeletor as sk
+import networkx
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
@@ -43,6 +45,9 @@ class Organelle:
         self._mesh_properties = {}
         self._mesh = {}
         self._morphology_map = {}
+        self._skeleton = None
+        self._sampled_skeleton = None
+        self._skeleton_info = {}
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -81,8 +86,138 @@ class Organelle:
             trimesh.smoothing.filter_humphrey(mesh)
         return mesh
 
+    def _generate_skeleton(
+        self,
+        skeletonization_type: str = "wavefront",
+        theta: float = 0.4,
+        waves: int = 1,
+        step_size: int = 2,
+        epsilon: float = 0.1,
+        sampling_dist: float = 0.1,
+        path_samplple_dist: float = 0.1,
+    ):
+        """
+        Generates a skeleton for the organelle. The skeleton is generated and cleaned using the skeletor library.
+
+        The last generated skeleton will be kept in memory and can be accessed using the skeleton or sampled_skeleton property.
+        :param skeletonization_type: The type of skeletonization to use. Can be either "wavefront" or "vertex_clusters".
+
+        :param waves: The number of waves to use for the wavefront skeletonization. The higher the number of waves, the more branches are removed.
+        :param step_size: The step size for the wavefront skeletonization. The higher the step size, the less vertices are used for the skeleton.
+
+        :param theta: The threshold for the clean_up function. The higher the threshold, the more branches are removed.
+        :param epsilon: The epsilon value for the contract function. The higher the epsilon, the more the mesh is contracted.
+        :param sampling_dist: The sampling distance for the skeletonize function. The higher the sampling distance, the less vertices are used for the skeleton.
+
+        """
+
+        fixed_mesh = sk.pre.fix_mesh(self.mesh)
+        if skeletonization_type not in ["wavefront", "vertex_clusters"]:
+            raise ValueError(
+                "Skeletonization type must be either 'wavefront' or 'vertex_clusters'."
+            )
+
+        try:
+            if skeletonization_type == "wavefront":
+                skel = sk.skeletonize.by_wavefront(
+                    fixed_mesh, waves=waves, progress=False, step_size=step_size
+                )
+            elif skeletonization_type == "vertex_clusters":
+                cont = sk.pre.contract(fixed_mesh, epsilon=epsilon, progress=False)
+                skel = sk.skeletonize.by_vertex_clusters(
+                    cont, sampling_dist=sampling_dist, progress=False
+                )
+                skel.mesh = fixed_mesh
+            sk.post.clean_up(skel, inplace=True, theta=theta)
+
+            sk.post.radii(skel, method="knn")
+
+            # if no skeleton can be created just skip this
+            if len(skel.vertices) <= 1:
+                return
+
+            self._skeleton = skel
+
+            self._sample_skeleton(path_samplple_dist=path_samplple_dist)
+
+            # reset skeleton info for new calculation
+            self._skeleton_info = {}
+        except IndexError:
+            self._skeleton = None
+
+    def _sample_skeleton(self, path_samplple_dist: float = 0.1):
+        # the sample points are points along the skeleton arms
+        # and the reference points are the vertices of the skeleton from which these samples have been generated.
+        # we need these to later calculate the normal vector for the plane which will intersect our mesh
+        sampled_path = []
+        reference_point = []
+        for edge in self.skeleton.edges:
+            edge_len = np.linalg.norm(
+                np.array(self.skeleton.vertices[edge[0]])
+                - np.array(self.skeleton.vertices[edge[1]])
+            )
+
+            if edge_len > path_samplple_dist:
+                p1 = np.array(self.skeleton.vertices[edge[0]])
+                p2 = np.array(self.skeleton.vertices[edge[1]])
+
+                # find number of points to add bewteen the two vertices
+                n_points = np.ceil(edge_len / path_samplple_dist).astype(int)
+                factors = np.linspace(0, 1, n_points)
+
+                # Compute the interpolated points
+                interpolated_points = (1 - factors[:, np.newaxis]) * p1 + factors[
+                    :, np.newaxis
+                ] * p2
+                sampled_path.extend(interpolated_points)
+                reference_point.append(p1)
+
+        if len(sampled_path) == 0:
+            sampled_path.append(np.array(self.skeleton.vertices[0]))
+            reference_point.append(np.array(self.skeleton.vertices[0]))
+
+        sampled_path = np.asarray(sampled_path)
+        reference_point = np.asarray(reference_point)
+        self._sampled_skeleton = sampled_path, reference_point
+
+    def plotly_skeleton(self):
+        if self._skeleton is None:
+            return None
+
+        nodes = self.skeleton.vertices
+        edges = self.skeleton.edges
+
+        line_width = 10
+
+        # Create a 3D line plot for the edges
+        x_values = []
+        y_values = []
+        z_values = []
+
+        for edge in edges:
+            x_values.extend(
+                [nodes[edge[0]][0], nodes[edge[1]][0], None]
+            )  # add None to separate lines
+            y_values.extend(
+                [nodes[edge[0]][1], nodes[edge[1]][1], None]
+            )  # add None to separate lines
+            z_values.extend(
+                [nodes[edge[0]][2], nodes[edge[1]][2], None]
+            )  # add None to separate lines
+
+        skeleton_trace = go.Scatter3d(
+            x=x_values,
+            y=y_values,
+            z=z_values,
+            mode="lines",
+            line=dict(width=line_width),  # Set line width
+            name=f"Skeleton_{self.id}",  # Set label
+        )
+        return skeleton_trace
+
     def plotly_mesh(self, show_morphology: bool = False, show_skeleton: bool = False):
         # prepare the plotly mesh object for visualization
+
         verts = self.mesh.vertices
         faces = self.mesh.faces
 
@@ -103,7 +238,7 @@ class Organelle:
             opacity = 1
 
         if show_skeleton:
-            raise NotImplementedError("Skeleton visualization not implemented yet")
+            opacity = 0.7
 
         go_mesh = go.Mesh3d(
             x=vertsT[0],
@@ -121,6 +256,59 @@ class Organelle:
             showscale=False,
         )
         return go_mesh
+
+    @property
+    def skeleton(self):
+        """Get the skeleton for this organelle"""
+
+        return self._skeleton
+
+    @property
+    def skeleton_info(self):
+        # calculate some basic skeleton properties from the skeleton graph
+        if self._skeleton_info:
+            return self._skeleton_info
+        else:
+            graph = self.skeleton.get_graph()
+            if len(graph.nodes) == 0:
+                return 0
+
+            self._skeleton_info["num_nodes"] = len(graph.nodes)
+            self._skeleton_info["num_branch_points"] = len(
+                [node for node, degree in graph.degree() if degree > 2]
+            )
+            self._skeleton_info["end_points"] = len(
+                [node for node, degree in graph.degree() if degree == 1]
+            )
+            self._skeleton_info["total_length"] = sum(
+                d["weight"] for u, v, d in graph.edges(data=True)
+            )
+            self._skeleton_info["longest_path"] = networkx.dag_longest_path_length(
+                graph
+            )
+
+            lengths = [d["weight"] for u, v, d in graph.edges(data=True)]
+            self._skeleton_info["mean_length"] = np.mean(lengths)
+            self._skeleton_info["std_length"] = np.std(lengths)
+
+            self._skeleton_info["mean_radius"] = np.mean(self.skeleton.radius[0])
+            self._skeleton_info["std_radius"] = np.std(self.skeleton.radius[0])
+
+            return self._skeleton_info
+
+    @property
+    def sampled_skeleton(self):
+        """Get the sampled skeleton for this organelle.
+        This included the sampled points,
+        as well as the corresponding reference point to later get the correct plane normal vector
+        """
+        if self._skeleton is None:
+            print(
+                f"Skeleton has not been generated for {self.id} yet. Please run project.generate_skeletons() first."
+            )
+            return None
+
+        return self._sampled_skeleton
 
     @property
     def mesh(self):
