@@ -213,6 +213,19 @@ def test_skeletonize(cebra_project_with_sources):
     assert p.skeleton_info.shape == (19, 9)
 
 
+def test_show_mesh_scene(cebra_project_with_sources):
+    p = cebra_project_with_sources
+    meshes = p.meshes
+
+    scene = trimesh.scene.Scene()
+    for source_key in meshes.keys():
+        for org_key in meshes[source_key].keys():
+            mesh = meshes[source_key][org_key]
+            mesh.visual.face_colors = trimesh.visual.random_color()
+            scene.add_geometry(mesh)
+    # scene.show()  # don't run this on ci
+
+
 def test_show(cebra_project_with_sources):
     p = cebra_project_with_sources
 
