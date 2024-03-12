@@ -215,7 +215,7 @@ def test_skeletonize(cebra_project_with_sources):
 
 def test_show_mesh_scene(cebra_project_with_sources):
     p = cebra_project_with_sources
-    meshes = p.meshes
+    meshes = p._meshes
 
     scene = trimesh.scene.Scene()
     for source_key in meshes.keys():
