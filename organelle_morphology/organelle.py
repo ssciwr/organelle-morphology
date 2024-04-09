@@ -261,7 +261,7 @@ class Organelle:
 
         # override settings if special visualization is requested
         if show_morphology:
-            curvature_vertices = self.morphology_map
+            curvature_vertices = self.morphology_map()
             intensity = curvature_vertices
             colorscale = "Viridis"
             opacity = 1
