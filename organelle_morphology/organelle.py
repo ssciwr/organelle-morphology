@@ -364,7 +364,6 @@ class Organelle:
 
         return self._mesh_properties[comp_level]
 
-    @property
     def morphology_map(self):
         """Get the mesh data for this organelle"""
         comp_level = self._source._project.compression_level
