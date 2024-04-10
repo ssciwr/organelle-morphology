@@ -276,14 +276,15 @@ class Organelle:
 
         # add coloration for the close regions
         if show_mcs:
+            intensity = np.full(len(verts), 0.0)  # Default intensity is 0.5
+
             for close_vertices in self.close_vertices.values():
                 t_close_vertices = np.transpose(close_vertices)
-                intensity = np.full(len(verts), 0.0)  # Default intensity is 0.5
                 intensity[t_close_vertices] = 1  # Close vertices have intensity 1
-                colorscale = [
-                    [0, "rgb(110,150,220)"],
-                    [1, "rgb(255,0,0)"],
-                ]  # Map intensity to color
+            colorscale = [
+                [0, "rgb(110,150,220)"],
+                [1, "rgb(255,0,0)"],
+            ]  # Map intensity to color
 
         go_mesh = go.Mesh3d(
             x=vertsT[0],
