@@ -5,15 +5,15 @@ from organelle_morphology.util import disk_cache, parallel_pool
 import json
 import os
 import pathlib
-import numpy as np
+import trimesh
+import logging
 
 import numpy as np
 import pandas as pd
-import trimesh
-from functools import reduce
-import plotly.graph_objects as go
 
-import logging
+from collections import defaultdict
+from scipy.spatial import distance
+import plotly.graph_objects as go
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
