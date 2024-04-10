@@ -360,9 +360,13 @@ class Project:
         for col in filtered_df_dict:
             for row, value in filtered_df_dict[col].items():
                 if value < filter_distance and col != row:  # exclude self-contact
-                    if attribute == "names" and row in output_filtered_dict.keys():
+                    if (
+                        attribute in ["names", "objects"]
+                        and row in output_filtered_dict.keys()
+                    ):
                         # this is not done when interested in the number of neighbors for each organelle.
                         continue  # skip entries that are already present as keys, this avoids doubling
+
                     output_filtered_dict[col].append(row)
 
         if attribute == "n_mcs":
@@ -373,10 +377,12 @@ class Project:
             obj_output_dict = defaultdict(list)
             for key in output_filtered_dict.keys():
                 new_key = self.organelles(ids=key, return_ids=False)[0]
+
                 for key_target in output_filtered_dict[key]:
-                    obj_output_dict[new_key].extend(
-                        self.organelles(ids=key_target, return_ids=False)
-                    )
+                    if key_target not in obj_output_dict.keys():
+                        obj_output_dict[new_key].extend(
+                            self.organelles(ids=key_target, return_ids=False)
+                        )
             return obj_output_dict
 
         return output_filtered_dict
@@ -423,35 +429,121 @@ class Project:
 
             return df_mean
 
-    def _calc_mcs(self, org_source, org_target, cutoff_distance):
+    def _calc_mcs(self, org_source, org_target, max_distance, min_distance=0):
         # extracted this function to use paarallel pool
-        dist_matrix = distance.cdist(
-            org_source.mesh.vertices, org_target.mesh.vertices, "euclidean"
-        )
-        org_source_close_vertices = np.unique(
-            np.nonzero(dist_matrix < cutoff_distance)[0]
-        )
-        org_target_close_vertices = np.unique(
-            np.nonzero(dist_matrix < cutoff_distance)[1]
-        )
-        return org_source_close_vertices, org_target_close_vertices
 
-    def search_mcs(self, ids_source="*", ids_target="*", cutoff_distance=0.2):
+        mesh_source = org_source.mesh
+        mesh_target = org_target.mesh
+
+        for mesh in [mesh_source, mesh_target]:
+            trimesh.repair.fix_inversion(mesh)
+            trimesh.repair.fix_winding(mesh)
+            trimesh.repair.fix_normals(mesh)
+
+        distance_target_source, index_target_source = mesh_source.nearest.vertex(
+            org_target.mesh.vertices
+        )
+        distance_source_target, index_source_target = mesh_target.nearest.vertex(
+            org_source.mesh.vertices
+        )
+
+        # if we want to now which vertices of mesh 1 are close to mesh 2
+        # we need to run the search on org2 with the points of org1
+        # this will give us a distance and an index for each vertex of org1
+
+        mask_1 = (distance_source_target > min_distance) & (
+            distance_source_target < max_distance
+        )
+        mask_2 = (distance_target_source > min_distance) & (
+            distance_target_source < max_distance
+        )
+
+        ind_source = np.nonzero(mask_1)
+        ind_target = np.nonzero(mask_2)
+
+        # now we now which vertex indeces of mesh 1 and 2 are suitable.
+
+        # figure out if the surface point is facing the other mesh
+        # get the normals of the vertices
+
+        normals_source = mesh_source.vertex_normals[ind_source]
+        normals_target = mesh_target.vertex_normals[ind_target]
+
+        # get the direction of the vector between the two points
+        vector_source = (
+            mesh_target.vertices[index_source_target[ind_source]]
+            - mesh_source.vertices[ind_source]
+        )
+        vector_target = (
+            mesh_source.vertices[index_target_source[ind_target]]
+            - mesh_target.vertices[ind_target]
+        )
+
+        # calculate the dot product of the normals and the vectors
+        dot_source = np.sum(normals_source * vector_source, axis=1)
+        dot_target = np.sum(normals_target * vector_target, axis=1)
+
+        # calculate the dot product for the opposite orientation of the normals
+        dot_source_opposite = np.sum(-normals_source * vector_source, axis=1)
+        dot_target_opposite = np.sum(-normals_target * vector_target, axis=1)
+
+        # if the dot product is positive the surface is facing the other mesh
+        # choose the orientation that gives the most vertices facing the other mesh
+
+        ind_source_normal = ind_source[0][dot_source > 0]
+        ind_source_inverse = ind_source[0][dot_source_opposite > 0]
+
+        ind_target_normal = ind_target[0][dot_target > 0]
+        ind_target_inverse = ind_target[0][dot_target_opposite > 0]
+
+        # for some reason some of the meshes behave differently when comparing the dot product
+        # of the normals and the vectors.
+        # This is a quick fix to choose the orientation by comparing the mean distance
+        # of the vertices selected by the dot product.
+
+        if ind_source_normal.size > 0 and ind_source_inverse.size > 0:
+            if np.mean(distance_source_target[ind_source_normal]) < np.mean(
+                distance_source_target[ind_source_inverse]
+            ):
+                ind_source = ind_source_normal
+            else:
+                ind_source = ind_source_inverse
+        else:
+            ind_source = (
+                ind_source_normal if ind_source_normal.size > 0 else ind_source_inverse
+            )
+
+        if ind_target_normal.size > 0 and ind_target_inverse.size > 0:
+            if np.mean(distance_target_source[ind_target_normal]) < np.mean(
+                distance_target_source[ind_target_inverse]
+            ):
+                ind_target = ind_target_normal
+            else:
+                ind_target = ind_target_inverse
+        else:
+            ind_target = (
+                ind_target_normal if ind_target_normal.size > 0 else ind_target_inverse
+            )
+
+        return ind_source, ind_target
+
+    def search_mcs(
+        self, ids_source="*", ids_target="*", max_distance=0.5, min_distance=0
+    ):
         filtered_distance_dict = self.distance_filtering(
             ids_source=ids_source,
             ids_target=ids_target,
-            filter_distance=cutoff_distance,
+            filter_distance=max_distance,
             attribute="objects",
         )
-
         n_pairs = sum(
             [len(filtered_distance_dict[key]) for key in filtered_distance_dict.keys()]
         )
 
         self.logger.info(
-            "Found %s organelles that have a neighbor closer than %s",
+            "Found %s organelle pairs closer than %s um.",
             n_pairs,
-            cutoff_distance,
+            max_distance,
         )
 
         with parallel_pool(n_pairs) as (pool, pbar):
@@ -459,7 +551,7 @@ class Project:
                 for org_target in filtered_distance_dict[org_source]:
                     results = pool.apply_async(
                         self._calc_mcs,
-                        (org_source, org_target, cutoff_distance),
+                        (org_source, org_target, max_distance, min_distance),
                         callback=lambda _: pbar.update(),
                     ).get()
 
@@ -469,8 +561,6 @@ class Project:
                     self.logger.debug(
                         "Found MCS between %s and %s", org_source.id, org_target.id
                     )
-
-        print(filtered_distance_dict)
 
     def hist_distance_matrix(
         self,
