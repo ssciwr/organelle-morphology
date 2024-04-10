@@ -282,6 +282,7 @@ class Project:
         ids: str = "*",
         show_morphology: bool = False,
         show_skeleton: bool = False,
+        show_mcs: bool = False,
         height: int = 800,
     ):
         orgs = self.organelles(ids=ids, return_ids=False)
@@ -291,7 +292,9 @@ class Project:
         for org in orgs:
             fig.add_traces(
                 org.plotly_mesh(
-                    show_morphology=show_morphology, show_skeleton=show_skeleton
+                    show_morphology=show_morphology,
+                    show_skeleton=show_skeleton,
+                    show_mcs=show_mcs,
                 )
             )
             if show_skeleton and org.skeleton is not None:
@@ -310,6 +313,7 @@ class Project:
                 except:
                     self.logger.warning(org.id, sampled_path, org.skeleton)
                     raise ValueError("sampled_path is not valid")
+
         fig.update_layout(
             scene=dict(
                 xaxis=dict(title="", showticklabels=False, showgrid=False),
@@ -334,7 +338,7 @@ class Project:
         :type ids_target: str, optional
         :param filter_distance: The distance in micro meter used for filtering, defaults to 0.01
         :type filter_distance: float, optional
-        :param attribute: Show names or number of contact sites ("n_mcs), defaults to "names"
+        :param attribute: Show names, number of contact sites ("n_mcs") or return the organelle objects ("objects"), defaults to "names"
         :type attribute: str, optional
 
         :return: Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
@@ -349,33 +353,33 @@ class Project:
         ]
 
         # Convert the filtered DataFrame to a dictionary
-        filtered_dict = filtered_df.to_dict("index")
-
+        filtered_df_dict = filtered_df.to_dict("index")
+        output_filtered_dict = defaultdict(list)
         # For each entry in the dictionary, replace the values with the column names that match the filter
-        keys_to_remove = []
-        for key in filtered_dict:
-            filtered_dict[key] = [
-                col
-                for col, value in filtered_dict[key].items()
-                if value < filter_distance
-            ]
 
-            # remove the self distance if present
-            if key in filtered_dict[key]:
-                filtered_dict[key].remove(key)
-
-            # remove the key if no value is present
-            if not filtered_dict[key]:
-                keys_to_remove.append(key)
-
-        for key in keys_to_remove:
-            del filtered_dict[key]
+        for col in filtered_df_dict:
+            for row, value in filtered_df_dict[col].items():
+                if value < filter_distance and col != row:  # exclude self-contact
+                    if attribute == "names" and row in output_filtered_dict.keys():
+                        # this is not done when interested in the number of neighbors for each organelle.
+                        continue  # skip entries that are already present as keys, this avoids doubling
+                    output_filtered_dict[col].append(row)
 
         if attribute == "n_mcs":
-            for key in filtered_dict.keys():
-                filtered_dict[key] = len(filtered_dict[key])
+            for key in output_filtered_dict.keys():
+                output_filtered_dict[key] = len(output_filtered_dict[key])
 
-        return filtered_dict
+        elif attribute == "objects":
+            obj_output_dict = defaultdict(list)
+            for key in output_filtered_dict.keys():
+                new_key = self.organelles(ids=key, return_ids=False)[0]
+                for key_target in output_filtered_dict[key]:
+                    obj_output_dict[new_key].extend(
+                        self.organelles(ids=key_target, return_ids=False)
+                    )
+            return obj_output_dict
+
+        return output_filtered_dict
 
     def distance_analysis(self, ids_source="*", ids_target="*", attribute="dist"):
         """get more information about the distance between two filtered organelle lists.
@@ -418,6 +422,55 @@ class Project:
             df_mean["std of target distance"] = distance_matrix.std(axis=1).values
 
             return df_mean
+
+    def _calc_mcs(self, org_source, org_target, cutoff_distance):
+        # extracted this function to use paarallel pool
+        dist_matrix = distance.cdist(
+            org_source.mesh.vertices, org_target.mesh.vertices, "euclidean"
+        )
+        org_source_close_vertices = np.unique(
+            np.nonzero(dist_matrix < cutoff_distance)[0]
+        )
+        org_target_close_vertices = np.unique(
+            np.nonzero(dist_matrix < cutoff_distance)[1]
+        )
+        return org_source_close_vertices, org_target_close_vertices
+
+    def search_mcs(self, ids_source="*", ids_target="*", cutoff_distance=0.2):
+        filtered_distance_dict = self.distance_filtering(
+            ids_source=ids_source,
+            ids_target=ids_target,
+            filter_distance=cutoff_distance,
+            attribute="objects",
+        )
+
+        n_pairs = sum(
+            [len(filtered_distance_dict[key]) for key in filtered_distance_dict.keys()]
+        )
+
+        self.logger.info(
+            "Found %s organelles that have a neighbor closer than %s",
+            n_pairs,
+            cutoff_distance,
+        )
+
+        with parallel_pool(n_pairs) as (pool, pbar):
+            for org_source in filtered_distance_dict.keys():
+                for org_target in filtered_distance_dict[org_source]:
+                    results = pool.apply_async(
+                        self._calc_mcs,
+                        (org_source, org_target, cutoff_distance),
+                        callback=lambda _: pbar.update(),
+                    ).get()
+
+                    org_source_close_vertices, org_target_close_vertices = results
+                    org_source.add_mcs(org_target.id, org_source_close_vertices)
+                    org_target.add_mcs(org_source.id, org_target_close_vertices)
+                    self.logger.debug(
+                        "Found MCS between %s and %s", org_source.id, org_target.id
+                    )
+
+        print(filtered_distance_dict)
 
     def hist_distance_matrix(
         self,

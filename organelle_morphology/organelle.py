@@ -48,6 +48,9 @@ class Organelle:
         self._skeleton = None
         self._sampled_skeleton = None
         self._skeleton_info = {}
+        self._close_vertices = {}
+        self._mcs_dict = {}
+
         self.logger = self._source._project.logger
 
     def __init_subclass__(cls, name=None):
@@ -244,7 +247,9 @@ class Organelle:
         )
         return skeleton_trace
 
-    def plotly_mesh(self, show_morphology: bool = False, show_skeleton: bool = False):
+    def plotly_mesh(
+        self, show_morphology: bool = False, show_skeleton: bool = False, show_mcs=False
+    ):
         # prepare the plotly mesh object for visualization
 
         verts = self.mesh.vertices
@@ -269,6 +274,17 @@ class Organelle:
         if show_skeleton:
             opacity = 0.7
 
+        # add coloration for the close regions
+        if show_mcs:
+            for close_vertices in self.close_vertices.values():
+                t_close_vertices = np.transpose(close_vertices)
+                intensity = np.full(len(verts), 0.0)  # Default intensity is 0.5
+                intensity[t_close_vertices] = 1  # Close vertices have intensity 1
+                colorscale = [
+                    [0, "rgb(110,150,220)"],
+                    [1, "rgb(255,0,0)"],
+                ]  # Map intensity to color
+
         go_mesh = go.Mesh3d(
             x=vertsT[0],
             y=vertsT[1],
@@ -278,8 +294,6 @@ class Organelle:
             k=facesT[2],
             name=self.id,
             opacity=opacity,
-            # note: opacity below 1 seems to be an ongoing issue with plotly in 3d.
-            # shapes might not be drawn in the correct order and overlap wierdly when moving the camera,
             intensity=intensity,
             colorscale=colorscale,
             showscale=False,
@@ -434,6 +448,22 @@ class Organelle:
 
             self._morphology_map[comp_level] = curvature_vertices
         return self._morphology_map[comp_level]
+
+    def add_mcs(self, close_org_id, close_vertices):
+        self._close_vertices[close_org_id] = close_vertices
+
+        close_faces = np.unique(np.nonzero(np.isin(self.mesh.faces, close_vertices))[0])
+        close_area = self.mesh.area_faces[close_faces].sum()
+
+        self._mcs_dict[close_org_id] = close_area
+
+    @property
+    def close_vertices(self):
+        return self._close_vertices
+
+    @property
+    def mcs_dict(self):
+        return self._mcs_dict
 
     @property
     def data(self):
