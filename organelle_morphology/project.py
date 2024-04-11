@@ -752,7 +752,7 @@ class Project:
         ) as cache:
             if f"geometric_properties_{self.compression_level}" not in cache:
                 for organelle in self.organelles():
-                    properties[organelle.id] = organelle.geometric_data
+                    properties[organelle.id] = organelle.geometric_data | organelle.mesh_properties
 
                 cache[f"geometric_properties_{self.compression_level}"] = properties
 
