@@ -121,6 +121,8 @@ class Project:
         self._distance_matrix = None
         self._morphology_map = {}
 
+        self._mcs_labels = {}
+
         # The compression level at which we operate
         if compression_level < 0:
             raise ValueError(f"Compression level must be >= 0, got {compression_level}")
@@ -138,7 +140,7 @@ class Project:
         f_handler.setLevel(logging.DEBUG)
 
         # Create formatters and add it to handlers
-        c_format = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+        c_format = logging.Formatter("%(levelname)s - %(message)s")
         f_format = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
@@ -224,8 +226,8 @@ class Project:
         :type step_size: int, optional
         :param skip_existing: _description_, defaults to False
         :type skip_existing: bool, optional
-        :param path_samplple_dist: _description_, defaults to 0.1
-        :type path_samplple_dist: float, optional
+        :param path_sample_dist: _description_, defaults to 0.1
+        :type path_sample_dist: float, optional
         """
         orgs = self.organelles(ids=ids, return_ids=False)
 
@@ -282,10 +284,20 @@ class Project:
         ids: str = "*",
         show_morphology: bool = False,
         show_skeleton: bool = False,
-        show_mcs: bool = False,
+        mcs_label: str = None,
         height: int = 800,
     ):
         orgs = self.organelles(ids=ids, return_ids=False)
+
+        if mcs_label and mcs_label not in self._mcs_labels:
+            raise ValueError(
+                f"MCS label {mcs_label} not found in project please "
+                + "run search_mcs with the desired label first"
+            )
+
+        mcs_filter_ids = None
+        if mcs_label:
+            mcs_filter_ids = [org.id for org in orgs]
 
         # draw figure
         fig = go.Figure()
@@ -294,7 +306,8 @@ class Project:
                 org.plotly_mesh(
                     show_morphology=show_morphology,
                     show_skeleton=show_skeleton,
-                    show_mcs=show_mcs,
+                    mcs_label=mcs_label,
+                    mcs_filter_ids=mcs_filter_ids,
                 )
             )
             if show_skeleton and org.skeleton is not None:
@@ -430,106 +443,148 @@ class Project:
             return df_mean
 
     def _calc_mcs(self, org_source, org_target, max_distance, min_distance=0):
-        # extracted this function to use paarallel pool
+        # extracted this function to use parallel pool
 
-        mesh_source = org_source.mesh
-        mesh_target = org_target.mesh
+        cache_name = f"mcs_{org_source.id}_{org_target.id}_{max_distance}_{min_distance}_{self.compression_level}"
+        with disk_cache(self, cache_name) as cache:
+            if cache_name not in cache:
+                mesh_source = org_source.mesh
+                mesh_target = org_target.mesh
 
-        for mesh in [mesh_source, mesh_target]:
-            trimesh.repair.fix_inversion(mesh)
-            trimesh.repair.fix_winding(mesh)
-            trimesh.repair.fix_normals(mesh)
+                for mesh in [mesh_source, mesh_target]:
+                    trimesh.repair.fix_inversion(mesh)
+                    trimesh.repair.fix_winding(mesh)
+                    trimesh.repair.fix_normals(mesh)
 
-        distance_target_source, index_target_source = mesh_source.nearest.vertex(
-            org_target.mesh.vertices
-        )
-        distance_source_target, index_source_target = mesh_target.nearest.vertex(
-            org_source.mesh.vertices
-        )
+                (
+                    distance_target_source,
+                    index_target_source,
+                ) = mesh_source.nearest.vertex(org_target.mesh.vertices)
+                (
+                    distance_source_target,
+                    index_source_target,
+                ) = mesh_target.nearest.vertex(org_source.mesh.vertices)
 
-        # if we want to now which vertices of mesh 1 are close to mesh 2
-        # we need to run the search on org2 with the points of org1
-        # this will give us a distance and an index for each vertex of org1
+                # if a minimum threshold is given we want to exclude any mcs that have a part that is closer than the minimum distance.
+                # this avoids having overlapping contact sites when filtering multiple distances.
+                if (
+                    np.min(distance_target_source) < min_distance
+                    or np.min(distance_source_target) < min_distance
+                ):
+                    return None
 
-        mask_1 = (distance_source_target > min_distance) & (
-            distance_source_target < max_distance
-        )
-        mask_2 = (distance_target_source > min_distance) & (
-            distance_target_source < max_distance
-        )
+                # if we want to now which vertices of mesh 1 are close to mesh 2
+                # we need to run the search on org2 with the points of org1
+                # this will give us a distance and an index for each vertex of org1
 
-        ind_source = np.nonzero(mask_1)
-        ind_target = np.nonzero(mask_2)
+                mask_1 = (distance_source_target > min_distance) & (
+                    distance_source_target < max_distance
+                )
+                mask_2 = (distance_target_source > min_distance) & (
+                    distance_target_source < max_distance
+                )
 
-        # now we now which vertex indeces of mesh 1 and 2 are suitable.
+                ind_source = np.nonzero(mask_1)
+                ind_target = np.nonzero(mask_2)
 
-        # figure out if the surface point is facing the other mesh
-        # get the normals of the vertices
+                # now we now which vertex indeces of mesh 1 and 2 are suitable.
 
-        normals_source = mesh_source.vertex_normals[ind_source]
-        normals_target = mesh_target.vertex_normals[ind_target]
+                # figure out if the surface point is facing the other mesh
+                # get the normals of the vertices
 
-        # get the direction of the vector between the two points
-        vector_source = (
-            mesh_target.vertices[index_source_target[ind_source]]
-            - mesh_source.vertices[ind_source]
-        )
-        vector_target = (
-            mesh_source.vertices[index_target_source[ind_target]]
-            - mesh_target.vertices[ind_target]
-        )
+                normals_source = mesh_source.vertex_normals[ind_source]
+                normals_target = mesh_target.vertex_normals[ind_target]
 
-        # calculate the dot product of the normals and the vectors
-        dot_source = np.sum(normals_source * vector_source, axis=1)
-        dot_target = np.sum(normals_target * vector_target, axis=1)
+                # get the direction of the vector between the two points
+                vector_source = (
+                    mesh_target.vertices[index_source_target[ind_source]]
+                    - mesh_source.vertices[ind_source]
+                )
+                vector_target = (
+                    mesh_source.vertices[index_target_source[ind_target]]
+                    - mesh_target.vertices[ind_target]
+                )
 
-        # calculate the dot product for the opposite orientation of the normals
-        dot_source_opposite = np.sum(-normals_source * vector_source, axis=1)
-        dot_target_opposite = np.sum(-normals_target * vector_target, axis=1)
+                # calculate the dot product of the normals and the vectors
+                dot_source = np.sum(normals_source * vector_source, axis=1)
+                dot_target = np.sum(normals_target * vector_target, axis=1)
 
-        # if the dot product is positive the surface is facing the other mesh
-        # choose the orientation that gives the most vertices facing the other mesh
+                # calculate the dot product for the opposite orientation of the normals
+                dot_source_opposite = np.sum(-normals_source * vector_source, axis=1)
+                dot_target_opposite = np.sum(-normals_target * vector_target, axis=1)
 
-        ind_source_normal = ind_source[0][dot_source > 0]
-        ind_source_inverse = ind_source[0][dot_source_opposite > 0]
+                # if the dot product is positive the surface is facing the other mesh
+                # choose the orientation that gives the most vertices facing the other mesh
 
-        ind_target_normal = ind_target[0][dot_target > 0]
-        ind_target_inverse = ind_target[0][dot_target_opposite > 0]
+                ind_source_normal = ind_source[0][dot_source > 0]
+                ind_source_inverse = ind_source[0][dot_source_opposite > 0]
 
-        # for some reason some of the meshes behave differently when comparing the dot product
-        # of the normals and the vectors.
-        # This is a quick fix to choose the orientation by comparing the mean distance
-        # of the vertices selected by the dot product.
+                ind_target_normal = ind_target[0][dot_target > 0]
+                ind_target_inverse = ind_target[0][dot_target_opposite > 0]
 
-        if ind_source_normal.size > 0 and ind_source_inverse.size > 0:
-            if np.mean(distance_source_target[ind_source_normal]) < np.mean(
-                distance_source_target[ind_source_inverse]
-            ):
-                ind_source = ind_source_normal
+                # for some reason some of the meshes behave differently when comparing the dot product
+                # of the normals and the vectors.
+                # This is a quick fix to choose the orientation by comparing the mean distance
+                # of the vertices selected by the dot product.
+
+                if ind_source_normal.size > 0 and ind_source_inverse.size > 0:
+                    if np.mean(distance_source_target[ind_source_normal]) < np.mean(
+                        distance_source_target[ind_source_inverse]
+                    ):
+                        ind_source = ind_source_normal
+                    else:
+                        ind_source = ind_source_inverse
+                else:
+                    ind_source = (
+                        ind_source_normal
+                        if ind_source_normal.size > 0
+                        else ind_source_inverse
+                    )
+
+                if ind_target_normal.size > 0 and ind_target_inverse.size > 0:
+                    if np.mean(distance_target_source[ind_target_normal]) < np.mean(
+                        distance_target_source[ind_target_inverse]
+                    ):
+                        ind_target = ind_target_normal
+                    else:
+                        ind_target = ind_target_inverse
+                else:
+                    ind_target = (
+                        ind_target_normal
+                        if ind_target_normal.size > 0
+                        else ind_target_inverse
+                    )
+
+                result_dist_s_t = distance_source_target[ind_source]
+                result_dist_t_s = distance_target_source[ind_target]
+
+                cache[cache_name] = (
+                    ind_source,
+                    ind_target,
+                    result_dist_s_t,
+                    result_dist_t_s,
+                )
+
             else:
-                ind_source = ind_source_inverse
-        else:
-            ind_source = (
-                ind_source_normal if ind_source_normal.size > 0 else ind_source_inverse
-            )
+                ind_source, ind_target, result_dist_s_t, result_dist_t_s = cache[
+                    cache_name
+                ]
 
-        if ind_target_normal.size > 0 and ind_target_inverse.size > 0:
-            if np.mean(distance_target_source[ind_target_normal]) < np.mean(
-                distance_target_source[ind_target_inverse]
-            ):
-                ind_target = ind_target_normal
-            else:
-                ind_target = ind_target_inverse
-        else:
-            ind_target = (
-                ind_target_normal if ind_target_normal.size > 0 else ind_target_inverse
-            )
-
-        return ind_source, ind_target
+        return ind_source, ind_target, result_dist_s_t, result_dist_t_s
 
     def search_mcs(
-        self, ids_source="*", ids_target="*", max_distance=0.5, min_distance=0
+        self,
+        mcs_label,
+        ids_source="*",
+        ids_target="*",
+        max_distance=0.5,
+        min_distance=0,
     ):
+        if mcs_label in self._mcs_labels:
+            raise ValueError(
+                f"MCS label {mcs_label} already exists in project please use a different label."
+            )
+
         filtered_distance_dict = self.distance_filtering(
             ids_source=ids_source,
             ids_target=ids_target,
@@ -555,12 +610,46 @@ class Project:
                         callback=lambda _: pbar.update(),
                     ).get()
 
-                    org_source_close_vertices, org_target_close_vertices = results
-                    org_source.add_mcs(org_target.id, org_source_close_vertices)
-                    org_target.add_mcs(org_source.id, org_target_close_vertices)
+                    if results is None:
+                        continue
+
+                    (
+                        org_source_close_vertices,
+                        org_target_close_vertices,
+                        result_dist_s_t,
+                        result_dist_t_s,
+                    ) = results
+
+                    org_source.add_mcs(
+                        mcs_label,
+                        org_target.id,
+                        org_source_close_vertices,
+                        result_dist_s_t,
+                    )
+                    org_target.add_mcs(
+                        mcs_label,
+                        org_source.id,
+                        org_target_close_vertices,
+                        result_dist_t_s,
+                    )
                     self.logger.debug(
                         "Found MCS between %s and %s", org_source.id, org_target.id
                     )
+            self._mcs_labels[mcs_label] = {
+                "max_distance": max_distance,
+                "min_distance": min_distance,
+            }
+
+    @property
+    def mcs_labels(self):
+        mcs_str = ""
+        for key, value in self._mcs_labels.items():
+            mcs_str += (
+                f"  {key}: {value['min_distance']}um - {value['max_distance']}um\n"
+            )
+
+        self.logger.info("Available MCS labels and their search radius: \n%s", mcs_str)
+        return self._mcs_labels
 
     def hist_distance_matrix(
         self,
@@ -580,7 +669,7 @@ class Project:
         return fig
 
     def hist_skeletons(self, ids="*", attribute="num_nodes"):
-        """Plot the histogram fromt he skeleton info.
+        """Plot the histogram from the skeleton info.
 
         :param ids: Filter id, defaults to "*"
         :type ids: str, optional
@@ -657,12 +746,111 @@ class Project:
         self.calculate_meshes()
 
         properties = {}
-        for organelle in self.organelles():
-            properties[organelle.id] = (
-                organelle.geometric_data | organelle.mesh_properties
-            )
+
+        with disk_cache(
+            self, f"geometric_properties_{self.compression_level}"
+        ) as cache:
+            if f"geometric_properties_{self.compression_level}" not in cache:
+                for organelle in self.organelles():
+                    properties[organelle.id] = organelle.geometric_data
+
+                cache[f"geometric_properties_{self.compression_level}"] = properties
+
+            properties = cache[f"geometric_properties_{self.compression_level}"]
 
         return pd.DataFrame(properties).T
+
+    def get_mcs_properties(self, ids="*", mcs_filter=None):
+        """The properties of the MCS between organelles
+
+
+        :param ids: Filter id, defaults to "*"
+        :type ids: str, optional
+        :return: _description_
+        :rtype: _type_
+
+        :param mcs_filter: Filter the MCS properties by the given mcs_filter, defaults to None
+        :type mcs_filter: str|list, optional
+
+
+        """
+
+        orgs = self.organelles(ids=ids, return_ids=False)
+
+        mcs_properties = {}
+        for org in orgs:
+            org_mcs_data = org.mcs_dict
+            for mcs_label, value in org_mcs_data.items():
+                if mcs_filter and mcs_label not in mcs_filter:
+                    continue
+                mcs_properties[(mcs_label, org.id)] = value
+
+        mcs_df = pd.DataFrame(mcs_properties).T
+        mcs_df.sort_index(inplace=True)
+
+        return mcs_df
+
+    def get_mcs_overview(self, ids="*", mcs_filter=None):
+        def _weighted_stats(x):
+            # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
+            mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
+            std_area = np.sqrt(
+                np.average(
+                    (x["std_area"] ** 2 + (x["mean_area"] - mean_area) ** 2),
+                    weights=x["n_contacts"],
+                )
+            )
+            mean_dist = np.average(x["mean_dist"], weights=x["n_contacts"])
+            std_dist = np.sqrt(
+                np.average(
+                    (x["std_dist"] ** 2 + (x["mean_dist"] - mean_dist) ** 2),
+                    weights=x["n_contacts"],
+                )
+            )
+
+            # Calculate the sum, mean, and standard deviation for 'n_contacts' and 'total_area'
+            total_contacts = x["n_contacts"].sum()
+            mean_n_contacts = x["n_contacts"].mean()
+            std_n_contacts = x["n_contacts"].std()
+            total_area = x["total_area"].sum()
+            mean_total_area = x["total_area"].mean()
+            std_total_area = x["total_area"].std()
+
+            new_columns = [
+                ("overall", "total_contacts"),
+                ("overall", "total_area"),
+                ("per organelle", "mean_n_contacts"),
+                ("per organelle", "std_n_contacts"),
+                ("per organelle", "mean_total_area"),
+                ("per organelle", "std_area"),
+                ("per mcs", "mean_area"),
+                ("per mcs", "std_area"),
+                ("per mcs", "mean_dist"),
+                ("per mcs", "std_dist"),
+            ]
+            new_index = pd.MultiIndex.from_tuples(new_columns)
+
+            return pd.Series(
+                [
+                    total_contacts,
+                    total_area,
+                    mean_n_contacts,
+                    std_n_contacts,
+                    mean_total_area,
+                    std_total_area,
+                    mean_area,
+                    std_area,
+                    mean_dist,
+                    std_dist,
+                ],
+                index=new_index,
+            )
+
+        mcs_df = self.get_mcs_properties(ids=ids, mcs_filter=mcs_filter)
+
+        overview = mcs_df.groupby(level=0).apply(_weighted_stats)
+        overview.sort_index(axis=1, inplace=True)
+        return overview.T
 
     @property
     def skeleton_info(self):
