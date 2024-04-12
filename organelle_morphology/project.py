@@ -746,17 +746,18 @@ class Project:
         self.calculate_meshes()
 
         properties = {}
-
-        with disk_cache(
-            self, f"geometric_properties_{self.compression_level}"
-        ) as cache:
-            if f"geometric_properties_{self.compression_level}" not in cache:
+        sources = list(self._sources.keys())
+        cache_str = f"geometric_properties_{self.compression_level}_{sources}"
+        with disk_cache(self, cache_str) as cache:
+            if cache_str not in cache:
                 for organelle in self.organelles():
-                    properties[organelle.id] = organelle.geometric_data
+                    properties[organelle.id] = (
+                        organelle.geometric_data | organelle.mesh_properties
+                    )
 
-                cache[f"geometric_properties_{self.compression_level}"] = properties
+                cache[cache_str] = properties
 
-            properties = cache[f"geometric_properties_{self.compression_level}"]
+            properties = cache[cache_str]
 
         return pd.DataFrame(properties).T
 
