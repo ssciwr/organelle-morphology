@@ -1,14 +1,15 @@
 import contextlib
 import cachetools
 import hashlib
-import multiprocessing
+import multiprocess
 import shelved_cache
 import xdg
 from tqdm import tqdm
 
 
 # Store the number of parallel cores used
-_multiprocessing_cores = multiprocessing.cpu_count()
+_multiprocessing_cores = multiprocess.cpu_count()
+print(_multiprocessing_cores)
 
 
 @contextlib.contextmanager
@@ -44,14 +45,15 @@ def set_parallel_cores():
     """Set the number of cores used for parallel processing"""
 
     global _multiprocessing_cores
-    _multiprocessing_cores = multiprocessing.cpu_count()
+    _multiprocessing_cores = multiprocess.cpu_count()
 
 
 @contextlib.contextmanager
 def parallel_pool(total=None):
     """A context manager that runs the code in parallel"""
     # Create a process pool
-    pool = multiprocessing.Pool(_multiprocessing_cores)
+
+    pool = multiprocess.Pool(_multiprocessing_cores)
 
     # Run the code in parallel
     if total:

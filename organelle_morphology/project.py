@@ -12,8 +12,9 @@ import numpy as np
 import pandas as pd
 
 from collections import defaultdict
-from scipy.spatial import distance
 import plotly.graph_objects as go
+import multiprocessing as mp
+from tqdm import tqdm
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
@@ -47,16 +48,25 @@ def _picklable_mesh_extractor(organelle):
     return organelle.mesh
 
 
-def _picklable_distance_calculation(meshes, i):
-    col_manager_test = trimesh.collision.CollisionManager()
-    col_manager_test.add_object("mesh1", meshes[i])
-    distances = []
+def _picklable_distance_calculation(task):
+    meshes, i = task
+    # col_manager_test = trimesh.collision.CollisionManager()
+    # col_manager_test.add_object("mesh1", meshes[i])
+    distances_list = []
     for j in np.arange(i + 1, len(meshes)):
-        distances.append(col_manager_test.min_distance_single(meshes[j]))
+        (
+            _,
+            distances,
+            _,
+        ) = meshes[
+            i
+        ].nearest.on_surface(meshes[j].vertices)
+
+        distances_list.append(min(distances))
 
     # prox_query = trimesh.proximity.ProximityQuery(meshes[i])
     # distance = prox_query.on_surface(meshes[j].vertices)[1]
-    return distances
+    return distances_list, i
 
 
 class Project:
@@ -122,6 +132,10 @@ class Project:
         self._morphology_map = {}
 
         self._mcs_labels = {}
+
+        # this permanent filter can be used to soft drop organelles from the project
+        # for example if they are too small to be considered
+        self.permanent_filter = []
 
         # The compression level at which we operate
         if compression_level < 0:
@@ -602,43 +616,48 @@ class Project:
         )
 
         with parallel_pool(n_pairs) as (pool, pbar):
+            async_results = {}
             for org_source in filtered_distance_dict.keys():
                 for org_target in filtered_distance_dict[org_source]:
-                    results = pool.apply_async(
+                    async_result = pool.apply_async(
                         self._calc_mcs,
                         (org_source, org_target, max_distance, min_distance),
                         callback=lambda _: pbar.update(),
-                    ).get()
-
-                    if results is None:
-                        continue
-
-                    (
-                        org_source_close_vertices,
-                        org_target_close_vertices,
-                        result_dist_s_t,
-                        result_dist_t_s,
-                    ) = results
-
-                    org_source.add_mcs(
-                        mcs_label,
-                        org_target.id,
-                        org_source_close_vertices,
-                        result_dist_s_t,
                     )
-                    org_target.add_mcs(
-                        mcs_label,
-                        org_source.id,
-                        org_target_close_vertices,
-                        result_dist_t_s,
-                    )
-                    self.logger.debug(
-                        "Found MCS between %s and %s", org_source.id, org_target.id
-                    )
-            self._mcs_labels[mcs_label] = {
-                "max_distance": max_distance,
-                "min_distance": min_distance,
-            }
+                    async_results[(org_source, org_target)] = async_result
+
+        for (org_source, org_target), async_result in async_results.items():
+            results = async_result.get()
+
+            if results is None:
+                continue
+
+            (
+                org_source_close_vertices,
+                org_target_close_vertices,
+                result_dist_s_t,
+                result_dist_t_s,
+            ) = results
+
+            org_source.add_mcs(
+                mcs_label,
+                org_target.id,
+                org_source_close_vertices,
+                result_dist_s_t,
+            )
+            org_target.add_mcs(
+                mcs_label,
+                org_source.id,
+                org_target_close_vertices,
+                result_dist_t_s,
+            )
+            self.logger.debug(
+                "Found MCS between %s and %s", org_source.id, org_target.id
+            )
+        self._mcs_labels[mcs_label] = {
+            "max_distance": max_distance,
+            "min_distance": min_distance,
+        }
 
     @property
     def mcs_labels(self):
@@ -713,13 +732,32 @@ class Project:
     def calculate_meshes(self):
         """Trigger the calculation of meshes for all organelles"""
 
-        with parallel_pool(len(self.organelles())) as (pool, pbar):
-            for organelle in self.organelles():
-                pool.apply_async(
-                    _picklable_mesh_extractor,
-                    (organelle,),
-                    callback=lambda _: pbar.update(),
-                ).get()
+        result_list = []
+
+        from tqdm import tqdm
+
+        for organelle in tqdm(self.organelles()):
+            _picklable_mesh_extractor(organelle)
+        # with parallel_pool(len(self.organelles())) as (pool, pbar):
+        #     for organelle in self.organelles():
+        #         result = pool.apply_async(
+        #             _picklable_mesh_extractor,
+        #             (organelle,),
+        #             callback=lambda _: pbar.update(),
+        #         )
+        #         result_list.append(result)
+        #     [result.get() for result in result_list]
+        # pool_results = []
+        # with parallel_pool(len(self.organelles())) as (pool, pbar):
+        #     tasks = [organelle for organelle in self.organelles()]
+        #     map_result = pool.map_async(_picklable_mesh_extractor, tasks)
+        #     for organelle, result in enumerate(map_result.get()):
+        #         pbar.update()
+
+        # with parallel_pool(len(self.organelles())) as (pool, pbar):
+        #     tasks = [organelle for organelle in self.organelles()]
+        #     for organelle, result in enumerate(pool.imap_unordered(_picklable_mesh_extractor, tasks)):
+        #         pbar.update()
 
     @property
     def geometric_properties(self):
@@ -743,13 +781,14 @@ class Project:
         """
 
         # Trigger the calculation of all meshes in a parallel pool
-        self.calculate_meshes()
 
         properties = {}
         sources = list(self._sources.keys())
         cache_str = f"geometric_properties_{self.compression_level}_{sources}"
         with disk_cache(self, cache_str) as cache:
             if cache_str not in cache:
+                self.calculate_meshes()
+
                 for organelle in self.organelles():
                     properties[organelle.id] = (
                         organelle.geometric_data | organelle.mesh_properties
@@ -881,7 +920,8 @@ class Project:
         :return: _description_
         :rtype: _type_
         """
-        self.logger.info("Calculating distance matrix")
+        self.logger.info("Retrieving distance matrix")
+
         # Trigger the calculation of all meshes in a parallel pool
         active_sources = list(self._sources.keys())
         with disk_cache(
@@ -891,6 +931,8 @@ class Project:
                 f"distance_matrix_{active_sources}_{self.compression_level}"
                 not in cache
             ):
+                self.logger.info("Loading meshes")
+
                 self.calculate_meshes()
 
                 meshes = []
@@ -899,23 +941,65 @@ class Project:
                     organelles.append(organelle.id)
                     meshes.append(organelle.mesh)
 
+                self.logger.info("Calculating distance matrix")
                 num_rows = len(meshes)
                 distance_matrix = np.zeros((num_rows, num_rows))
-                with parallel_pool(num_rows) as (pool, pbar):
-                    for i in np.arange(num_rows):
-                        # for j in np.arange(i + 1, num_rows):
-                        result = pool.apply_async(
-                            _picklable_distance_calculation,
-                            (
-                                meshes,
-                                i,
-                            ),
-                            callback=lambda _: pbar.update(),
-                        )
-                        distances = result.get()
+
+                # use a multiprocessing manager to avoid copying the meshes this saves ram and increases performance by quite a bit.
+                manager = mp.Manager()
+                shared_meshes = manager.list(meshes)
+                tasks = [(shared_meshes, i) for i in np.arange(num_rows)]
+                progress = tqdm(total=num_rows)
+                with mp.Pool(mp.cpu_count()) as pool:
+                    results = pool.imap_unordered(
+                        _picklable_distance_calculation, tasks
+                    )
+                    for distances, i in results:
                         distance_matrix[i, i] = 0
                         distance_matrix[i, i + 1 :] = distances
                         distance_matrix[i + 1 :, i] = distances
+                        progress.update()
+
+                # from joblib import Parallel, delayed
+
+                # tasks = [(meshes, i) for i in np.arange(num_rows)]
+
+                # results = Parallel(n_jobs=100, verbose=100)(delayed(_picklable_distance_calculation)(task) for task in tasks)
+
+                # #pbar = tqdm(total=num_rows)
+                # for result in results:
+                #     distances, i = result
+                #     distance_matrix[i, i] = 0
+                #     distance_matrix[i, i + 1 :] = distances
+                #     distance_matrix[i + 1 :, i] = distances
+                # #pbar.close()
+
+                # with parallel_pool(num_rows) as (pool, pbar):
+                #     tasks = [(meshes, i) for i in np.arange(num_rows)]
+                #     for result in pool.imap_unordered(_picklable_distance_calculation, tasks):
+                #         distances,i = result
+                #         pbar.update()
+                #         distance_matrix[i, i] = 0
+                #         distance_matrix[i, i + 1 :] = distances
+                #         distance_matrix[i + 1 :, i] = distances
+
+                #     for i in np.arange(num_rows):
+                #         # for j in np.arange(i + 1, num_rows):
+                #         result = pool.apply_async(
+                #             _picklable_distance_calculation,
+                #             (
+                #                 meshes,
+                #                 i,
+                #             ),
+                #             callback=lambda _: pbar.update(),
+                #         )
+                #         result_list.append(result)
+
+                # for result,i in result_list:
+                #     distances = result.get()
+                #     distance_matrix[i, i] = 0
+                #     distance_matrix[i, i + 1 :] = distances
+                #     distance_matrix[i + 1 :, i] = distances
 
                 distance_df = pd.DataFrame(
                     distance_matrix,
@@ -927,6 +1011,14 @@ class Project:
                 ] = distance_df
 
             return cache[f"distance_matrix_{active_sources}_{self.compression_level}"]
+
+    def add_permanent_filter(self, ids):
+        """Add organelles to the permanent filter list
+
+        :param ids: The organelle ids to be added to the permanent filter list
+        :type ids: list
+        """
+        self.permanent_filter.extend(ids)
 
     @property
     def metadata(self):
@@ -966,8 +1058,8 @@ class Project:
         if isinstance(ids, str):
             ids = [ids]
 
-        for id in ids:
+        for id_ in ids:
             for source in self._sources.values():
-                result.extend(source.organelles(id, return_ids))
+                result.extend(source.organelles(id_, return_ids, self.permanent_filter))
 
         return result

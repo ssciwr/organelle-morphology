@@ -234,7 +234,7 @@ class DataSource:
         return labels
 
     def organelles(
-        self, ids: str = "*", return_ids: bool = False
+        self, ids: str = "*", return_ids: bool = False, permanent_filter=None
     ) -> list[Organelle] | list[str]:
         """Return a list of organelles found in the data source
 
@@ -262,6 +262,11 @@ class DataSource:
 
         # Filter the organelles with the given ids pattern
         filtered_ids = fnmatch.filter(self._organelles.keys(), ids)
+
+        if permanent_filter is not None:
+            filtered_ids = [
+                org_id for org_id in filtered_ids if org_id not in permanent_filter
+            ]
 
         # Return ids or organelle objects
         if return_ids:

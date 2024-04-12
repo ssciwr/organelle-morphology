@@ -144,5 +144,4 @@ dmypy.json
 cython_debug/
 .vscode/settings.json
 
-notebooks/
-!notebooks/demo*
+notebooks/test*
