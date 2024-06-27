@@ -920,105 +920,58 @@ class Project:
         :return: _description_
         :rtype: _type_
         """
-        self.logger.info("Retrieving distance matrix")
 
-        # Trigger the calculation of all meshes in a parallel pool
-        active_sources = list(self._sources.keys())
-        with disk_cache(
-            self, f"distance_matrix_{active_sources}_{self.compression_level}"
-        ) as cache:
-            if (
-                f"distance_matrix_{active_sources}_{self.compression_level}"
-                not in cache
-            ):
-                self.logger.info("Loading meshes")
+        return generate_distance_matrix(self)
 
-                self.calculate_meshes()
-
-                meshes = []
-                organelles = []
-                for organelle in self.organelles():
-                    organelles.append(organelle.id)
-                    meshes.append(organelle.mesh)
-
-                self.logger.info("Calculating distance matrix")
-                num_rows = len(meshes)
-                distance_matrix = np.zeros((num_rows, num_rows))
-
-                # use a multiprocessing manager to avoid copying the meshes this saves ram and increases performance by quite a bit.
-                manager = mp.Manager()
-                shared_meshes = manager.list(meshes)
-                tasks = [(shared_meshes, i) for i in np.arange(num_rows)]
-                progress = tqdm(total=num_rows)
-                with mp.Pool(mp.cpu_count()) as pool:
-                    results = pool.imap_unordered(
-                        _picklable_distance_calculation, tasks
-                    )
-                    for distances, i in results:
-                        distance_matrix[i, i] = 0
-                        distance_matrix[i, i + 1 :] = distances
-                        distance_matrix[i + 1 :, i] = distances
-                        progress.update()
-
-                # from joblib import Parallel, delayed
-
-                # tasks = [(meshes, i) for i in np.arange(num_rows)]
-
-                # results = Parallel(n_jobs=100, verbose=100)(delayed(_picklable_distance_calculation)(task) for task in tasks)
-
-                # #pbar = tqdm(total=num_rows)
-                # for result in results:
-                #     distances, i = result
-                #     distance_matrix[i, i] = 0
-                #     distance_matrix[i, i + 1 :] = distances
-                #     distance_matrix[i + 1 :, i] = distances
-                # #pbar.close()
-
-                # with parallel_pool(num_rows) as (pool, pbar):
-                #     tasks = [(meshes, i) for i in np.arange(num_rows)]
-                #     for result in pool.imap_unordered(_picklable_distance_calculation, tasks):
-                #         distances,i = result
-                #         pbar.update()
-                #         distance_matrix[i, i] = 0
-                #         distance_matrix[i, i + 1 :] = distances
-                #         distance_matrix[i + 1 :, i] = distances
-
-                #     for i in np.arange(num_rows):
-                #         # for j in np.arange(i + 1, num_rows):
-                #         result = pool.apply_async(
-                #             _picklable_distance_calculation,
-                #             (
-                #                 meshes,
-                #                 i,
-                #             ),
-                #             callback=lambda _: pbar.update(),
-                #         )
-                #         result_list.append(result)
-
-                # for result,i in result_list:
-                #     distances = result.get()
-                #     distance_matrix[i, i] = 0
-                #     distance_matrix[i, i + 1 :] = distances
-                #     distance_matrix[i + 1 :, i] = distances
-
-                distance_df = pd.DataFrame(
-                    distance_matrix,
-                    index=organelles,
-                    columns=organelles,
-                )
-                cache[
-                    f"distance_matrix_{active_sources}_{self.compression_level}"
-                ] = distance_df
-
-            return cache[f"distance_matrix_{active_sources}_{self.compression_level}"]
-
-    def add_permanent_filter(self, ids):
+    def _add_permanent_whitelist(self, ids):
         """Add organelles to the permanent filter list
 
         :param ids: The organelle ids to be added to the permanent filter list
         :type ids: list
         """
-        self.permanent_filter.extend(ids)
+        self.permanent_whitelist.extend(ids)
+
+    def _add_permanend_blacklist(self, ids):
+        """Add organelles to the permanent blacklist filter.
+        For the time beeing only complete ids are supported.
+
+        :param ids: The organelle ids to be added to the permanent filter list
+        :type ids: list
+        """
+        self.permanent_blacklist.extend(ids)
+
+    def filter_organelles_by_size(self, organelle_type, cutoff):
+        """Take the largest entries of the specified organelle type
+        until their combined volume reaches the cutoff value.
+
+        :param organelle_type: The desired organelle type to perform the filter on. E.G "mito" or "er".
+        :type organelle_type: str
+        :param cutoff: The cutoff value between 0 and 1.
+        :type cutoff: float
+
+        """
+        geo_props = self.geometric_properties
+        self.logger.info(
+            f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff*100}% of the total volume."
+        )
+
+        df_sorted = geo_props.loc[
+            geo_props.index.str.contains(organelle_type)
+        ].sort_values("voxel_volume", ascending=False)
+        df_sorted["cumulative_volume"] = df_sorted["voxel_volume"].cumsum()
+
+        # get the n largest organelles that make up the cutoff volume of the total volume
+        total_volume = df_sorted["voxel_volume"].sum()
+        cutoff_volume = total_volume * cutoff
+        df_filtered = df_sorted[df_sorted["cumulative_volume"] <= cutoff_volume]
+
+        self.logger.info(f"Filtering {len(df_filtered)} organelles.")
+
+        # now invert the filter to find the blacklisted organelles
+
+        self._add_permanend_blacklist(
+            df_sorted.index.difference(df_filtered.index).tolist()
+        )
 
     @property
     def metadata(self):
@@ -1060,6 +1013,16 @@ class Project:
 
         for id_ in ids:
             for source in self._sources.values():
-                result.extend(source.organelles(id_, return_ids, self.permanent_filter))
+                if id_ in self.permanent_blacklist:
+                    continue
+
+                result.extend(
+                    source.organelles(
+                        id_,
+                        return_ids,
+                        self.permanent_whitelist,
+                        self.permanent_blacklist,
+                    )
+                )
 
         return result
