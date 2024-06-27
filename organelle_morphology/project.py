@@ -1,6 +1,10 @@
 from organelle_morphology.organelle import Organelle, organelle_types
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import disk_cache, parallel_pool
+from organelle_morphology.distance_calculations import (
+    generate_distance_matrix,
+    _generate_mcs,
+)
 
 import json
 import os
@@ -46,27 +50,6 @@ def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
 
 def _picklable_mesh_extractor(organelle):
     return organelle.mesh
-
-
-def _picklable_distance_calculation(task):
-    meshes, i = task
-    # col_manager_test = trimesh.collision.CollisionManager()
-    # col_manager_test.add_object("mesh1", meshes[i])
-    distances_list = []
-    for j in np.arange(i + 1, len(meshes)):
-        (
-            _,
-            distances,
-            _,
-        ) = meshes[
-            i
-        ].nearest.on_surface(meshes[j].vertices)
-
-        distances_list.append(min(distances))
-
-    # prox_query = trimesh.proximity.ProximityQuery(meshes[i])
-    # distance = prox_query.on_surface(meshes[j].vertices)[1]
-    return distances_list, i
 
 
 class Project:
@@ -131,11 +114,13 @@ class Project:
         self._distance_matrix = None
         self._morphology_map = {}
 
+        # {label: {max_distance: float, min_distance: float}}
         self._mcs_labels = {}
 
         # this permanent filter can be used to soft drop organelles from the project
         # for example if they are too small to be considered
-        self.permanent_filter = []
+        self.permanent_whitelist = []
+        self.permanent_blacklist = []
 
         # The compression level at which we operate
         if compression_level < 0:
@@ -165,6 +150,9 @@ class Project:
         self.logger.addHandler(c_handler)
         self.logger.addHandler(f_handler)
         self.logger.info(f"\n ---- New Project {project_path} loaded----\n")
+
+        # debug help
+        self.use_cache = True
 
     @property
     def path(self):
@@ -456,208 +444,24 @@ class Project:
 
             return df_mean
 
-    def _calc_mcs(self, org_source, org_target, max_distance, min_distance=0):
-        # extracted this function to use parallel pool
+    def search_mcs(self, mcs_label, max_distance, min_distance=0):
+        """
+        This function is used to search for MC within a project.
+        Pairs will only be selected when their minimum mesh distance is between
+        the requested min and max distance.
 
-        cache_name = f"mcs_{org_source.id}_{org_target.id}_{max_distance}_{min_distance}_{self.compression_level}"
-        with disk_cache(self, cache_name) as cache:
-            if cache_name not in cache:
-                mesh_source = org_source.mesh
-                mesh_target = org_target.mesh
 
-                for mesh in [mesh_source, mesh_target]:
-                    trimesh.repair.fix_inversion(mesh)
-                    trimesh.repair.fix_winding(mesh)
-                    trimesh.repair.fix_normals(mesh)
 
-                (
-                    distance_target_source,
-                    index_target_source,
-                ) = mesh_source.nearest.vertex(org_target.mesh.vertices)
-                (
-                    distance_source_target,
-                    index_source_target,
-                ) = mesh_target.nearest.vertex(org_source.mesh.vertices)
+        Args:
+            project (Project): The project object containing the distance matrix and organelles.
+            mcs_label (str): The label for the MCS pairs.
+            max_distance (float): The maximum distance for the MCS pairs.
+            min_distance (float, optional): The minimum distance for the MCS pairs. Defaults to 0.
 
-                # if a minimum threshold is given we want to exclude any mcs that have a part that is closer than the minimum distance.
-                # this avoids having overlapping contact sites when filtering multiple distances.
-                if (
-                    np.min(distance_target_source) < min_distance
-                    or np.min(distance_source_target) < min_distance
-                ):
-                    return None
-
-                # if we want to now which vertices of mesh 1 are close to mesh 2
-                # we need to run the search on org2 with the points of org1
-                # this will give us a distance and an index for each vertex of org1
-
-                mask_1 = (distance_source_target > min_distance) & (
-                    distance_source_target < max_distance
-                )
-                mask_2 = (distance_target_source > min_distance) & (
-                    distance_target_source < max_distance
-                )
-
-                ind_source = np.nonzero(mask_1)
-                ind_target = np.nonzero(mask_2)
-
-                # now we now which vertex indeces of mesh 1 and 2 are suitable.
-
-                # figure out if the surface point is facing the other mesh
-                # get the normals of the vertices
-
-                normals_source = mesh_source.vertex_normals[ind_source]
-                normals_target = mesh_target.vertex_normals[ind_target]
-
-                # get the direction of the vector between the two points
-                vector_source = (
-                    mesh_target.vertices[index_source_target[ind_source]]
-                    - mesh_source.vertices[ind_source]
-                )
-                vector_target = (
-                    mesh_source.vertices[index_target_source[ind_target]]
-                    - mesh_target.vertices[ind_target]
-                )
-
-                # calculate the dot product of the normals and the vectors
-                dot_source = np.sum(normals_source * vector_source, axis=1)
-                dot_target = np.sum(normals_target * vector_target, axis=1)
-
-                # calculate the dot product for the opposite orientation of the normals
-                dot_source_opposite = np.sum(-normals_source * vector_source, axis=1)
-                dot_target_opposite = np.sum(-normals_target * vector_target, axis=1)
-
-                # if the dot product is positive the surface is facing the other mesh
-                # choose the orientation that gives the most vertices facing the other mesh
-
-                ind_source_normal = ind_source[0][dot_source > 0]
-                ind_source_inverse = ind_source[0][dot_source_opposite > 0]
-
-                ind_target_normal = ind_target[0][dot_target > 0]
-                ind_target_inverse = ind_target[0][dot_target_opposite > 0]
-
-                # for some reason some of the meshes behave differently when comparing the dot product
-                # of the normals and the vectors.
-                # This is a quick fix to choose the orientation by comparing the mean distance
-                # of the vertices selected by the dot product.
-
-                if ind_source_normal.size > 0 and ind_source_inverse.size > 0:
-                    if np.mean(distance_source_target[ind_source_normal]) < np.mean(
-                        distance_source_target[ind_source_inverse]
-                    ):
-                        ind_source = ind_source_normal
-                    else:
-                        ind_source = ind_source_inverse
-                else:
-                    ind_source = (
-                        ind_source_normal
-                        if ind_source_normal.size > 0
-                        else ind_source_inverse
-                    )
-
-                if ind_target_normal.size > 0 and ind_target_inverse.size > 0:
-                    if np.mean(distance_target_source[ind_target_normal]) < np.mean(
-                        distance_target_source[ind_target_inverse]
-                    ):
-                        ind_target = ind_target_normal
-                    else:
-                        ind_target = ind_target_inverse
-                else:
-                    ind_target = (
-                        ind_target_normal
-                        if ind_target_normal.size > 0
-                        else ind_target_inverse
-                    )
-
-                result_dist_s_t = distance_source_target[ind_source]
-                result_dist_t_s = distance_target_source[ind_target]
-
-                cache[cache_name] = (
-                    ind_source,
-                    ind_target,
-                    result_dist_s_t,
-                    result_dist_t_s,
-                )
-
-            else:
-                ind_source, ind_target, result_dist_s_t, result_dist_t_s = cache[
-                    cache_name
-                ]
-
-        return ind_source, ind_target, result_dist_s_t, result_dist_t_s
-
-    def search_mcs(
-        self,
-        mcs_label,
-        ids_source="*",
-        ids_target="*",
-        max_distance=0.5,
-        min_distance=0,
-    ):
-        if mcs_label in self._mcs_labels:
-            raise ValueError(
-                f"MCS label {mcs_label} already exists in project please use a different label."
-            )
-
-        filtered_distance_dict = self.distance_filtering(
-            ids_source=ids_source,
-            ids_target=ids_target,
-            filter_distance=max_distance,
-            attribute="objects",
-        )
-        n_pairs = sum(
-            [len(filtered_distance_dict[key]) for key in filtered_distance_dict.keys()]
-        )
-
-        self.logger.info(
-            "Found %s organelle pairs closer than %s um.",
-            n_pairs,
-            max_distance,
-        )
-
-        with parallel_pool(n_pairs) as (pool, pbar):
-            async_results = {}
-            for org_source in filtered_distance_dict.keys():
-                for org_target in filtered_distance_dict[org_source]:
-                    async_result = pool.apply_async(
-                        self._calc_mcs,
-                        (org_source, org_target, max_distance, min_distance),
-                        callback=lambda _: pbar.update(),
-                    )
-                    async_results[(org_source, org_target)] = async_result
-
-        for (org_source, org_target), async_result in async_results.items():
-            results = async_result.get()
-
-            if results is None:
-                continue
-
-            (
-                org_source_close_vertices,
-                org_target_close_vertices,
-                result_dist_s_t,
-                result_dist_t_s,
-            ) = results
-
-            org_source.add_mcs(
-                mcs_label,
-                org_target.id,
-                org_source_close_vertices,
-                result_dist_s_t,
-            )
-            org_target.add_mcs(
-                mcs_label,
-                org_source.id,
-                org_target_close_vertices,
-                result_dist_t_s,
-            )
-            self.logger.debug(
-                "Found MCS between %s and %s", org_source.id, org_target.id
-            )
-        self._mcs_labels[mcs_label] = {
-            "max_distance": max_distance,
-            "min_distance": min_distance,
-        }
+        Returns:
+            None
+        """
+        _generate_mcs(self, mcs_label, max_distance, min_distance)
 
     @property
     def mcs_labels(self):
@@ -732,10 +536,6 @@ class Project:
     def calculate_meshes(self):
         """Trigger the calculation of meshes for all organelles"""
 
-        result_list = []
-
-        from tqdm import tqdm
-
         for organelle in tqdm(self.organelles()):
             _picklable_mesh_extractor(organelle)
         # with parallel_pool(len(self.organelles())) as (pool, pbar):
@@ -786,7 +586,7 @@ class Project:
         sources = list(self._sources.keys())
         cache_str = f"geometric_properties_{self.compression_level}_{sources}"
         with disk_cache(self, cache_str) as cache:
-            if cache_str not in cache:
+            if cache_str not in cache or not self.use_cache:
                 self.calculate_meshes()
 
                 for organelle in self.organelles():
