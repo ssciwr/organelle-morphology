@@ -9,7 +9,6 @@ from organelle_morphology.distance_calculations import (
 import json
 import os
 import pathlib
-import trimesh
 import logging
 
 import numpy as np
@@ -444,7 +443,9 @@ class Project:
 
             return df_mean
 
-    def search_mcs(self, mcs_label, max_distance, min_distance=0):
+    def search_mcs(
+        self, mcs_label, max_distance, min_distance=0, override_mcs_label=False
+    ):
         """
         This function is used to search for MC within a project.
         Pairs will only be selected when their minimum mesh distance is between
@@ -461,6 +462,10 @@ class Project:
         Returns:
             None
         """
+
+        if mcs_label in self._mcs_labels and not override_mcs_label:
+            raise ValueError(f"MCS label {mcs_label} already exists in the project")
+
         _generate_mcs(self, mcs_label, max_distance, min_distance)
 
     @property

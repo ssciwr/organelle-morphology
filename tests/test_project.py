@@ -233,16 +233,12 @@ def test_mcs(cebra_project_with_sources):
     ids = "*"
     p.search_mcs(
         "far_contacts",
-        ids_source=ids,
-        ids_target=ids,
         min_distance=0.1,
         max_distance=0.5,
     )
 
     p.search_mcs(
         "close_contacts",
-        ids_source=ids,
-        ids_target=ids,
         min_distance=0.0,
         max_distance=0.10,
     )
@@ -257,16 +253,18 @@ def test_mcs(cebra_project_with_sources):
     with pytest.raises(ValueError):
         p.search_mcs(
             "far_contacts",
-            ids_source=ids,
-            ids_target=ids,
             min_distance=0.1,
             max_distance=10,
+        )
+        p.search_mcs(
+            "far_contacts",
+            min_distance=0.1,
+            max_distance=10,
+            override_mcs_label=True,
         )
 
     p.search_mcs(
         "very_far_contacts",
-        ids_source=ids,
-        ids_target=ids,
         min_distance=0.1,
         max_distance=10,
     )
