@@ -1,7 +1,8 @@
 import contextlib
 import cachetools
 import hashlib
-import multiprocess
+
+# import multiprocess
 import shelved_cache
 import xdg
 from tqdm import tqdm
@@ -36,21 +37,24 @@ def disk_cache(project, name, maxsize=10000):
     cache.close()
 
 
-@contextlib.contextmanager
-def parallel_pool(total=None, cores=None):
-    """A context manager that runs the code in parallel"""
-    # Create a process pool
+# not sure yet wether to fully remove it or try to integrate it again.
 
-    pool = multiprocess.Pool(cores)
 
-    # Run the code in parallel
-    if total:
-        pbar = tqdm(total=total)
-        yield pool, pbar
+# @contextlib.contextmanager
+# def parallel_pool(total=None, cores=None):
+#     """A context manager that runs the code in parallel"""
+#     # Create a process pool
 
-    else:
-        yield pool
+#     pool = multiprocess.Pool(cores)
 
-    # Close the pool
-    pool.close()
-    pool.join()
+#     # Run the code in parallel
+#     if total:
+#         pbar = tqdm(total=total)
+#         yield pool, pbar
+
+#     else:
+#         yield pool
+
+#     # Close the pool
+#     pool.close()
+#     pool.join()
