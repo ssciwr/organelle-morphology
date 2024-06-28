@@ -352,12 +352,18 @@ class Project:
         :type ids_target: str, optional
         :param filter_distance: The distance in micro meter used for filtering, defaults to 0.01
         :type filter_distance: float, optional
-        :param attribute: Show names, number of contact sites ("n_mcs") or return the organelle objects ("objects"), defaults to "names"
+        :param attribute: Show names, number of contacts (contacts) or return the organelle objects ("objects"), defaults to "names"
         :type attribute: str, optional
 
         :return: Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
         :rtype: dict
         """
+
+        if attribute not in ["names", "contacts", "objects"]:
+            raise ValueError(
+                f"Attribute must be one of 'names', 'contacts' or 'objects' but is {attribute}"
+            )
+
         orgs_1 = self.organelles(ids=ids_source, return_ids=True)
         orgs_2 = self.organelles(ids=ids_target, return_ids=True)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
@@ -374,18 +380,19 @@ class Project:
         for col in filtered_df_dict:
             for row, value in filtered_df_dict[col].items():
                 if value < filter_distance and col != row:  # exclude self-contact
-                    if (
-                        attribute in ["names", "objects"]
-                        and row in output_filtered_dict.keys()
-                    ):
-                        # this is not done when interested in the number of neighbors for each organelle.
-                        continue  # skip entries that are already present as keys, this avoids doubling
+                    # if (
+                    #     attribute in ["names", "objects"]
+                    #     and row in output_filtered_dict.keys()
+                    # ):
+                    #     # this is not done when interested in the number of neighbors for each organelle.
+                    #     continue  # skip entries that are already present as keys, this avoids doubling
 
                     output_filtered_dict[col].append(row)
 
-        if attribute == "n_mcs":
+        if attribute == "contacts":
             for key in output_filtered_dict.keys():
                 output_filtered_dict[key] = len(output_filtered_dict[key])
+                output_filtered_dict = dict(output_filtered_dict)
 
         elif attribute == "objects":
             obj_output_dict = defaultdict(list)
@@ -603,7 +610,14 @@ class Project:
 
             properties = cache[cache_str]
 
-        return pd.DataFrame(properties).T
+        # hide blacklisted organelles
+
+        df = pd.DataFrame(properties).T
+
+        valid_organelles = self.organelles(return_ids=True)
+        df = df.loc[valid_organelles]
+
+        return df
 
     def get_mcs_properties(self, ids="*", mcs_filter=None):
         """The properties of the MCS between organelles

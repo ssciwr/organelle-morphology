@@ -503,7 +503,6 @@ class Organelle:
         _mcs_dict[(mcs_label)]["n_contacts"] = len(len_dist_list)
 
         _mcs_dict[(mcs_label)]["total_area"] = np.sum(entries["area"])
-
         _mcs_dict[(mcs_label)]["mean_area"] = np.mean(area_list)
 
         if len(area_list) == 1:
