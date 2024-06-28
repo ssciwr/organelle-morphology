@@ -150,12 +150,12 @@ class MembraneContactSiteCalculator:
         self._vertices_source = self.mesh_source.vertices[self._vertices_index_source]
         self._vertices_target = self.mesh_target.vertices[self._vertices_index_target]
 
-        faces_source = np.unique(
-            np.nonzero(np.isin(self.mesh_source.faces, self._vertices_source))[0]
-        )
-        faces_target = np.unique(
-            np.nonzero(np.isin(self.mesh_target.faces, self._vertices_target))[0]
-        )
+        faces_source = self.mesh_source.faces[
+            np.any(np.isin(self.mesh_source.faces, self._vertices_index_source), axis=1)
+        ]
+        faces_target = self.mesh_target.faces[
+            np.any(np.isin(self.mesh_target.faces, self._vertices_index_target), axis=1)
+        ]
 
         area_source = self.mesh_source.area_faces[faces_source].sum()
         area_target = self.mesh_target.area_faces[faces_target].sum()
