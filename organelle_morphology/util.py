@@ -2,7 +2,7 @@ import contextlib
 import cachetools
 import hashlib
 
-# import multiprocess
+import multiprocess
 import shelved_cache
 import xdg
 from tqdm import tqdm
