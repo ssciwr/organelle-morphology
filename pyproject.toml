@@ -37,6 +37,7 @@ dependencies = [
     "shelved_cache",
     "xdg",
     "skeletor",
+    "multiprocess",
 ]
 
 [project.optional-dependencies]

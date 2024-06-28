@@ -40,21 +40,21 @@ def disk_cache(project, name, maxsize=10000):
 # not sure yet wether to fully remove it or try to integrate it again.
 
 
-# @contextlib.contextmanager
-# def parallel_pool(total=None, cores=None):
-#     """A context manager that runs the code in parallel"""
-#     # Create a process pool
+@contextlib.contextmanager
+def parallel_pool(total=None, cores=None):
+    """A context manager that runs the code in parallel"""
+    # Create a process pool
 
-#     pool = multiprocess.Pool(cores)
+    pool = multiprocess.Pool(cores)
 
-#     # Run the code in parallel
-#     if total:
-#         pbar = tqdm(total=total)
-#         yield pool, pbar
+    # Run the code in parallel
+    if total:
+        pbar = tqdm(total=total)
+        yield pool, pbar
 
-#     else:
-#         yield pool
+    else:
+        yield pool
 
-#     # Close the pool
-#     pool.close()
-#     pool.join()
+    # Close the pool
+    pool.close()
+    pool.join()
