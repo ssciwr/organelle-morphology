@@ -257,8 +257,10 @@ class Organelle:
     ):
         # prepare the plotly mesh object for visualization
 
-        verts = self.mesh.vertices
-        faces = self.mesh.faces
+        mesh = self.mesh
+
+        verts = mesh.vertices
+        faces = mesh.faces
 
         # prepare data for plotly
         vertsT = np.transpose(verts)
@@ -271,7 +273,7 @@ class Organelle:
 
         # override settings if special visualization is requested
         if show_morphology:
-            curvature_vertices = self.morphology_map()
+            curvature_vertices = self.morphology_map(mesh)
             intensity = curvature_vertices
             colorscale = "Viridis"
             opacity = 1
@@ -437,7 +439,7 @@ class Organelle:
 
         return self._mesh_properties[comp_level]
 
-    def morphology_map(self):
+    def morphology_map(self, mesh=None):
         """Get the mesh data for this organelle"""
         comp_level = self._source._project.compression_level
 
@@ -445,7 +447,8 @@ class Organelle:
         morph_radius = 0.0
 
         if comp_level not in self._morphology_map:
-            mesh = self.mesh
+            if mesh is None:
+                mesh = self.mesh
             if mesh is None:
                 self._morphology_map[comp_level] = None
                 return self._morphology_map[comp_level]

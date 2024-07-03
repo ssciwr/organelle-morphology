@@ -5,12 +5,17 @@ from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
 )
-
+from organelle_morphology.rendering import (
+    _export_meshes,
+    _setup_blender,
+    _render_blender,
+    _live_camera_control,
+    _update_cam,
+)
 import json
 import os
 import pathlib
 import logging
-
 import numpy as np
 import pandas as pd
 
@@ -483,6 +488,9 @@ class Project:
                 f"  {key}: {value['min_distance']}um - {value['max_distance']}um\n"
             )
 
+            if mcs_str == "":
+                mcs_str = "No MCS labels found in the project."
+
         self.logger.info("Available MCS labels and their search radius: \n%s", mcs_str)
         return self._mcs_labels
 
@@ -596,6 +604,7 @@ class Project:
 
         properties = {}
         sources = list(self._sources.keys())
+
         cache_str = f"geometric_properties_{self.compression_level}_{sources}"
         with disk_cache(self, cache_str) as cache:
             if cache_str not in cache or not self.use_cache:
@@ -615,6 +624,7 @@ class Project:
         df = pd.DataFrame(properties).T
 
         valid_organelles = self.organelles(return_ids=True)
+
         df = df.loc[valid_organelles]
 
         return df
@@ -769,6 +779,14 @@ class Project:
         :type cutoff: float
 
         """
+        # reset filter
+        # remove all organelles of the given type from the permanent blacklist
+        self.permanent_blacklist = [
+            org
+            for org in self.permanent_blacklist
+            if not org.startswith(organelle_type)
+        ]
+
         geo_props = self.geometric_properties
         self.logger.info(
             f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff*100}% of the total volume."
@@ -790,6 +808,83 @@ class Project:
 
         self._add_permanend_blacklist(
             df_sorted.index.difference(df_filtered.index).tolist()
+        )
+
+    def export_meshes(
+        self, filename: str, coloring="uniform", mcs_label=None, ids="*"
+    ) -> pathlib.Path:
+        """Export all meshes of the given project as a .ply file.
+        Coloring options:
+        - uniform: All meshes are colored uniformly.
+        - type: Meshes are colored by their type.
+        - mcs: only the MCS parts are colored in and the rest is uniform.
+        - mcs_type: MCS parts are colored in and the rest is colored by type.
+        - curvature: Meshes are colored by their curvature.
+
+        :param p: The project to export.
+        :type p: Project
+        :param filename: The filename to save the meshes to.
+        :type filename: str
+        :param coloring: Different color modes for the meshes.
+        Possible values are "uniform", "type", "mcs", "mcs_type", "curvature", defaults to "uniform"
+        :type coloring: str, optional
+        :param mcs_label: The MCS label to color the meshes by, defaults to None
+        :type mcs_label: str, optional
+        :param ids: The filter ids to export, defaults to "*"
+        :type ids: str, optional
+        :return: The path to the saved file.
+        :rtype: Path
+        """
+        return _export_meshes(self, filename, coloring, mcs_label, ids)
+
+    def setup_blender(self, scene, ply_filepath):
+        """Setup a basic blender environment to allow high quality rendering of the meshes.
+
+        :param scene: The scene that is to be rendered.
+        :type scene: trimesh.scene
+        :param ply_filepath: the filepath to the exportet meshes.
+        :type ply_filepath: str
+
+        """
+        _setup_blender(scene, ply_filepath)
+
+    def live_camera_control(self, ids="*"):
+        """Interactive dash app to choose a good camera position and lens setting.
+
+        :param ids: Organelle filter, defaults to "*"
+        :type ids: str, optional
+        """
+
+        _live_camera_control(self, ids)
+
+    def update_render_cam(self, position, radius, center=None, lens_value=30):
+        """set the camera position and lens value for the rendering.
+
+        :param position: Vector for the camera position.
+        :type position: list[float]
+        :param radius: distance scaling between the camera and the center.
+        :type radius: float
+        :param center: Where the camera points to, if none is given the previous value will be used., defaults to None
+        :type center: list[float], optional
+        :param lens_value: The lens value for the camera, defaults to 30
+        :type lens_value: int, optional
+        """
+        _update_cam(position, radius, center, lens_value)
+
+    def render_blender(
+        self,
+        output_path,
+        resolution=(1800, 1800),
+        engine="BLENDER_EEVEE",
+        show_image=True,
+    ):
+        """Finalize the blender rendering and save the image.
+
+        :param output_path: The filepath for the finished render.
+        :type output_path: str
+        """
+        _render_blender(
+            output_path, resolution=resolution, engine=engine, show_image=show_image
         )
 
     @property

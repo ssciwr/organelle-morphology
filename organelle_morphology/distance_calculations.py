@@ -5,7 +5,7 @@ from organelle_morphology.util import disk_cache, parallel_pool
 
 import trimesh
 import logging
-
+import hashlib
 import numpy as np
 import pandas as pd
 
@@ -225,13 +225,16 @@ class MembraneContactSiteCalculator:
 
 def generate_distance_matrix(project) -> pd.DataFrame:
     active_sources = list(project._sources.keys())
-    with disk_cache(
-        project, f"distance_matrix_{active_sources}_{project.compression_level}"
-    ) as cache:
-        if (
-            f"distance_matrix_{active_sources}_{project.compression_level}" not in cache
-            or not project.use_cache
-        ):
+    # hash valid organelles
+    ids = sorted([org.id for org in project.organelles()])
+    id_hash = hashlib.sha256(str(ids).encode("utf-8")).hexdigest()
+
+    cache_key = (
+        f"distance_matrix_{active_sources}_{project.compression_level}_{id_hash}"
+    )
+
+    with disk_cache(project, cache_key) as cache:
+        if cache_key not in cache or not project.use_cache:
             project.logger.info("Initilizing distance matrix")
 
             project.logger.info("Loading meshes")
@@ -272,14 +275,19 @@ def generate_distance_matrix(project) -> pd.DataFrame:
                     distance_df.loc[id_1, id_2] = min_distance
                     distance_df.loc[id_2, id_1] = min_distance
 
-            cache[
-                f"distance_matrix_{active_sources}_{project.compression_level}"
-            ] = distance_df
+            cache[cache_key] = distance_df
 
         else:
             project.logger.info("Retrieving distance matrix from cache")
 
-        return cache[f"distance_matrix_{active_sources}_{project.compression_level}"]
+        distance_matrix = cache[cache_key]
+        # get all current_ids
+        current_ids = [org.id for org in project.organelles()]
+
+        # filter distance matrix rows and columns
+        distance_matrix = distance_matrix.loc[current_ids, current_ids]
+
+        return distance_matrix
 
 
 def _generate_mcs(project, mcs_label, max_distance, min_distance=0):
