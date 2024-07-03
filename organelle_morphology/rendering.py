@@ -87,7 +87,7 @@ def _export_meshes(
         _apply_curvature_color(meshes, curvature_list)
 
     scene = trimesh.Scene(meshes)
-    scene.export(file_path)
+    scene.export(str(file_path))
 
     return file_path, scene
 
@@ -334,7 +334,7 @@ def _render_blender(
     # show camera object
     bpy.context.scene.camera = bpy.data.objects["Camera"]
 
-    bpy.context.scene.render.filepath = output_path
+    bpy.context.scene.render.filepath = str(output_path)
 
     bpy.ops.render.render(write_still=True)
 
@@ -382,7 +382,6 @@ def _live_camera_control(project, ids="*"):
         vertices = np.concatenate((vertices, mesh_vertices))
 
     center = np.mean(vertices, axis=0)
-    radius = np.max(np.sqrt(np.sum((vertices - center) ** 2, axis=1)))
 
     # we don't need the vertices anymore
     vertices = None
