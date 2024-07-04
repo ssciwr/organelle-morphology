@@ -146,14 +146,17 @@ def _apply_mcs_type_color(meshes, mcs, types):
             mesh.visual.vertex_colors[idx] = (0, 0, 255, 255)
 
 
-def _map_curvature_to_colors(curvature):
+def _map_curvature_to_colors(curvature, colormap="viridis", diverging_threshold=None):
     # Normalize the integers
     min_val = min(curvature)
     max_val = max(curvature)
     normalized_curvature = [(i - min_val) / (max_val - min_val) for i in curvature]
 
+    if diverging_threshold is not None:
+        normalized_curvature = np.asarray(normalized_curvature) - diverging_threshold
+
     # Choose a colormap
-    colormap = plt.cm.viridis
+    colormap = plt.get_cmap(colormap)
 
     # Map each normalized integer to a color
     colors = []
