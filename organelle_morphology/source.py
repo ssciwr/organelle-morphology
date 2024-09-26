@@ -1,4 +1,5 @@
 from organelle_morphology.organelle import Organelle, organelle_registry
+from organelle_morphology.util import disk_cache, parallel_pool
 
 from elf.io import open_file
 
@@ -51,6 +52,8 @@ class DataSource:
 
         # The computed organelles are stored
         self._organelles = None
+
+        self.logger = self._project.logger
 
     @property
     def metadata(self):
@@ -121,6 +124,7 @@ class DataSource:
         """get basic properties from scikit-image"""
         comp_level = self._project.compression_level
 
+        self.logger.debug("get basic properties from scikit-image")
         if comp_level not in self._basic_geometric_properties:
             geometric_properties = regionprops(self.data, spacing=self.resolution)
 
@@ -148,8 +152,16 @@ class DataSource:
     @property
     def morphology_map(self):
         """Get the morphology map for all organelles"""
-        for organelle in self.organelles():
-            self._morphology_map[organelle.id] = organelle.morphology_map
+        self.logger.debug("get morphology map for all organelles")
+
+        with parallel_pool(len(self.organelles())) as (pool, pbar):
+            for organelle in self.organelles():
+                result = pool.apply_async(
+                    organelle.morphology_map,
+                    callback=lambda _: pbar.update(),
+                ).get()
+
+                self._morphology_map[organelle.id] = result
         return self._morphology_map
 
     @property

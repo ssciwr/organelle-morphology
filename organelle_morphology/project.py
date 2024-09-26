@@ -13,6 +13,8 @@ import trimesh
 from functools import reduce
 import plotly.graph_objects as go
 
+import logging
+
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
     """Load the project metadata JSON file
@@ -125,6 +127,29 @@ class Project:
 
         self._compression_level = compression_level
 
+        self.logger = logging.getLogger(project_path.stem)
+        self.logger.setLevel(logging.DEBUG)  # Set logger's level to INFO
+        self.logger.propagate = False
+        c_handler = logging.StreamHandler()
+        f_handler = logging.FileHandler(f"{project_path.stem}.log")
+
+        # Set levels - INFO for console, DEBUG for file
+        c_handler.setLevel(logging.INFO)
+        f_handler.setLevel(logging.DEBUG)
+
+        # Create formatters and add it to handlers
+        c_format = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+        f_format = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        c_handler.setFormatter(c_format)
+        f_handler.setFormatter(f_format)
+
+        # Add handlers to the logger
+        self.logger.addHandler(c_handler)
+        self.logger.addHandler(f_handler)
+        self.logger.info(f"\n ---- New Project {project_path} loaded----\n")
+
     @property
     def path(self):
         return self._project_path
@@ -168,6 +193,8 @@ class Project:
             background_label,
         )
 
+        self.logger.info("Adding source %s", source)
+
         # Double-check that it provides the current compression level
         if self.compression_level >= len(source_obj.metadata["downsampling"]):
             raise ValueError(
@@ -183,7 +210,7 @@ class Project:
         waves: int = 1,
         step_size: int = 2,
         skip_existing=False,
-        path_samplple_dist: float = 0.1,
+        path_sample_dist: float = 0.1,
     ):
         """Note that some meshes will be skipped if they are too small to be skeletonized.
 
@@ -201,6 +228,14 @@ class Project:
         :type path_samplple_dist: float, optional
         """
         orgs = self.organelles(ids=ids, return_ids=False)
+
+        start_logger_str = (
+            f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
+        )
+        if skip_existing:
+            start_logger_str += "Skipping existing skeletons."
+        self.logger.info(start_logger_str)
+
         for org in orgs:
             if skip_existing and org.skeleton is not None:
                 continue
@@ -210,7 +245,7 @@ class Project:
                 theta=theta,
                 waves=waves,
                 step_size=step_size,
-                path_samplple_dist=path_samplple_dist,
+                path_sample_dist=path_sample_dist,
             )
 
     def skeletonize_vertex_clusters(
@@ -220,9 +255,17 @@ class Project:
         epsilon: float = 0.1,
         sampling_dist: float = 0.1,
         skip_existing=False,
-        path_samplple_dist: float = 0.1,
+        path_sample_dist: float = 0.1,
     ):
         orgs = self.organelles(ids=ids, return_ids=False)
+
+        start_logger_str = (
+            f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
+        )
+        if skip_existing:
+            start_logger_str += "Skipping existing skeletons."
+        self.logger.info(start_logger_str)
+
         for org in orgs:
             if skip_existing and org.skeleton is not None:
                 continue
@@ -231,7 +274,7 @@ class Project:
                 theta=theta,
                 epsilon=epsilon,
                 sampling_dist=sampling_dist,
-                path_samplple_dist=path_samplple_dist,
+                path_sample_dist=path_sample_dist,
             )
 
     def show(
@@ -265,7 +308,7 @@ class Project:
                     )
                     fig.add_trace(sampled_scatter)
                 except:
-                    print(org.id, sampled_path, org.skeleton)
+                    self.logger.warning(org.id, sampled_path, org.skeleton)
                     raise ValueError("sampled_path is not valid")
         fig.update_layout(
             scene=dict(
@@ -506,7 +549,7 @@ class Project:
         :return: _description_
         :rtype: _type_
         """
-
+        self.logger.info("Calculating distance matrix")
         # Trigger the calculation of all meshes in a parallel pool
         active_sources = list(self._sources.keys())
         with disk_cache(

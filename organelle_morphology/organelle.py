@@ -48,6 +48,7 @@ class Organelle:
         self._skeleton = None
         self._sampled_skeleton = None
         self._skeleton_info = {}
+        self.logger = self._source._project.logger
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -71,6 +72,9 @@ class Organelle:
                 organelle_id=f"{cls._name}_{str(label).zfill(4)}",
             )
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self._organelle_id})"
+
     def _generate_mesh(self, smooth=True):
         try:
             verts, faces, _, _ = measure.marching_cubes(
@@ -84,6 +88,8 @@ class Organelle:
         mesh.fix_normals()
         if smooth:
             trimesh.smoothing.filter_humphrey(mesh)
+
+        self.logger.debug("Generated mesh for %s", self.id)
         return mesh
 
     def _generate_skeleton(
@@ -94,7 +100,7 @@ class Organelle:
         step_size: int = 2,
         epsilon: float = 0.1,
         sampling_dist: float = 0.1,
-        path_samplple_dist: float = 0.1,
+        path_sample_dist: float = 0.1,
     ):
         """
         Generates a skeleton for the organelle. The skeleton is generated and cleaned using the skeletor library.
@@ -108,44 +114,66 @@ class Organelle:
         :param theta: The threshold for the clean_up function. The higher the threshold, the more branches are removed.
         :param epsilon: The epsilon value for the contract function. The higher the epsilon, the more the mesh is contracted.
         :param sampling_dist: The sampling distance for the skeletonize function. The higher the sampling distance, the less vertices are used for the skeleton.
-
+        :param path_sample_dist: The distance between the sample points on the skeleton arms. The higher the distance, the less sample points are used.
         """
 
-        fixed_mesh = sk.pre.fix_mesh(self.mesh)
+        try:
+            fixed_mesh = sk.pre.fix_mesh(self.mesh)
+        except IndexError as e:
+            self.logger.debug(
+                "Could not fix mesh in skeleton generation for %s with error %s"
+                % (self.id, e)
+            )
+
+            fixed_mesh = self.mesh
+
         if skeletonization_type not in ["wavefront", "vertex_clusters"]:
             raise ValueError(
                 "Skeletonization type must be either 'wavefront' or 'vertex_clusters'."
             )
-
         try:
             if skeletonization_type == "wavefront":
                 skel = sk.skeletonize.by_wavefront(
                     fixed_mesh, waves=waves, progress=False, step_size=step_size
                 )
             elif skeletonization_type == "vertex_clusters":
-                cont = sk.pre.contract(fixed_mesh, epsilon=epsilon, progress=False)
+                try:
+                    cont = sk.pre.contract(fixed_mesh, epsilon=epsilon, progress=False)
+                except IndexError:
+                    self.logger.debug(
+                        "couldnt contract mesh using normal mesh for %s" % self.id
+                    )
+                    cont = fixed_mesh
                 skel = sk.skeletonize.by_vertex_clusters(
                     cont, sampling_dist=sampling_dist, progress=False
                 )
                 skel.mesh = fixed_mesh
-            sk.post.clean_up(skel, inplace=True, theta=theta)
 
+            sk.post.clean_up(skel, inplace=True, theta=theta)
             sk.post.radii(skel, method="knn")
 
             # if no skeleton can be created just skip this
             if len(skel.vertices) <= 1:
-                return
+                return None
 
             self._skeleton = skel
 
-            self._sample_skeleton(path_samplple_dist=path_samplple_dist)
+            self.sampled_skeleton = self._sample_skeleton(
+                path_sample_dist=path_sample_dist
+            )
 
             # reset skeleton info for new calculation
-            self._skeleton_info = {}
-        except IndexError:
+            self._skeleton_info = self._get_skeleton_info()
+            self.logger.debug("Generated skeleton for %s", self.id)
+
+        except Exception as e:
+            self.logger.debug(
+                "Could not generate skeleton for %s with error %s" % (self.id, e),
+                exc_info=True,
+            )
             self._skeleton = None
 
-    def _sample_skeleton(self, path_samplple_dist: float = 0.1):
+    def _sample_skeleton(self, path_sample_dist: float = 0.1):
         # the sample points are points along the skeleton arms
         # and the reference points are the vertices of the skeleton from which these samples have been generated.
         # we need these to later calculate the normal vector for the plane which will intersect our mesh
@@ -157,12 +185,12 @@ class Organelle:
                 - np.array(self.skeleton.vertices[edge[1]])
             )
 
-            if edge_len > path_samplple_dist:
+            if edge_len > path_sample_dist:
                 p1 = np.array(self.skeleton.vertices[edge[0]])
                 p2 = np.array(self.skeleton.vertices[edge[1]])
 
                 # find number of points to add bewteen the two vertices
-                n_points = np.ceil(edge_len / path_samplple_dist).astype(int)
+                n_points = np.ceil(edge_len / path_sample_dist).astype(int)
                 factors = np.linspace(0, 1, n_points)
 
                 # Compute the interpolated points
@@ -179,6 +207,7 @@ class Organelle:
         sampled_path = np.asarray(sampled_path)
         reference_point = np.asarray(reference_point)
         self._sampled_skeleton = sampled_path, reference_point
+        return self._sampled_skeleton
 
     def plotly_skeleton(self):
         if self._skeleton is None:
@@ -232,7 +261,7 @@ class Organelle:
 
         # override settings if special visualization is requested
         if show_morphology:
-            curvature_vertices = self.morphology_map
+            curvature_vertices = self.morphology_map()
             intensity = curvature_vertices
             colorscale = "Viridis"
             opacity = 1
@@ -257,44 +286,61 @@ class Organelle:
         )
         return go_mesh
 
+    def _get_skeleton_info(self):
+        if self._skeleton is None:
+            return None
+
+        skeleton_info = {}
+        graph = self.skeleton.get_graph()
+        if len(graph.nodes) == 0:
+            return 0
+
+        skeleton_info["num_nodes"] = len(graph.nodes)
+        skeleton_info["num_branch_points"] = len(
+            [node for node, degree in graph.degree() if degree > 2]
+        )
+        skeleton_info["end_points"] = len(
+            [node for node, degree in graph.degree() if degree == 1]
+        )
+        skeleton_info["total_length"] = sum(
+            d["weight"] for u, v, d in graph.edges(data=True)
+        )
+        skeleton_info["longest_path"] = networkx.dag_longest_path_length(graph)
+
+        lengths = [d["weight"] for u, v, d in graph.edges(data=True)]
+        skeleton_info["mean_length"] = np.mean(lengths)
+        skeleton_info["std_length"] = np.std(lengths)
+
+        skeleton_info["mean_radius"] = np.mean(self.skeleton.radius[0])
+        skeleton_info["std_radius"] = np.std(self.skeleton.radius[0])
+        return skeleton_info
+
     @property
     def skeleton(self):
         """Get the skeleton for this organelle"""
 
         return self._skeleton
 
+    @skeleton.setter
+    def skeleton(self, value):
+        self._skeleton = value
+
     @property
     def skeleton_info(self):
         # calculate some basic skeleton properties from the skeleton graph
+        if not self._skeleton:
+            return None
+
         if self._skeleton_info:
             return self._skeleton_info
         else:
-            graph = self.skeleton.get_graph()
-            if len(graph.nodes) == 0:
-                return 0
-
-            self._skeleton_info["num_nodes"] = len(graph.nodes)
-            self._skeleton_info["num_branch_points"] = len(
-                [node for node, degree in graph.degree() if degree > 2]
-            )
-            self._skeleton_info["end_points"] = len(
-                [node for node, degree in graph.degree() if degree == 1]
-            )
-            self._skeleton_info["total_length"] = sum(
-                d["weight"] for u, v, d in graph.edges(data=True)
-            )
-            self._skeleton_info["longest_path"] = networkx.dag_longest_path_length(
-                graph
-            )
-
-            lengths = [d["weight"] for u, v, d in graph.edges(data=True)]
-            self._skeleton_info["mean_length"] = np.mean(lengths)
-            self._skeleton_info["std_length"] = np.std(lengths)
-
-            self._skeleton_info["mean_radius"] = np.mean(self.skeleton.radius[0])
-            self._skeleton_info["std_radius"] = np.std(self.skeleton.radius[0])
+            self._skeleton_info = self._get_skeleton_info()
 
             return self._skeleton_info
+
+    @skeleton_info.setter
+    def skeleton_info(self, value):
+        self._skeleton_info = value
 
     @property
     def sampled_skeleton(self):
@@ -303,12 +349,16 @@ class Organelle:
         as well as the corresponding reference point to later get the correct plane normal vector
         """
         if self._skeleton is None:
-            print(
+            self.logger.warning(
                 f"Skeleton has not been generated for {self.id} yet. Please run project.generate_skeletons() first."
             )
             return None
 
         return self._sampled_skeleton
+
+    @sampled_skeleton.setter
+    def sampled_skeleton(self, value):
+        self._sampled_skeleton = value
 
     @property
     def mesh(self):
@@ -364,7 +414,6 @@ class Organelle:
 
         return self._mesh_properties[comp_level]
 
-    @property
     def morphology_map(self):
         """Get the mesh data for this organelle"""
         comp_level = self._source._project.compression_level
