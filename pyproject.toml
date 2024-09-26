@@ -38,6 +38,9 @@ dependencies = [
     "xdg",
     "skeletor",
     "multiprocess",
+    "bpy",
+    "dash",
+    "dash-bootstrap-components",
 ]
 
 [project.optional-dependencies]
