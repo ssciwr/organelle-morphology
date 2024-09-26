@@ -7,6 +7,7 @@ import logging
 import plotly.graph_objects as go
 import skeletor as sk
 import networkx
+from collections import defaultdict
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
@@ -17,7 +18,7 @@ def organelle_types() -> list[str]:
     """The list of organelles currently implemented.
 
     The strings used here to encode the organelles are expected in
-    various APIs when refering to a specific organelle.
+    various APIs when referring to a specific organelle.
     """
     return organelle_registry.keys()
 
@@ -48,6 +49,9 @@ class Organelle:
         self._skeleton = None
         self._sampled_skeleton = None
         self._skeleton_info = {}
+        self._mcs = defaultdict(dict)
+        self._mcs_dict = defaultdict(dict)
+
         self.logger = self._source._project.logger
 
     def __init_subclass__(cls, name=None):
@@ -141,7 +145,7 @@ class Organelle:
                     cont = sk.pre.contract(fixed_mesh, epsilon=epsilon, progress=False)
                 except IndexError:
                     self.logger.debug(
-                        "couldnt contract mesh using normal mesh for %s" % self.id
+                        "couldn't contract mesh using normal mesh for %s" % self.id
                     )
                     cont = fixed_mesh
                 skel = sk.skeletonize.by_vertex_clusters(
@@ -189,7 +193,7 @@ class Organelle:
                 p1 = np.array(self.skeleton.vertices[edge[0]])
                 p2 = np.array(self.skeleton.vertices[edge[1]])
 
-                # find number of points to add bewteen the two vertices
+                # find number of points to add between the two vertices
                 n_points = np.ceil(edge_len / path_sample_dist).astype(int)
                 factors = np.linspace(0, 1, n_points)
 
@@ -244,7 +248,13 @@ class Organelle:
         )
         return skeleton_trace
 
-    def plotly_mesh(self, show_morphology: bool = False, show_skeleton: bool = False):
+    def plotly_mesh(
+        self,
+        show_morphology: bool = False,
+        show_skeleton: bool = False,
+        mcs_label=False,
+        mcs_filter_ids=None,
+    ):
         # prepare the plotly mesh object for visualization
 
         verts = self.mesh.vertices
@@ -254,7 +264,7 @@ class Organelle:
         vertsT = np.transpose(verts)
         facesT = np.transpose(faces)
 
-        # initilize basic drawing settings
+        # initialize basic drawing settings
         intensity = None
         colorscale = None
         opacity = 1
@@ -269,6 +279,21 @@ class Organelle:
         if show_skeleton:
             opacity = 0.7
 
+        # add coloration for the close regions
+        if mcs_label:
+            intensity = np.zeros(len(verts))  # Default intensity is 0.5
+
+            for mcs_key, mcs in self.mcs.get(mcs_label, {}).items():
+                if mcs_filter_ids is not None:
+                    if mcs_key not in mcs_filter_ids:
+                        continue
+                t_close_vertices = np.transpose(mcs["vertices_index"])
+                intensity[t_close_vertices] = 1  # Close vertices have intensity 1
+            colorscale = [
+                [0, "rgb(110,150,220)"],
+                [1, "rgb(255,0,0)"],
+            ]  # Map intensity to color
+
         go_mesh = go.Mesh3d(
             x=vertsT[0],
             y=vertsT[1],
@@ -278,8 +303,6 @@ class Organelle:
             k=facesT[2],
             name=self.id,
             opacity=opacity,
-            # note: opacity below 1 seems to be an ongoing issue with plotly in 3d.
-            # shapes might not be drawn in the correct order and overlap wierdly when moving the camera,
             intensity=intensity,
             colorscale=colorscale,
             showscale=False,
@@ -434,6 +457,86 @@ class Organelle:
 
             self._morphology_map[comp_level] = curvature_vertices
         return self._morphology_map[comp_level]
+
+    def add_mcs(self, mcs_dict):
+        mcs_target = mcs_dict["partner_id"]
+        mcs_label = mcs_dict["mcs_label"]
+
+        mcs_entry = {
+            "vertices": mcs_dict["vertices"],
+            "vertices_index": mcs_dict["vertices_index"],
+            "distances": mcs_dict["distances"],
+            "area": mcs_dict["area"],
+        }
+
+        self._mcs[mcs_label][mcs_target] = mcs_entry
+
+    def get_mcs_dict_entry(self, mcs_label):
+        """
+        Calculate the properties of the mcs partners for the given mcs label
+
+        """
+
+        _mcs_dict = self.mcs_dict
+
+        len_dist_list = []
+        mean_dist_list = []
+        std_dist_list = []
+        area_list = []
+
+        for entries in self.mcs[mcs_label].values():
+            mean_dist_list.append(np.mean(entries["distances"]))
+            std_dist_list.append(np.std(entries["distances"]))
+            len_dist_list.append(len(entries["distances"]))
+
+            area_list.append(entries["area"])
+
+        mean_dist_list = np.array(mean_dist_list)
+        std_dist_list = np.array(std_dist_list)
+        len_dist_list = np.array(len_dist_list)
+        if len(len_dist_list) == 0 or 0 in len_dist_list:
+            self.logger.debug(
+                "No distributions found for mcs %s in organelle %s", mcs_label, self
+            )
+            return
+
+        _mcs_dict[(mcs_label)]["n_contacts"] = len(len_dist_list)
+
+        _mcs_dict[(mcs_label)]["total_area"] = np.sum(entries["area"])
+        _mcs_dict[(mcs_label)]["mean_area"] = np.mean(area_list)
+
+        if len(area_list) == 1:
+            _mcs_dict[(mcs_label)]["std_area"] = 0
+        else:
+            _mcs_dict[(mcs_label)]["std_area"] = np.std(area_list)
+
+        # calculate the mean and std from the sub_mean and std values for each mcs partner
+        try:
+            overall_mean = np.average(mean_dist_list, weights=mean_dist_list)
+        except ZeroDivisionError:
+            overall_mean = 0
+
+        try:
+            overall_var = np.average(
+                (std_dist_list**2 + (mean_dist_list - overall_mean) ** 2),
+                weights=len_dist_list,
+            )
+        except ZeroDivisionError:
+            overall_var = 0
+        overall_std = np.sqrt(overall_var)
+
+        _mcs_dict[(mcs_label)]["mean_dist"] = overall_mean
+        _mcs_dict[(mcs_label)]["std_dist"] = overall_std
+
+        self._mcs_dict = _mcs_dict
+
+    @property
+    def mcs(self):
+        return self._mcs
+
+    @property
+    def mcs_dict(self):
+        return self._mcs_dict
 
     @property
     def data(self):

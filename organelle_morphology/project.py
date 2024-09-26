@@ -1,19 +1,23 @@
 from organelle_morphology.organelle import Organelle, organelle_types
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import disk_cache, parallel_pool
+from organelle_morphology.distance_calculations import (
+    generate_distance_matrix,
+    _generate_mcs,
+)
 
 import json
 import os
 import pathlib
-import numpy as np
+import logging
 
 import numpy as np
 import pandas as pd
-import trimesh
-from functools import reduce
-import plotly.graph_objects as go
 
-import logging
+from collections import defaultdict
+import plotly.graph_objects as go
+import multiprocessing as mp
+from tqdm import tqdm
 
 
 def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
@@ -45,18 +49,6 @@ def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
 
 def _picklable_mesh_extractor(organelle):
     return organelle.mesh
-
-
-def _picklable_distance_calculation(meshes, i):
-    col_manager_test = trimesh.collision.CollisionManager()
-    col_manager_test.add_object("mesh1", meshes[i])
-    distances = []
-    for j in np.arange(i + 1, len(meshes)):
-        distances.append(col_manager_test.min_distance_single(meshes[j]))
-
-    # prox_query = trimesh.proximity.ProximityQuery(meshes[i])
-    # distance = prox_query.on_surface(meshes[j].vertices)[1]
-    return distances
 
 
 class Project:
@@ -121,6 +113,14 @@ class Project:
         self._distance_matrix = None
         self._morphology_map = {}
 
+        # {label: {max_distance: float, min_distance: float}}
+        self._mcs_labels = {}
+
+        # this permanent filter can be used to soft drop organelles from the project
+        # for example if they are too small to be considered
+        self.permanent_whitelist = []
+        self.permanent_blacklist = []
+
         # The compression level at which we operate
         if compression_level < 0:
             raise ValueError(f"Compression level must be >= 0, got {compression_level}")
@@ -138,7 +138,7 @@ class Project:
         f_handler.setLevel(logging.DEBUG)
 
         # Create formatters and add it to handlers
-        c_format = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+        c_format = logging.Formatter("%(levelname)s - %(message)s")
         f_format = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
@@ -149,6 +149,9 @@ class Project:
         self.logger.addHandler(c_handler)
         self.logger.addHandler(f_handler)
         self.logger.info(f"\n ---- New Project {project_path} loaded----\n")
+
+        # debug help
+        self.use_cache = True
 
     @property
     def path(self):
@@ -224,8 +227,8 @@ class Project:
         :type step_size: int, optional
         :param skip_existing: _description_, defaults to False
         :type skip_existing: bool, optional
-        :param path_samplple_dist: _description_, defaults to 0.1
-        :type path_samplple_dist: float, optional
+        :param path_sample_dist: _description_, defaults to 0.1
+        :type path_sample_dist: float, optional
         """
         orgs = self.organelles(ids=ids, return_ids=False)
 
@@ -282,16 +285,30 @@ class Project:
         ids: str = "*",
         show_morphology: bool = False,
         show_skeleton: bool = False,
+        mcs_label: str = None,
         height: int = 800,
     ):
         orgs = self.organelles(ids=ids, return_ids=False)
+
+        if mcs_label and mcs_label not in self._mcs_labels:
+            raise ValueError(
+                f"MCS label {mcs_label} not found in project please "
+                + "run search_mcs with the desired label first"
+            )
+
+        mcs_filter_ids = None
+        if mcs_label:
+            mcs_filter_ids = [org.id for org in orgs]
 
         # draw figure
         fig = go.Figure()
         for org in orgs:
             fig.add_traces(
                 org.plotly_mesh(
-                    show_morphology=show_morphology, show_skeleton=show_skeleton
+                    show_morphology=show_morphology,
+                    show_skeleton=show_skeleton,
+                    mcs_label=mcs_label,
+                    mcs_filter_ids=mcs_filter_ids,
                 )
             )
             if show_skeleton and org.skeleton is not None:
@@ -310,6 +327,7 @@ class Project:
                 except:
                     self.logger.warning(org.id, sampled_path, org.skeleton)
                     raise ValueError("sampled_path is not valid")
+
         fig.update_layout(
             scene=dict(
                 xaxis=dict(title="", showticklabels=False, showgrid=False),
@@ -334,12 +352,18 @@ class Project:
         :type ids_target: str, optional
         :param filter_distance: The distance in micro meter used for filtering, defaults to 0.01
         :type filter_distance: float, optional
-        :param attribute: Show names or number of contact sites ("n_mcs), defaults to "names"
+        :param attribute: Show names, number of contacts (contacts) or return the organelle objects ("objects"), defaults to "names"
         :type attribute: str, optional
 
         :return: Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
         :rtype: dict
         """
+
+        if attribute not in ["names", "contacts", "objects"]:
+            raise ValueError(
+                f"Attribute must be one of 'names', 'contacts' or 'objects' but is {attribute}"
+            )
+
         orgs_1 = self.organelles(ids=ids_source, return_ids=True)
         orgs_2 = self.organelles(ids=ids_target, return_ids=True)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
@@ -349,33 +373,40 @@ class Project:
         ]
 
         # Convert the filtered DataFrame to a dictionary
-        filtered_dict = filtered_df.to_dict("index")
-
+        filtered_df_dict = filtered_df.to_dict("index")
+        output_filtered_dict = defaultdict(list)
         # For each entry in the dictionary, replace the values with the column names that match the filter
-        keys_to_remove = []
-        for key in filtered_dict:
-            filtered_dict[key] = [
-                col
-                for col, value in filtered_dict[key].items()
-                if value < filter_distance
-            ]
 
-            # remove the self distance if present
-            if key in filtered_dict[key]:
-                filtered_dict[key].remove(key)
+        for col in filtered_df_dict:
+            for row, value in filtered_df_dict[col].items():
+                if value < filter_distance and col != row:  # exclude self-contact
+                    # if (
+                    #     attribute in ["names", "objects"]
+                    #     and row in output_filtered_dict.keys()
+                    # ):
+                    #     # this is not done when interested in the number of neighbors for each organelle.
+                    #     continue  # skip entries that are already present as keys, this avoids doubling
 
-            # remove the key if no value is present
-            if not filtered_dict[key]:
-                keys_to_remove.append(key)
+                    output_filtered_dict[col].append(row)
 
-        for key in keys_to_remove:
-            del filtered_dict[key]
+        if attribute == "contacts":
+            for key in output_filtered_dict.keys():
+                output_filtered_dict[key] = len(output_filtered_dict[key])
+                output_filtered_dict = dict(output_filtered_dict)
 
-        if attribute == "n_mcs":
-            for key in filtered_dict.keys():
-                filtered_dict[key] = len(filtered_dict[key])
+        elif attribute == "objects":
+            obj_output_dict = defaultdict(list)
+            for key in output_filtered_dict.keys():
+                new_key = self.organelles(ids=key, return_ids=False)[0]
 
-        return filtered_dict
+                for key_target in output_filtered_dict[key]:
+                    if key_target not in obj_output_dict.keys():
+                        obj_output_dict[new_key].extend(
+                            self.organelles(ids=key_target, return_ids=False)
+                        )
+            return obj_output_dict
+
+        return output_filtered_dict
 
     def distance_analysis(self, ids_source="*", ids_target="*", attribute="dist"):
         """get more information about the distance between two filtered organelle lists.
@@ -419,6 +450,42 @@ class Project:
 
             return df_mean
 
+    def search_mcs(
+        self, mcs_label, max_distance, min_distance=0, override_mcs_label=False
+    ):
+        """
+        This function is used to search for MC within a project.
+        Pairs will only be selected when their minimum mesh distance is between
+        the requested min and max distance.
+
+
+
+        Args:
+            project (Project): The project object containing the distance matrix and organelles.
+            mcs_label (str): The label for the MCS pairs.
+            max_distance (float): The maximum distance for the MCS pairs.
+            min_distance (float, optional): The minimum distance for the MCS pairs. Defaults to 0.
+
+        Returns:
+            None
+        """
+
+        if mcs_label in self._mcs_labels and not override_mcs_label:
+            raise ValueError(f"MCS label {mcs_label} already exists in the project")
+
+        _generate_mcs(self, mcs_label, max_distance, min_distance)
+
+    @property
+    def mcs_labels(self):
+        mcs_str = ""
+        for key, value in self._mcs_labels.items():
+            mcs_str += (
+                f"  {key}: {value['min_distance']}um - {value['max_distance']}um\n"
+            )
+
+        self.logger.info("Available MCS labels and their search radius: \n%s", mcs_str)
+        return self._mcs_labels
+
     def hist_distance_matrix(
         self,
         ids_source="*",
@@ -437,7 +504,7 @@ class Project:
         return fig
 
     def hist_skeletons(self, ids="*", attribute="num_nodes"):
-        """Plot the histogram fromt he skeleton info.
+        """Plot the histogram from the skeleton info.
 
         :param ids: Filter id, defaults to "*"
         :type ids: str, optional
@@ -481,13 +548,28 @@ class Project:
     def calculate_meshes(self):
         """Trigger the calculation of meshes for all organelles"""
 
-        with parallel_pool(len(self.organelles())) as (pool, pbar):
-            for organelle in self.organelles():
-                pool.apply_async(
-                    _picklable_mesh_extractor,
-                    (organelle,),
-                    callback=lambda _: pbar.update(),
-                ).get()
+        for organelle in tqdm(self.organelles()):
+            _picklable_mesh_extractor(organelle)
+        # with parallel_pool(len(self.organelles())) as (pool, pbar):
+        #     for organelle in self.organelles():
+        #         result = pool.apply_async(
+        #             _picklable_mesh_extractor,
+        #             (organelle,),
+        #             callback=lambda _: pbar.update(),
+        #         )
+        #         result_list.append(result)
+        #     [result.get() for result in result_list]
+        # pool_results = []
+        # with parallel_pool(len(self.organelles())) as (pool, pbar):
+        #     tasks = [organelle for organelle in self.organelles()]
+        #     map_result = pool.map_async(_picklable_mesh_extractor, tasks)
+        #     for organelle, result in enumerate(map_result.get()):
+        #         pbar.update()
+
+        # with parallel_pool(len(self.organelles())) as (pool, pbar):
+        #     tasks = [organelle for organelle in self.organelles()]
+        #     for organelle, result in enumerate(pool.imap_unordered(_picklable_mesh_extractor, tasks)):
+        #         pbar.update()
 
     @property
     def geometric_properties(self):
@@ -511,15 +593,123 @@ class Project:
         """
 
         # Trigger the calculation of all meshes in a parallel pool
-        self.calculate_meshes()
 
         properties = {}
-        for organelle in self.organelles():
-            properties[organelle.id] = (
-                organelle.geometric_data | organelle.mesh_properties
+        sources = list(self._sources.keys())
+        cache_str = f"geometric_properties_{self.compression_level}_{sources}"
+        with disk_cache(self, cache_str) as cache:
+            if cache_str not in cache or not self.use_cache:
+                self.calculate_meshes()
+
+                for organelle in self.organelles():
+                    properties[organelle.id] = (
+                        organelle.geometric_data | organelle.mesh_properties
+                    )
+
+                cache[cache_str] = properties
+
+            properties = cache[cache_str]
+
+        # hide blacklisted organelles
+
+        df = pd.DataFrame(properties).T
+
+        valid_organelles = self.organelles(return_ids=True)
+        df = df.loc[valid_organelles]
+
+        return df
+
+    def get_mcs_properties(self, ids="*", mcs_filter=None):
+        """The properties of the MCS between organelles
+
+
+        :param ids: Filter id, defaults to "*"
+        :type ids: str, optional
+        :return: _description_
+        :rtype: _type_
+
+        :param mcs_filter: Filter the MCS properties by the given mcs_filter, defaults to None
+        :type mcs_filter: str|list, optional
+
+
+        """
+
+        orgs = self.organelles(ids=ids, return_ids=False)
+
+        mcs_properties = {}
+        for org in orgs:
+            org_mcs_data = org.mcs_dict
+            for mcs_label, value in org_mcs_data.items():
+                if mcs_filter and mcs_label not in mcs_filter:
+                    continue
+                mcs_properties[(mcs_label, org.id)] = value
+
+        mcs_df = pd.DataFrame(mcs_properties).T
+        mcs_df.sort_index(inplace=True)
+
+        return mcs_df
+
+    def get_mcs_overview(self, ids="*", mcs_filter=None):
+        def _weighted_stats(x):
+            # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
+            mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
+            std_area = np.sqrt(
+                np.average(
+                    (x["std_area"] ** 2 + (x["mean_area"] - mean_area) ** 2),
+                    weights=x["n_contacts"],
+                )
+            )
+            mean_dist = np.average(x["mean_dist"], weights=x["n_contacts"])
+            std_dist = np.sqrt(
+                np.average(
+                    (x["std_dist"] ** 2 + (x["mean_dist"] - mean_dist) ** 2),
+                    weights=x["n_contacts"],
+                )
             )
 
-        return pd.DataFrame(properties).T
+            # Calculate the sum, mean, and standard deviation for 'n_contacts' and 'total_area'
+            total_contacts = x["n_contacts"].sum()
+            mean_n_contacts = x["n_contacts"].mean()
+            std_n_contacts = x["n_contacts"].std()
+            total_area = x["total_area"].sum()
+            mean_total_area = x["total_area"].mean()
+            std_total_area = x["total_area"].std()
+
+            new_columns = [
+                ("overall", "total_contacts"),
+                ("overall", "total_area"),
+                ("per organelle", "mean_n_contacts"),
+                ("per organelle", "std_n_contacts"),
+                ("per organelle", "mean_total_area"),
+                ("per organelle", "std_area"),
+                ("per mcs", "mean_area"),
+                ("per mcs", "std_area"),
+                ("per mcs", "mean_dist"),
+                ("per mcs", "std_dist"),
+            ]
+            new_index = pd.MultiIndex.from_tuples(new_columns)
+
+            return pd.Series(
+                [
+                    total_contacts,
+                    total_area,
+                    mean_n_contacts,
+                    std_n_contacts,
+                    mean_total_area,
+                    std_total_area,
+                    mean_area,
+                    std_area,
+                    mean_dist,
+                    std_dist,
+                ],
+                index=new_index,
+            )
+
+        mcs_df = self.get_mcs_properties(ids=ids, mcs_filter=mcs_filter)
+
+        overview = mcs_df.groupby(level=0).apply(_weighted_stats)
+        overview.sort_index(axis=1, inplace=True)
+        return overview.T
 
     @property
     def skeleton_info(self):
@@ -549,52 +739,58 @@ class Project:
         :return: _description_
         :rtype: _type_
         """
-        self.logger.info("Calculating distance matrix")
-        # Trigger the calculation of all meshes in a parallel pool
-        active_sources = list(self._sources.keys())
-        with disk_cache(
-            self, f"distance_matrix_{active_sources}_{self.compression_level}"
-        ) as cache:
-            if (
-                f"distance_matrix_{active_sources}_{self.compression_level}"
-                not in cache
-            ):
-                self.calculate_meshes()
 
-                meshes = []
-                organelles = []
-                for organelle in self.organelles():
-                    organelles.append(organelle.id)
-                    meshes.append(organelle.mesh)
+        return generate_distance_matrix(self)
 
-                num_rows = len(meshes)
-                distance_matrix = np.zeros((num_rows, num_rows))
-                with parallel_pool(num_rows) as (pool, pbar):
-                    for i in np.arange(num_rows):
-                        # for j in np.arange(i + 1, num_rows):
-                        result = pool.apply_async(
-                            _picklable_distance_calculation,
-                            (
-                                meshes,
-                                i,
-                            ),
-                            callback=lambda _: pbar.update(),
-                        )
-                        distances = result.get()
-                        distance_matrix[i, i] = 0
-                        distance_matrix[i, i + 1 :] = distances
-                        distance_matrix[i + 1 :, i] = distances
+    def _add_permanent_whitelist(self, ids):
+        """Add organelles to the permanent filter list
 
-                distance_df = pd.DataFrame(
-                    distance_matrix,
-                    index=organelles,
-                    columns=organelles,
-                )
-                cache[
-                    f"distance_matrix_{active_sources}_{self.compression_level}"
-                ] = distance_df
+        :param ids: The organelle ids to be added to the permanent filter list
+        :type ids: list
+        """
+        self.permanent_whitelist.extend(ids)
 
-            return cache[f"distance_matrix_{active_sources}_{self.compression_level}"]
+    def _add_permanend_blacklist(self, ids):
+        """Add organelles to the permanent blacklist filter.
+        For the time beeing only complete ids are supported.
+
+        :param ids: The organelle ids to be added to the permanent filter list
+        :type ids: list
+        """
+        self.permanent_blacklist.extend(ids)
+
+    def filter_organelles_by_size(self, organelle_type, cutoff):
+        """Take the largest entries of the specified organelle type
+        until their combined volume reaches the cutoff value.
+
+        :param organelle_type: The desired organelle type to perform the filter on. E.G "mito" or "er".
+        :type organelle_type: str
+        :param cutoff: The cutoff value between 0 and 1.
+        :type cutoff: float
+
+        """
+        geo_props = self.geometric_properties
+        self.logger.info(
+            f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff*100}% of the total volume."
+        )
+
+        df_sorted = geo_props.loc[
+            geo_props.index.str.contains(organelle_type)
+        ].sort_values("voxel_volume", ascending=False)
+        df_sorted["cumulative_volume"] = df_sorted["voxel_volume"].cumsum()
+
+        # get the n largest organelles that make up the cutoff volume of the total volume
+        total_volume = df_sorted["voxel_volume"].sum()
+        cutoff_volume = total_volume * cutoff
+        df_filtered = df_sorted[df_sorted["cumulative_volume"] <= cutoff_volume]
+
+        self.logger.info(f"Filtering {len(df_filtered)} organelles.")
+
+        # now invert the filter to find the blacklisted organelles
+
+        self._add_permanend_blacklist(
+            df_sorted.index.difference(df_filtered.index).tolist()
+        )
 
     @property
     def metadata(self):
@@ -634,8 +830,18 @@ class Project:
         if isinstance(ids, str):
             ids = [ids]
 
-        for id in ids:
+        for id_ in ids:
             for source in self._sources.values():
-                result.extend(source.organelles(id, return_ids))
+                if id_ in self.permanent_blacklist:
+                    continue
+
+                result.extend(
+                    source.organelles(
+                        id_,
+                        return_ids,
+                        self.permanent_whitelist,
+                        self.permanent_blacklist,
+                    )
+                )
 
         return result

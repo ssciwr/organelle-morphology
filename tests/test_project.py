@@ -227,6 +227,60 @@ def test_show_mesh_scene(cebra_project_with_sources):
     # scene.show()  # don't run this on ci
 
 
+def test_mcs(cebra_project_with_sources):
+    p = cebra_project_with_sources
+
+    ids = "*"
+    p.search_mcs(
+        "far_contacts",
+        min_distance=0.1,
+        max_distance=0.5,
+    )
+
+    p.search_mcs(
+        "close_contacts",
+        min_distance=0.0,
+        max_distance=0.10,
+    )
+
+    mcs_properties = p.get_mcs_properties(ids=ids)
+
+    with pytest.raises(KeyError):
+        mcs_properties.loc["far_contacts"]
+
+    assert len(mcs_properties) == 2
+
+    with pytest.raises(ValueError):
+        p.search_mcs(
+            "far_contacts",
+            min_distance=0.1,
+            max_distance=10,
+        )
+        p.search_mcs(
+            "far_contacts",
+            min_distance=0.1,
+            max_distance=10,
+            override_mcs_label=True,
+        )
+
+    p.search_mcs(
+        "very_far_contacts",
+        min_distance=0.1,
+        max_distance=10,
+    )
+
+    mcs_properties = p.get_mcs_properties(ids=ids)
+    assert len(mcs_properties) == 13
+
+    print(mcs_properties)
+
+    mcs_overview = p.get_mcs_overview()
+    assert mcs_overview.shape == (10, 2)
+
+    mcs_overview = p.get_mcs_overview(mcs_filter="very_far_contacts")
+    assert mcs_overview.shape == (10, 1)
+
+
 def test_show(cebra_project_with_sources):
     p = cebra_project_with_sources
 
