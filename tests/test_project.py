@@ -295,3 +295,33 @@ def test_show(cebra_project_with_sources):
 
     p.skeletonize_wavefront(skip_existing=True)
     p.show(show_skeleton=True)
+
+
+def test_blender(cebra_project_with_sources):
+    p = cebra_project_with_sources
+    tmp_dir = pathlib.Path(tempfile.mkdtemp())
+
+    p.search_mcs(
+        "far_contacts",
+        min_distance=0.1,
+        max_distance=0.5,
+    )
+    for coloring in ["uniform", "mcs", "type", "mcs_type", "curvature"]:
+        if coloring in ["mcs", "mcs_type"]:
+            mcs_label = "far_contacts"
+        else:
+            mcs_label = None
+
+        filename, scene = p.export_meshes(
+            tmp_dir / "export_test.ply", coloring=coloring, ids="*", mcs_label=mcs_label
+        )
+        p.setup_blender(filename, scene)
+        p.update_render_cam((0, 0, 0), radius=7, center=None, lens_value=20)
+        p.render_blender(
+            tmp_dir / f"test_{coloring}.png",
+            resolution=(1500, 1500),
+            engine="BLENDER_EEVEE",
+            show_image=True,
+        )
+
+    assert len(list(tmp_dir.glob("*.png"))) == 5

@@ -15,9 +15,12 @@ dependencies:
     - plotly
     - cachetools
     - multiprocess
+    - dash
     - pip:
         - python-fcl
         - setuptools==65.7.0
         - shelved_cache
         - xdg
         - skeletor
+        - bpy
+        - dash-bootstrap-components
