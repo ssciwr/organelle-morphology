@@ -1,3 +1,4 @@
+from typing import Optional
 from organelle_morphology.organelle import Organelle, organelle_types
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import disk_cache, parallel_pool
@@ -8,7 +9,7 @@ from organelle_morphology.distance_calculations import (
 
 import json
 import os
-import pathlib
+from pathlib import Path
 import logging
 
 import numpy as np
@@ -20,7 +21,7 @@ import multiprocessing as mp
 from tqdm import tqdm
 
 
-def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
+def load_metadata(project_path: Path) -> tuple[Path, dict]:
     """Load the project metadata JSON file
 
     :param project_path:
@@ -54,7 +55,7 @@ def _picklable_mesh_extractor(organelle):
 class Project:
     def __init__(
         self,
-        project_path: pathlib.Path | str = os.getcwd(),
+        project_path: Optional[Path],
         clipping: tuple[tuple[float]] | None = None,
         compression_level: int = 0,
     ):
@@ -157,19 +158,13 @@ class Project:
     def path(self):
         return self._project_path
 
-    def available_sources(self) -> list[str]:
-        """List the data sources that are available in the project."""
-
-        return list(self.metadata["sources"].keys())
-
     def add_source(
         self, source: str = None, organelle: str = None, background_label: int = 0
     ) -> None:
         """Connect a data source in the project with an organelle type
 
         :param source:
-            The name of the data source in the original dataset. Must be
-            one of the names returned by available_sources.
+            The name of the data source in the original dataset.
 
         :param organelle:
             The name of the organelle that is labelled in the data source.
@@ -178,9 +173,6 @@ class Project:
             The label in the data source that is used to encode the background.
             Assumed to be 0.
         """
-
-        if source not in self.available_sources():
-            raise ValueError(f"Unknown data source {source}")
 
         if organelle not in organelle_types():
             raise ValueError(f"Unknown organelle type {organelle}")
@@ -771,7 +763,7 @@ class Project:
         """
         geo_props = self.geometric_properties
         self.logger.info(
-            f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff*100}% of the total volume."
+            f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff * 100}% of the total volume."
         )
 
         df_sorted = geo_props.loc[
