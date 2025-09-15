@@ -17,35 +17,7 @@ import pandas as pd
 
 from collections import defaultdict
 import plotly.graph_objects as go
-import multiprocessing as mp
 from tqdm import tqdm
-
-
-def load_metadata(project_path: Path) -> tuple[Path, dict]:
-    """Load the project metadata JSON file
-
-    :param project_path:
-        The path to the project directory. The project metadata JSON file
-        is expected to be in this directory.
-    """
-
-    # This might be a CebraEM project
-    if os.path.exists(project_path / "project.json"):
-        with open(project_path / "project.json", "r") as f:
-            data = json.load(f)
-            if len(data["datasets"]) != 1:
-                raise ValueError("Only single dataset projects are supported")
-
-            return load_metadata(project_path / data["datasets"][0])
-
-    # This might be a mobie project
-    if os.path.exists(project_path / "dataset.json"):
-        with open(project_path / "dataset.json", "r") as f:
-            return project_path, json.load(f)
-
-    raise FileNotFoundError(
-        "Could not find project.json or dataset.json in the given directory"
-    )
 
 
 def _picklable_mesh_extractor(organelle):
@@ -66,7 +38,7 @@ class Project:
         is loaded until it is required.
 
         :param project_path:
-            The location of the CebraEM/Mobie project
+            The location of the project.
 
         :param clipping:
             If not None, the data is clipped with the given lower left and the given
@@ -80,27 +52,17 @@ class Project:
         """
 
         if isinstance(project_path, str):
-            project_path = pathlib.Path(project_path)
+            project_path = Path(project_path)
 
         self._project_path = project_path
 
-        # Identify the directory that contains project metadata JSON
-        self._dataset_json_directory, self._project_metadata = load_metadata(
-            project_path
-        )
+        # # Identify the directory that contains project metadata JSON
+        # self._dataset_json_directory, self._project_metadata = load_metadata(
+        #     project_path
+        # )
 
         if clipping is not None:
-            clipping = np.array(clipping)
-            if not np.all(clipping[0] < clipping[1]):
-                raise ValueError("Clipping lower left must be smaller than upper right")
-
-            if not np.all(clipping[0] > 0) or not np.all(clipping[1] < 1):
-                raise ValueError("Clipping must be in [0, 1]^3")
-
-            if len(clipping) != 2 or len(clipping[0]) != 3 or len(clipping[1]) != 3:
-                raise ValueError("Clipping must be a tuple of two tuples of length 3")
-
-        self._clipping = clipping
+            self._clipping = clipping
 
         # The dictionary of data sources that we have added
         self._sources = {}
@@ -159,44 +121,43 @@ class Project:
         return self._project_path
 
     def add_source(
-        self, source: str = None, organelle: str = None, background_label: int = 0
+        self,
+        xml_path: Path,
+        organelle: Optional[str] = None,
+        background_label: int = 0,
     ) -> None:
         """Connect a data source in the project with an organelle type
 
-        :param source:
-            The name of the data source in the original dataset.
+        Args:
+            source_path: The path to the xml source to add.
+            organelle: The name of the organelle that is labelled in the data source.
+                Must be on the strings returned by organelle_morphology.organelle_types
+            background_label: The label in the data source that is used to encode the background.
+                Assumed to be 0.
 
-        :param organelle:
-            The name of the organelle that is labelled in the data source.
-            Must be on the strings returned by organelle_morphology.organelle_types
-        :param background_label:
-            The label in the data source that is used to encode the background.
-            Assumed to be 0.
+        Raises:
+            ValueError: Unknown organelle type, must be a registered organelle type
         """
-
-        if organelle not in organelle_types():
-            raise ValueError(f"Unknown organelle type {organelle}")
+        if hash(xml_path) in self._sources:
+            raise ValueError("Source already loaded!")
 
         # Instantiate the new source
-        source_path = self.metadata["sources"][source]["image"]["imageData"]["bdv.n5"][
-            "relativePath"
-        ]
         source_obj = DataSource(
             self,
-            self._dataset_json_directory / source_path,
+            xml_path,
             organelle,
             background_label,
         )
 
-        self.logger.info("Adding source %s", source)
+        self.logger.info(f"Adding source {source_obj.metadata['name']}")
 
         # Double-check that it provides the current compression level
         if self.compression_level >= len(source_obj.metadata["downsampling"]):
             raise ValueError(
-                f"Compression level {self.compression_level} is not available for source {source}"
+                f"Compression level {self.compression_level} is not available "
+                f"for source {source_obj.metadata['name']}"
             )
-
-        self._sources[source] = source_obj
+        self._sources[hash(xml_path)] = source_obj
 
     def skeletonize_wavefront(
         self,
@@ -785,13 +746,7 @@ class Project:
         )
 
     @property
-    def metadata(self):
-        """The project metadata stored in the project JSON file"""
-
-        return self._project_metadata
-
-    @property
-    def clipping(self):
+    def clipping(self) -> None | tuple[tuple]:
         """The subcube of the original data that we work with"""
 
         if self._clipping is None:
@@ -799,23 +754,30 @@ class Project:
         else:
             return self._clipping
 
+    @clipping.setter
+    def clipping(self, clipping):
+        clipping = np.array(clipping)
+        if not np.all(clipping[0] < clipping[1]):
+            raise ValueError("Clipping lower left must be smaller than upper right")
+
+        if not np.all(clipping[0] > 0) or not np.all(clipping[1] < 1):
+            raise ValueError("Clipping must be in [0, 1]^3")
+
+        if len(clipping) != 2 or len(clipping[0]) != 3 or len(clipping[1]) != 3:
+            raise ValueError("Clipping must be a tuple of two tuples of length 3")
+
     def organelles(
-        self, ids: list[str] = "*", return_ids: bool = False
+        self,
+        ids: str | list[str] = "*",
     ) -> list[Organelle] | list[str]:
         """Return a list of organelles found in the dataset
 
         This requires previous adding of data sources using add_source.
-        Depending on the return_ids argument, either the organelles are
-        returned as objects that can further inspected and used for analysis
-        or the list of organelle ids are returned. The ids parameter
-        is used to filter based on organelle ids.
+        The ids parameter is used to filter based on organelle ids.
 
         :param ids:
             The filtering expression for organelle ids to return. The default
             of "*" returns all organelles. (What other syntax would we allow? fnmatch?)
-
-        :param return_ids:
-            Whether to only return ids or the actual organelle objects.
         """
 
         result = []
@@ -830,7 +792,39 @@ class Project:
                 result.extend(
                     source.organelles(
                         id_,
-                        return_ids,
+                        self.permanent_whitelist,
+                        self.permanent_blacklist,
+                    )
+                )
+
+        return result
+
+    def organelle_ids(
+        self,
+        ids: str | list[str] = "*",
+    ) -> list[Organelle] | list[str]:
+        """Return a list of organelle ids found in the dataset
+
+        This requires previous adding of data sources using add_source.
+        The ids parameter is used to filter based on organelle ids.
+
+        :param ids:
+            The filtering expression for organelle ids to return. The default
+            of "*" returns all organelles. (What other syntax would we allow? fnmatch?)
+        """
+
+        result = []
+        if isinstance(ids, str):
+            ids = [ids]
+
+        for id_ in ids:
+            for source in self._sources.values():
+                if id_ in self.permanent_blacklist:
+                    continue
+
+                result.extend(
+                    source.organelle_ids(
+                        id_,
                         self.permanent_whitelist,
                         self.permanent_blacklist,
                     )

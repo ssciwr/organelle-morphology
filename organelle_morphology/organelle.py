@@ -20,7 +20,7 @@ def organelle_types() -> list[str]:
     The strings used here to encode the organelles are expected in
     various APIs when referring to a specific organelle.
     """
-    return organelle_registry.keys()
+    return list(organelle_registry.keys())
 
 
 class Organelle:
