@@ -52,7 +52,7 @@ class Organelle:
         self._mcs = defaultdict(dict)
         self._mcs_dict = defaultdict(dict)
 
-        self.logger = self._source._project.logger
+        self.logger = self._source.project.logger
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -86,7 +86,7 @@ class Organelle:
             )
         except RuntimeError:
             logging.warning("Could not generate mesh for label %s", self.id)
-            self._mesh[self._source._project.compression_level] = None
+            self._mesh[self._source.project.compression_level] = None
             return None
         mesh = trimesh.Trimesh(verts, faces, process=False)
         mesh.fix_normals()
@@ -386,11 +386,11 @@ class Organelle:
     @property
     def mesh(self):
         """Get the mesh for this organelle"""
-        with disk_cache(self._source._project, f"mesh_{self._organelle_id}") as cache:
-            if self._source._project.compression_level not in cache:
-                cache[self._source._project.compression_level] = self._generate_mesh()
+        with disk_cache(self._source.project, f"mesh_{self._organelle_id}") as cache:
+            if self._source.project.compression_level not in cache:
+                cache[self._source.project.compression_level] = self._generate_mesh()
 
-            return cache[self._source._project.compression_level]
+            return cache[self._source.project.compression_level]
 
     @property
     def id(self):
@@ -416,7 +416,7 @@ class Organelle:
     @property
     def mesh_properties(self):
         """Get the mesh data for this organelle"""
-        comp_level = self._source._project.compression_level
+        comp_level = self._source.project.compression_level
 
         if comp_level not in self._mesh_properties:
             self._mesh_properties[comp_level] = {}
@@ -439,7 +439,7 @@ class Organelle:
 
     def morphology_map(self):
         """Get the mesh data for this organelle"""
-        comp_level = self._source._project.compression_level
+        comp_level = self._source.project.compression_level
 
         # morph radius can be 0 if vertices are used as sample points.
         morph_radius = 0.0

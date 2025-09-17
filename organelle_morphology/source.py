@@ -102,14 +102,15 @@ class DataSource:
         :type organelle: str
         """
 
-        self._project = project
-        self._xml_path = xml_path
-        self._organelle = organelle
+        self.project = project
+        self.xml_path = xml_path
+        self.org_name = organelle
         self.background_label = background_label
 
+        if not organelle_registry.get(self.org_name):
+            raise ValueError(f"Unknown organelle class {self.org_name}")
+
         # The data will be loaded lazily
-        self._data = {}
-        self._coarse_data = None
         self._metadata: Optional[dict] = None
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
@@ -119,13 +120,13 @@ class DataSource:
         # The computed organelles are stored
         self._organelles = None
 
-        self.logger = self._project.logger
+        self.logger = self.project.logger
 
     def load_metadata(self):
         self._metadata = {}
 
         # Read the XML file
-        tree = ET.parse(self._xml_path)
+        tree = ET.parse(self.xml_path)
         xmldata = tree.getroot()
         try:
             filename = (
@@ -178,7 +179,7 @@ class DataSource:
         assert num_timepoints == 1, "Only one timepoint supported"
         assert filename is not None, "n5 Filename could not be parsed from xml!"
 
-        timepoints = load_n5(self._xml_path.parent / filename)
+        timepoints = load_n5(self.xml_path.parent / filename)
         self.timepoint = list(timepoints.values())[0]
 
         assert resolution == self.timepoint.resolution[::-1]
@@ -189,7 +190,7 @@ class DataSource:
                 coarse_level = level
 
         # Store the metadata
-        self._metadata["data_root"] = self._xml_path / filename
+        self._metadata["data_root"] = self.xml_path / filename
         self._metadata["downsampling"] = self.timepoint.downsamplingFactors
         self._metadata["levels"] = self.timepoint.levels
         self._metadata["size"] = tuple((int(i) for i in size.split(" ")))
@@ -209,7 +210,7 @@ class DataSource:
     @property
     def basic_geometric_properties(self):
         """get basic properties from scikit-image"""
-        comp_level = self._project.compression_level
+        comp_level = self.project.compression_level
 
         self.logger.debug("get basic properties from scikit-image")
         if comp_level not in self._basic_geometric_properties:
@@ -227,7 +228,7 @@ class DataSource:
             }
 
             self._basic_geometric_properties[comp_level] = {
-                f"{self._organelle}_{str(region['label']).zfill(4)}": {
+                f"{self.org_name}_{str(region['label']).zfill(4)}": {
                     prop_name: region[prop]
                     for prop_name, prop in filtered_region_props.items()
                 }
@@ -266,14 +267,14 @@ class DataSource:
             Dask array of the data. Respects the in the project set clipping.
         """
         if compression_level is None:
-            compression_level = self._project.compression_level
+            compression_level = self.project.compression_level
         data_at_level = getattr(self.timepoint, f"s{compression_level}").data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
 
-        if self._project.clipping is not None:
-            lower_corner, upper_corner = self._project.clipping
+        if self.project.clipping is not None:
+            lower_corner, upper_corner = self.project.clipping
             data_shape = data_at_level.shape
             clipped_low_corner = np.floor(lower_corner * data_shape).astype(int)
             clipped_high_corner = np.ceil(upper_corner * data_shape).astype(int)
@@ -309,7 +310,9 @@ class DataSource:
                 r * d
                 for r, d in zip(
                     self.data_resolution,
-                    getattr(self.timepoint, f"s{self._project.level}"),
+                    getattr(
+                        self.timepoint, f"s{self.project.compression_level}"
+                    ).downsamplingFactor,
                 )
             )
         )
@@ -317,11 +320,10 @@ class DataSource:
     @property
     def labels(self) -> tuple[int]:
         """Return the list of labels present in the data source."""
-        labels = tuple(da.unique(self.data))
-        if self.background_label in labels:
-            labels = tuple(
-                [label for label in labels if label != self.background_label]
-            )
+        # TODO: avoid compute calls
+        labels = da.where(da.unique(self.data).compute() != self.background_label)[
+            0
+        ].compute()
         return labels
 
     def organelles(
@@ -369,7 +371,8 @@ class DataSource:
             self._organelles = {}
 
             # Iterate available organelle classes and construct organelles
-            orgclass = organelle_registry[self._organelle]
+            if not (orgclass := organelle_registry.get(self.org_name)):
+                raise ValueError(f"Unknown organelle class {self.org_name}")
             for organelle in orgclass.construct(self, self.labels):
                 self._organelles[organelle.id] = organelle
 

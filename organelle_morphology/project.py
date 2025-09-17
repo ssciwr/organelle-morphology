@@ -113,13 +113,14 @@ class Project:
                 Assumed to be 0.
 
         Raises:
-            ValueError: Unknown organelle type, must be a registered organelle type
+            ValueError: Source already loaded
+            ValueError: Compression level of project not available
         """
         xml_path = Path(xml_path)
         if xml_path.suffix != ".xml":
             xml_path = xml_path.with_suffix(".xml")
 
-        if hash(xml_path) in self._sources:
+        if xml_path.stem in self._sources:
             raise ValueError("Source already loaded!")
 
         # resolve relative to project path
@@ -143,7 +144,7 @@ class Project:
                 f"Compression level {self.compression_level} is not available "
                 f"for source {source_obj.metadata['name']}"
             )
-        self._sources[hash(xml_path)] = source_obj
+        self._sources[xml_path.stem] = source_obj
 
     def skeletonize_wavefront(
         self,
@@ -169,7 +170,7 @@ class Project:
         :param path_sample_dist: _description_, defaults to 0.1
         :type path_sample_dist: float, optional
         """
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         start_logger_str = (
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
@@ -199,7 +200,7 @@ class Project:
         skip_existing=False,
         path_sample_dist: float = 0.1,
     ):
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         start_logger_str = (
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
@@ -227,7 +228,7 @@ class Project:
         mcs_label: str = None,
         height: int = 800,
     ):
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         if mcs_label and mcs_label not in self._mcs_labels:
             raise ValueError(
@@ -303,8 +304,8 @@ class Project:
                 f"Attribute must be one of 'names', 'contacts' or 'objects' but is {attribute}"
             )
 
-        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
-        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        orgs_1 = self.organelle_ids(ids=ids_source)
+        orgs_2 = self.organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         # Filter the DataFrame by row values
         filtered_df = distance_matrix[
@@ -336,13 +337,11 @@ class Project:
         elif attribute == "objects":
             obj_output_dict = defaultdict(list)
             for key in output_filtered_dict.keys():
-                new_key = self.organelles(ids=key, return_ids=False)[0]
+                new_key = self.organelles(ids=key)[0]
 
                 for key_target in output_filtered_dict[key]:
                     if key_target not in obj_output_dict.keys():
-                        obj_output_dict[new_key].extend(
-                            self.organelles(ids=key_target, return_ids=False)
-                        )
+                        obj_output_dict[new_key].extend(self.organelles(ids=key_target))
             return obj_output_dict
 
         return output_filtered_dict
@@ -362,8 +361,8 @@ class Project:
         mean: the mean distance between the organelles
         :type attribute: _type_
         """
-        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
-        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        orgs_1 = self.organelle_ids(ids=ids_source)
+        orgs_2 = self.organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
 
         if attribute == "dist":
@@ -430,8 +429,8 @@ class Project:
         ids_source="*",
         ids_target="*",
     ):
-        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
-        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        orgs_1 = self.organelle_ids(ids=ids_source)
+        orgs_2 = self.organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         fig = go.Figure()
         fig.add_trace(go.Histogram(x=distance_matrix.mean().values.flatten()))
@@ -460,7 +459,7 @@ class Project:
         :return: _description_
         :rtype: _type_
         """
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
         # drop organelles without skeleton
         valid_orgs = []
         for org in orgs:
@@ -479,7 +478,7 @@ class Project:
         return fig
 
     @property
-    def compression_level(self):
+    def compression_level(self) -> int:
         """The compression level used for our computations."""
 
         return self._compression_level
@@ -553,7 +552,7 @@ class Project:
 
         df = pd.DataFrame(properties).T
 
-        valid_organelles = self.organelles(return_ids=True)
+        valid_organelles = self.organelle_ids()
         df = df.loc[valid_organelles]
 
         return df
@@ -573,7 +572,7 @@ class Project:
 
         """
 
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         mcs_properties = {}
         for org in orgs:

@@ -1,5 +1,6 @@
 from organelle_morphology.project import Project
 from organelle_morphology.organelle import Organelle
+from organelle_morphology.source import DataSource
 from .synthetic_data_generator import generate_synthetic_dataset
 
 import pytest
@@ -97,19 +98,17 @@ def test_add_source(cebra_project):
     for oid, source in source_dict.items():
         if oid == "unknown":
             with pytest.raises(ValueError):
-                cebra_project.add_source(source=source, organelle=oid)
+                cebra_project.add_source(xml_path=source, organelle=oid)
             continue
         else:
             cebra_project.add_source(xml_path=source, organelle=oid)
             # Check that we actually added organelles
             assert cebra_project.organelles(ids=f"{oid}_*")
 
-    # Wrong organelle/source identifier should lead to error
-    with pytest.raises(ValueError):
-        cebra_project.add_source("wrong_source", "mito")
 
-    with pytest.raises(ValueError):
-        cebra_project.add_source("correct_source_todo", "wrong_organelle")
+def test_add_source_wrong_source(cebra_project):
+    with pytest.raises(FileNotFoundError):
+        cebra_project.add_source("wrong_source", "mito")
 
 
 def test_project_organelles(cebra_project_with_sources):
@@ -120,15 +119,14 @@ def test_project_organelles(cebra_project_with_sources):
     for o, id in zip(p.organelles("m*"), p.organelle_ids("m*")):
         assert isinstance(o, Organelle)
         assert o.id.startswith("m")
-        breakpoint()
 
 
 def test_project_sources_data(cebra_project_with_sources):
     p = cebra_project_with_sources
 
-    assert p._sources["synth_data"].data
-    assert p._sources["synth_data"].data_resolution
-    assert p._sources["synth_data"].resolution
+    assert isinstance(p._sources["synth_data"], DataSource)
+    assert p._sources["synth_data"].org_name == "mito"
+    assert p._sources["synth_data"].background_label == 0
 
 
 def test_geometric_properties(
@@ -155,13 +153,6 @@ def test_geometric_properties(
             rtol=0.25,
             atol=500,
         )
-        # TODO@Gwydion: Fix this test
-        # assert np.isclose(
-        #     original_mesh["volume"],
-        #     geometric_properties["mesh_volume"],
-        #     rtol=0.25,
-        #     atol=500,
-        # )
         assert np.isclose(
             original_mesh["area"],
             geometric_properties["mesh_area"],
