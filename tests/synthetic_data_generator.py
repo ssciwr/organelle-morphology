@@ -2,7 +2,7 @@ import numpy as np
 import trimesh
 import tempfile
 import z5py
-import pathlib
+from pathlib import Path
 from skimage.measure import block_reduce
 import json
 
@@ -20,12 +20,12 @@ def generate_synthetic_dataset(
     n_objects=30, object_size=20, object_distance=100, seed=42, working_dir=None
 ):
     if working_dir is None:
-        temp_dir = pathlib.Path(tempfile.mkdtemp())
+        temp_dir = Path(tempfile.mkdtemp())
     else:
-        working_dir = pathlib.Path(working_dir)
+        working_dir = Path(working_dir)
         working_dir.mkdir(exist_ok=True)
 
-        temp_dir = pathlib.Path(tempfile.mkdtemp(dir=working_dir))
+        temp_dir = Path(tempfile.mkdtemp(dir=working_dir))
 
     voxel_array, meshes = generate_synthetic_mesh_set(
         n_objects=n_objects,
@@ -36,9 +36,9 @@ def generate_synthetic_dataset(
 
     resolution = [1, 1, 1]
 
-    cebra_dir = temp_dir / "CebraEM"
+    cebra_dir = temp_dir
 
-    filename = cebra_dir / "images/bdv-n5" / "synth_data.n5"
+    filename = cebra_dir / "synth_data.n5"
     f = z5py.File(filename, use_zarr_format=False)
     group = f.create_group("setup0/timepoint0")
 
@@ -59,34 +59,27 @@ def generate_synthetic_dataset(
             json.dump(data, f)
 
     # create setup and timepoint attributes.json files
-    setup0_dict = {"datatype": "uint16", "downsamplingFactors": downsampling_factors}
+    setup0_dict = {
+        "datatype": "uint16",
+        "downsamplingFactors": downsampling_factors,
+        "n5": "2.0.0",
+    }
     with open(filename / "setup0" / "attributes.json", "w") as f:
         json.dump(setup0_dict, f)
 
-    timepoint0_dict = {"multiscale": "true", "resolution": resolution}
+    timepoint0_dict = {
+        "multiscale": "true",
+        "resolution": resolution,
+        "n5": "2.0.0",
+    }
     with open(filename / "setup0" / "timepoint0" / "attributes.json", "w") as f:
         json.dump(timepoint0_dict, f)
 
     # create xml file
     xml_str = _create_xml_file(voxel_array.shape, resolution)
 
-    with open(cebra_dir / "images/bdv-n5" / "synth_data.xml", "wb") as f:
+    with open(cebra_dir / "synth_data.xml", "wb") as f:
         f.write(xml_str.encode())
-
-    # create dataset_json
-    relativ_path = pathlib.Path("images/bdv-n5/synth_data.xml")
-    dataset_dict = _create_dataset_json(str(relativ_path))
-    with open(cebra_dir / "dataset.json", "w") as f:
-        json.dump(dataset_dict, f)
-
-    project_json_dict = {
-        "datasets": ["CebraEM"],
-        "defaultDataset": "CebraEM",
-        "imageDataFormats": ["bdv.n5"],
-        "specVersion": "0.2.0",
-    }
-    with open(temp_dir / "project.json", "w") as f:
-        json.dump(project_json_dict, f)
 
     return temp_dir, meshes
 

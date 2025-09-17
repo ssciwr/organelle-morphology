@@ -1,14 +1,12 @@
 from typing import Optional
 from organelle_morphology.organelle import Organelle, organelle_types
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import disk_cache, parallel_pool
+from organelle_morphology.util import disk_cache, parallel_pool, get_logger
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
 )
 
-import json
-import os
 from pathlib import Path
 import logging
 
@@ -24,11 +22,14 @@ def _picklable_mesh_extractor(organelle):
     return organelle.mesh
 
 
+clipping_type = tuple[tuple[float, float, float], tuple[float, float, float]]
+
+
 class Project:
     def __init__(
         self,
-        project_path: Optional[Path],
-        clipping: tuple[tuple[float]] | None = None,
+        project_path: Path | str,
+        clipping: Optional[clipping_type] = None,
         compression_level: int = 0,
     ):
         """Instantiate an EM project
@@ -51,18 +52,14 @@ class Project:
             corresponds to the highest resolution.
         """
 
-        if isinstance(project_path, str):
-            project_path = Path(project_path)
+        self._project_path = Path(project_path)
 
-        self._project_path = project_path
+        if not self.path.exists():
+            self.path.mkdir()
 
-        # # Identify the directory that contains project metadata JSON
-        # self._dataset_json_directory, self._project_metadata = load_metadata(
-        #     project_path
-        # )
-
+        self._clipping = None
         if clipping is not None:
-            self._clipping = clipping
+            self.clipping = clipping
 
         # The dictionary of data sources that we have added
         self._sources = {}
@@ -90,39 +87,19 @@ class Project:
 
         self._compression_level = compression_level
 
-        self.logger = logging.getLogger(project_path.stem)
-        self.logger.setLevel(logging.DEBUG)  # Set logger's level to INFO
-        self.logger.propagate = False
-        c_handler = logging.StreamHandler()
-        f_handler = logging.FileHandler(f"{project_path.stem}.log")
-
-        # Set levels - INFO for console, DEBUG for file
-        c_handler.setLevel(logging.INFO)
-        f_handler.setLevel(logging.DEBUG)
-
-        # Create formatters and add it to handlers
-        c_format = logging.Formatter("%(levelname)s - %(message)s")
-        f_format = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        c_handler.setFormatter(c_format)
-        f_handler.setFormatter(f_format)
-
-        # Add handlers to the logger
-        self.logger.addHandler(c_handler)
-        self.logger.addHandler(f_handler)
-        self.logger.info(f"\n ---- New Project {project_path} loaded----\n")
+        self.logger = get_logger(self.path.stem)
+        self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         # debug help
         self.use_cache = True
 
     @property
-    def path(self):
+    def path(self) -> Path:
         return self._project_path
 
     def add_source(
         self,
-        xml_path: Path,
+        xml_path: Path | str,
         organelle: Optional[str] = None,
         background_label: int = 0,
     ) -> None:
@@ -138,8 +115,17 @@ class Project:
         Raises:
             ValueError: Unknown organelle type, must be a registered organelle type
         """
+        xml_path = Path(xml_path)
+        if xml_path.suffix != ".xml":
+            xml_path = xml_path.with_suffix(".xml")
+
         if hash(xml_path) in self._sources:
             raise ValueError("Source already loaded!")
+
+        # resolve relative to project path
+        if not xml_path.exists() and not xml_path.is_absolute():
+            if (self.path / xml_path).exists():
+                xml_path = self.path / xml_path
 
         # Instantiate the new source
         source_obj = DataSource(
@@ -746,8 +732,17 @@ class Project:
         )
 
     @property
-    def clipping(self) -> None | tuple[tuple]:
-        """The subcube of the original data that we work with"""
+    def clipping(
+        self,
+    ) -> None | np.ndarray:
+        """The subcube of the original data to work with.
+        All operations performed in this project must respect the clipping
+        region set here.
+
+        Attribute clipping:
+            Tuple of two tuples of length three.
+            Must be the lower corner and the upper corner.
+        """
 
         if self._clipping is None:
             return None
@@ -755,16 +750,20 @@ class Project:
             return self._clipping
 
     @clipping.setter
-    def clipping(self, clipping):
-        clipping = np.array(clipping)
-        if not np.all(clipping[0] < clipping[1]):
-            raise ValueError("Clipping lower left must be smaller than upper right")
+    def clipping(self, clipping: clipping_type):
+        _clipping = np.array(clipping)
+        if not np.all(_clipping[0] < _clipping[1]):
+            raise ValueError(
+                "First clipping corner is lower left, second upper right. All "
+                "coordinates of corner one must be smaller than of corner two"
+            )
 
-        if not np.all(clipping[0] > 0) or not np.all(clipping[1] < 1):
+        if not np.all(_clipping[0] > 0) or not np.all(_clipping[1] < 1):
             raise ValueError("Clipping must be in [0, 1]^3")
 
-        if len(clipping) != 2 or len(clipping[0]) != 3 or len(clipping[1]) != 3:
+        if len(_clipping) != 2 or len(_clipping[0]) != 3 or len(_clipping[1]) != 3:
             raise ValueError("Clipping must be a tuple of two tuples of length 3")
+        self._clipping = _clipping
 
     def organelles(
         self,

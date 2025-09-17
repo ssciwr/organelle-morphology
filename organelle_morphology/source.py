@@ -3,13 +3,10 @@ from pathlib import Path
 from organelle_morphology.organelle import Organelle, organelle_registry
 from organelle_morphology.util import disk_cache, parallel_pool
 
-from elf.io import open_file
 import dask.array as da
 
 import fnmatch
-import json
 import numpy as np
-import pathlib
 import xml.etree.ElementTree as ET
 from skimage.measure import regionprops
 from dataclasses import dataclass, field
@@ -161,6 +158,7 @@ class DataSource:
                 .find("size")
                 .text
             )
+            resolution = list((float(i) for i in resolution.split(" ")))
             first_timepoint = int(
                 xmldata.find("SequenceDescription")
                 .find("Timepoints")
@@ -170,17 +168,17 @@ class DataSource:
             last_timepoint = int(
                 xmldata.find("SequenceDescription").find("Timepoints").find("last").text
             )
-            num_timepoints = last_timepoint - first_timepoint
+            num_timepoints = last_timepoint - first_timepoint + 1
 
         except AttributeError:
             raise ValueError("Could not parse XML!")
 
         # Make assertions on the given data
         assert num_setups == 1, "Only one ViewSetup supported"
-        assert num_timepoints == 1, "Only one tiempoint supported"
+        assert num_timepoints == 1, "Only one timepoint supported"
         assert filename is not None, "n5 Filename could not be parsed from xml!"
 
-        timepoints = load_n5(self._xml_path / filename)
+        timepoints = load_n5(self._xml_path.parent / filename)
         self.timepoint = list(timepoints.values())[0]
 
         assert resolution == self.timepoint.resolution[::-1]
@@ -195,7 +193,7 @@ class DataSource:
         self._metadata["downsampling"] = self.timepoint.downsamplingFactors
         self._metadata["levels"] = self.timepoint.levels
         self._metadata["size"] = tuple((int(i) for i in size.split(" ")))
-        self._metadata["resolution"] = tuple((float(i) for i in resolution.split(" ")))
+        self._metadata["resolution"] = resolution
         self._metadata["name"] = name
         self._metadata["coarse_level"] = coarse_level
 
@@ -269,7 +267,7 @@ class DataSource:
         """
         if compression_level is None:
             compression_level = self._project.compression_level
-        data_at_level = getattr(self.timepoint, compression_level)
+        data_at_level = getattr(self.timepoint, f"s{compression_level}").data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
@@ -311,7 +309,7 @@ class DataSource:
                 r * d
                 for r, d in zip(
                     self.data_resolution,
-                    self.metadata["downsampling"][self._project.compression_level],
+                    getattr(self.timepoint, f"s{self._project.level}"),
                 )
             )
         )
@@ -319,7 +317,7 @@ class DataSource:
     @property
     def labels(self) -> tuple[int]:
         """Return the list of labels present in the data source."""
-        labels = tuple(np.unique(self.data))
+        labels = tuple(da.unique(self.data))
         if self.background_label in labels:
             labels = tuple(
                 [label for label in labels if label != self.background_label]

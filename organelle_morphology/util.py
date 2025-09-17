@@ -1,6 +1,7 @@
 import contextlib
 import cachetools
 import hashlib
+import logging
 
 import multiprocess
 import shelved_cache
@@ -58,3 +59,26 @@ def parallel_pool(total=None, cores=None):
     # Close the pool
     pool.close()
     pool.join()
+
+
+def get_logger(name: str):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)  # Set logger's level to INFO
+    logger.propagate = False
+    c_handler = logging.StreamHandler()
+    f_handler = logging.FileHandler(f"{name}.log")
+
+    # Set levels - INFO for console, DEBUG for file
+    c_handler.setLevel(logging.INFO)
+    f_handler.setLevel(logging.DEBUG)
+
+    # Create formatters and add it to handlers
+    c_format = logging.Formatter("%(levelname)s - %(message)s")
+    f_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    c_handler.setFormatter(c_format)
+    f_handler.setFormatter(f_format)
+
+    # Add handlers to the logger
+    logger.addHandler(c_handler)
+    logger.addHandler(f_handler)
+    return logger
