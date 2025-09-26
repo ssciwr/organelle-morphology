@@ -3,7 +3,7 @@ import cachetools
 import hashlib
 import logging
 
-import multiprocess
+from multiprocess.pool import Pool
 import shelved_cache
 import xdg
 from tqdm import tqdm
@@ -46,7 +46,7 @@ def parallel_pool(total=None, cores=None):
     """A context manager that runs the code in parallel"""
     # Create a process pool
 
-    pool = multiprocess.Pool(cores)
+    pool = Pool(cores)
 
     # Run the code in parallel
     if total:

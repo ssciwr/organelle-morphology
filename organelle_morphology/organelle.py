@@ -7,6 +7,7 @@ import logging
 import plotly.graph_objects as go
 import skeletor as sk
 import networkx
+import dask.array as da
 from collections import defaultdict
 
 # The dictionary of registered organelle subclasses, mapping names
@@ -82,7 +83,7 @@ class Organelle:
     def _generate_mesh(self, smooth=True):
         try:
             verts, faces, _, _ = measure.marching_cubes(
-                self.data, spacing=self._source.resolution
+                self.data.compute(), spacing=self._source.resolution
             )
         except RuntimeError:
             logging.warning("Could not generate mesh for label %s", self.id)
@@ -543,7 +544,7 @@ class Organelle:
         """Get the raw data for this organelle
         by filtering the data of the source object"""
         source_ds = self._source.data[:]
-        org_ds = np.where(source_ds == self._source_label, source_ds, 0)
+        org_ds = da.where(source_ds == self._source_label, source_ds, 0)
 
         return org_ds
 

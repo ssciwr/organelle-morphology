@@ -242,14 +242,18 @@ class DataSource:
         """Get the morphology map for all organelles"""
         self.logger.debug("get morphology map for all organelles")
 
+        # TODO: Fix this, did never work
         with parallel_pool(len(self.organelles())) as (pool, pbar):
+            results = {}
             for organelle in self.organelles():
-                result = pool.apply_async(
+                results[organelle.id] = pool.apply_async(
                     organelle.morphology_map,
                     callback=lambda _: pbar.update(),
-                ).get()
+                )
 
-                self._morphology_map[organelle.id] = result
+            for organelle in self.organelles():
+                self._morphology_map[organelle.id] = results[organelle.id].get()
+
         return self._morphology_map
 
     @property
