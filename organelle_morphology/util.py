@@ -1,4 +1,5 @@
 import contextlib
+from pathlib import Path
 import cachetools
 import hashlib
 import logging
@@ -61,12 +62,12 @@ def parallel_pool(total=None, cores=None):
     pool.join()
 
 
-def get_logger(name: str):
-    logger = logging.getLogger(name)
+def get_logger(file: Path):
+    logger = logging.getLogger(file.stem)
     logger.setLevel(logging.DEBUG)  # Set logger's level to INFO
     logger.propagate = False
     c_handler = logging.StreamHandler()
-    f_handler = logging.FileHandler(f"{name}.log")
+    f_handler = logging.FileHandler(file)
 
     # Set levels - INFO for console, DEBUG for file
     c_handler.setLevel(logging.INFO)

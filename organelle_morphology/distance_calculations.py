@@ -1,6 +1,11 @@
+from organelle_morphology.util import disk_cache
+
+
+import trimesh
+
 import numpy as np
 import pandas as pd
-import trimesh
+
 from tqdm import tqdm
 
 from organelle_morphology.util import disk_cache
@@ -215,7 +220,7 @@ class MembraneContactSiteCalculator:
 
 
 def generate_distance_matrix(project) -> pd.DataFrame:
-    active_sources = list(project._sources.keys())
+    active_sources = list(project.sources.keys())
     with disk_cache(
         project, f"distance_matrix_{active_sources}_{project.compression_level}"
     ) as cache:

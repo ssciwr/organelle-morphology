@@ -15,6 +15,7 @@ dependencies:
   - scipy
   - trimesh
   - z5py
+  - pre-commit
   - pip:
       - python-fcl
       - setuptools==65.7.0

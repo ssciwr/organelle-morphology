@@ -1,7 +1,6 @@
 from typing import Optional
 from pathlib import Path
 from organelle_morphology.organelle import Organelle, organelle_registry
-from organelle_morphology.util import disk_cache, parallel_pool
 
 import dask.array as da
 
@@ -34,47 +33,6 @@ class Data_level:
     chunks_per_dimension: list
     downsamplingFactor: list[int]
     data: z5py.dataset.Dataset
-
-
-def load_n5(n5: Path) -> dict[str, Timepoint]:
-    f = z5py.File(n5, "r")
-    timepoints = {}
-
-    def _meta_finder(name: str, obj):
-        print(name, end="\n\t")
-        print(str(obj), end="\n\t")
-        print(list(obj.attrs.items()))
-
-        name_parts = name.split("/")
-
-        if len(name_parts) == 2:
-            # new timepoint
-            timepoints[name_parts[1]] = Timepoint(
-                name=name_parts[1],
-                file=n5,
-                resolution=obj.attrs["resolution"],
-                n5=obj.attrs["n5"],
-            )
-        if len(name_parts) == 3:
-            # new sampling level
-            assert isinstance(obj, z5py.dataset.Dataset), "Unkown data structure"
-            tp = timepoints[name_parts[1]]
-
-            dl = Data_level(
-                level=name_parts[2],
-                chunks=obj.chunks,
-                chunks_per_dimension=obj.chunks_per_dimension,
-                downsamplingFactor=obj.attrs["downsamplingFactors"],
-                data=obj,
-            )
-
-            tp.downsamplingFactors.append(obj.attrs["downsamplingFactors"])
-            tp.levels.append(name_parts[2])
-
-            setattr(tp, name_parts[2], dl)
-
-    f.visititems(_meta_finder)
-    return timepoints
 
 
 class DataSource:
@@ -121,6 +79,47 @@ class DataSource:
         self._organelles = None
 
         self.logger = self.project.logger
+
+    def load_n5(self, n5: Path) -> dict[str, Timepoint]:
+        f = z5py.File(n5, "r")
+        timepoints = {}
+        self.project.logger.debug(f"Start loading {n5}, metadata structure:")
+
+        def _meta_finder(name: str, obj):
+            self.project.logger.debug(
+                name + ": " + str(obj.__class__) + str(list(obj.attrs.items()))
+            )
+
+            name_parts = name.split("/")
+
+            if len(name_parts) == 2:
+                # new timepoint
+                timepoints[name_parts[1]] = Timepoint(
+                    name=name_parts[1],
+                    file=n5,
+                    resolution=obj.attrs["resolution"],
+                    n5=obj.attrs["n5"],
+                )
+            if len(name_parts) == 3:
+                # new sampling level
+                assert isinstance(obj, z5py.dataset.Dataset), "Unkown data structure"
+                tp = timepoints[name_parts[1]]
+
+                dl = Data_level(
+                    level=name_parts[2],
+                    chunks=obj.chunks,
+                    chunks_per_dimension=obj.chunks_per_dimension,
+                    downsamplingFactor=obj.attrs["downsamplingFactors"],
+                    data=obj,
+                )
+
+                tp.downsamplingFactors.append(obj.attrs["downsamplingFactors"])
+                tp.levels.append(name_parts[2])
+
+                setattr(tp, name_parts[2], dl)
+
+        f.visititems(_meta_finder)
+        return timepoints
 
     def load_metadata(self):
         self._metadata = {}
@@ -179,7 +178,7 @@ class DataSource:
         assert num_timepoints == 1, "Only one timepoint supported"
         assert filename is not None, "n5 Filename could not be parsed from xml!"
 
-        timepoints = load_n5(self.xml_path.parent / filename)
+        timepoints = self.load_n5(self.xml_path.parent / filename)
         self.timepoint = list(timepoints.values())[0]
 
         assert resolution == self.timepoint.resolution[::-1]
@@ -242,18 +241,8 @@ class DataSource:
         """Get the morphology map for all organelles"""
         self.logger.debug("get morphology map for all organelles")
 
-        # TODO: Fix this, did never work
-        with parallel_pool(len(self.organelles())) as (pool, pbar):
-            results = {}
-            for organelle in self.organelles():
-                results[organelle.id] = pool.apply_async(
-                    organelle.morphology_map,
-                    callback=lambda _: pbar.update(),
-                )
-
-            for organelle in self.organelles():
-                self._morphology_map[organelle.id] = results[organelle.id].get()
-
+        for organelle in self.organelles():
+            self._morphology_map[organelle.id] = organelle.morphology_map
         return self._morphology_map
 
     @property
@@ -272,7 +261,7 @@ class DataSource:
         """
         if compression_level is None:
             compression_level = self.project.compression_level
-        data_at_level = getattr(self.timepoint, f"s{compression_level}").data
+        data_at_level = getattr(self.timepoint, compression_level).data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
@@ -315,7 +304,7 @@ class DataSource:
                 for r, d in zip(
                     self.data_resolution,
                     getattr(
-                        self.timepoint, f"s{self.project.compression_level}"
+                        self.timepoint, self.project.compression_level
                     ).downsamplingFactor,
                 )
             )

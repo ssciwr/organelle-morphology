@@ -272,7 +272,7 @@ class Organelle:
 
         # override settings if special visualization is requested
         if show_morphology:
-            curvature_vertices = self.morphology_map()
+            curvature_vertices = self.morphology_map
             intensity = curvature_vertices
             colorscale = "Viridis"
             opacity = 1
@@ -438,6 +438,7 @@ class Organelle:
 
         return self._mesh_properties[comp_level]
 
+    @property
     def morphology_map(self):
         """Get the mesh data for this organelle"""
         comp_level = self._source.project.compression_level

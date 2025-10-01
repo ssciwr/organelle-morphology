@@ -1,4 +1,5 @@
 import pytest
+
 import numpy as np
 
 
@@ -46,7 +47,7 @@ def test_organelle_data_with_sources(cebra_project_with_sources):
     org_list = p.organelles()
 
     for organelle in org_list:
-        unq_num = np.unique(organelle.data).compute()
+        unq_num = np.unique(organelle.data.compute())
         assert len(unq_num) == 2
         assert unq_num[1] == int(organelle.id.split("_")[-1])
 

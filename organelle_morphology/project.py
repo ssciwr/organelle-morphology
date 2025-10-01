@@ -1,14 +1,13 @@
 from typing import Optional
-from organelle_morphology.organelle import Organelle, organelle_types
+from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import disk_cache, parallel_pool, get_logger
+from organelle_morphology.util import disk_cache, get_logger
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
 )
 
 from pathlib import Path
-import logging
 
 import numpy as np
 import pandas as pd
@@ -30,7 +29,8 @@ class Project:
         self,
         project_path: Path | str,
         clipping: Optional[clipping_type] = None,
-        compression_level: int = 0,
+        compression_level: str = "s0",
+        loglevel: Optional[str] = None,
     ):
         """Instantiate an EM project
 
@@ -62,7 +62,7 @@ class Project:
             self.clipping = clipping
 
         # The dictionary of data sources that we have added
-        self._sources = {}
+        self.sources = {}
 
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
@@ -82,16 +82,19 @@ class Project:
         self.permanent_blacklist = []
 
         # The compression level at which we operate
-        if compression_level < 0:
-            raise ValueError(f"Compression level must be >= 0, got {compression_level}")
+        self.compression_level = compression_level
 
-        self._compression_level = compression_level
-
-        self.logger = get_logger(self.path.stem)
+        self.logger = get_logger(self.path.with_suffix(".log"))
+        self.set_loglevel(loglevel)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         # debug help
         self.use_cache = True
+
+    def set_loglevel(self, loglevel: Optional[str]):
+        if loglevel:
+            self.logger.handlers[0].setLevel(loglevel)
+            self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property
     def path(self) -> Path:
@@ -120,7 +123,7 @@ class Project:
         if xml_path.suffix != ".xml":
             xml_path = xml_path.with_suffix(".xml")
 
-        if xml_path.stem in self._sources:
+        if xml_path.stem in self.sources:
             raise ValueError("Source already loaded!")
 
         # resolve relative to project path
@@ -139,12 +142,13 @@ class Project:
         self.logger.info(f"Adding source {source_obj.metadata['name']}")
 
         # Double-check that it provides the current compression level
-        if self.compression_level >= len(source_obj.metadata["downsampling"]):
+        if self.compression_level not in source_obj.metadata["levels"]:
             raise ValueError(
                 f"Compression level {self.compression_level} is not available "
-                f"for source {source_obj.metadata['name']}"
+                f"for source {source_obj.metadata['name']}.\n Available levels:"
+                f"{source_obj.metadata['levels']}"
             )
-        self._sources[xml_path.stem] = source_obj
+        self.sources[xml_path.stem] = source_obj
 
     def skeletonize_wavefront(
         self,
@@ -225,7 +229,7 @@ class Project:
         ids: str = "*",
         show_morphology: bool = False,
         show_skeleton: bool = False,
-        mcs_label: str = None,
+        mcs_label: Optional[str] = None,
         height: int = 800,
     ):
         orgs = self.organelles(ids=ids)
@@ -264,7 +268,7 @@ class Project:
                         marker=dict(size=1, color="red"),
                     )
                     fig.add_trace(sampled_scatter)
-                except:
+                except ValueError:
                     self.logger.warning(org.id, sampled_path, org.skeleton)
                     raise ValueError("sampled_path is not valid")
 
@@ -478,10 +482,21 @@ class Project:
         return fig
 
     @property
-    def compression_level(self) -> int:
+    def compression_level(self) -> str:
         """The compression level used for our computations."""
 
         return self._compression_level
+
+    @compression_level.setter
+    def compression_level(self, level: str):
+        for s_name, s in self.sources.items():
+            if level not in s.metadata["levels"]:
+                raise ValueError(
+                    f"Requested level {level} not available in source {s_name}!\n"
+                    f"Levels in source: {s.metadata['levels']}"
+                )
+
+        self._compression_level = level
 
     def calculate_meshes(self):
         """Trigger the calculation of meshes for all organelles"""
@@ -533,7 +548,7 @@ class Project:
         # Trigger the calculation of all meshes in a parallel pool
 
         properties = {}
-        sources = list(self._sources.keys())
+        sources = list(self.sources.keys())
         cache_str = f"geometric_properties_{self.compression_level}_{sources}"
         with disk_cache(self, cache_str) as cache:
             if cache_str not in cache or not self.use_cache:
@@ -664,7 +679,7 @@ class Project:
         """Get the morphology map for all organelles"""
 
         # results should be saved on a source level
-        for source_key, source in self._sources.items():
+        for source_key, source in self.sources.items():
             self._morphology_map[source_key] = source.morphology_map
 
         return self._morphology_map
@@ -767,7 +782,7 @@ class Project:
     def organelles(
         self,
         ids: str | list[str] = "*",
-    ) -> list[Organelle] | list[str]:
+    ) -> list[Organelle]:
         """Return a list of organelles found in the dataset
 
         This requires previous adding of data sources using add_source.
@@ -783,7 +798,7 @@ class Project:
             ids = [ids]
 
         for id_ in ids:
-            for source in self._sources.values():
+            for source in self.sources.values():
                 if id_ in self.permanent_blacklist:
                     continue
 
@@ -800,7 +815,7 @@ class Project:
     def organelle_ids(
         self,
         ids: str | list[str] = "*",
-    ) -> list[Organelle] | list[str]:
+    ) -> list[str]:
         """Return a list of organelle ids found in the dataset
 
         This requires previous adding of data sources using add_source.
@@ -816,7 +831,7 @@ class Project:
             ids = [ids]
 
         for id_ in ids:
-            for source in self._sources.values():
+            for source in self.sources.values():
                 if id_ in self.permanent_blacklist:
                     continue
 

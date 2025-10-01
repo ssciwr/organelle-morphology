@@ -8,6 +8,7 @@ import pathlib
 import tempfile
 import numpy as np
 import trimesh
+import trimesh.visual
 
 
 def test_synthetic_data_generation(
@@ -89,7 +90,7 @@ def test_project_clipping(cebra_project_path):
         )
     # add a source and check that the clipping is correctly propagated
     project.add_source(xml_path="synth_data", organelle="mito")
-    assert list(project._sources.values())[0].data.shape == (141, 144, 198)
+    assert list(project.sources.values())[0].data.shape == (141, 144, 198)
 
 
 def test_add_source(cebra_project):
@@ -124,9 +125,9 @@ def test_project_organelles(cebra_project_with_sources):
 def test_project_sources_data(cebra_project_with_sources):
     p = cebra_project_with_sources
 
-    assert isinstance(p._sources["synth_data"], DataSource)
-    assert p._sources["synth_data"].org_name == "mito"
-    assert p._sources["synth_data"].background_label == 0
+    assert isinstance(p.sources["synth_data"], DataSource)
+    assert p.sources["synth_data"].org_name == "mito"
+    assert p.sources["synth_data"].background_label == 0
 
 
 def test_geometric_properties(
@@ -196,7 +197,7 @@ def test_show_mesh_scene(cebra_project_with_sources):
     p = cebra_project_with_sources
     meshes = p._meshes
 
-    scene = trimesh.scene.Scene()
+    scene = trimesh.Scene()
     for source_key in meshes.keys():
         for org_key in meshes[source_key].keys():
             mesh = meshes[source_key][org_key]
