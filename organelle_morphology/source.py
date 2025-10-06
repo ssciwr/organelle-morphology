@@ -1,8 +1,11 @@
 from typing import Optional
 from pathlib import Path
+
+from trimesh import Trimesh
 from organelle_morphology.organelle import Organelle, organelle_registry
 
 import dask.array as da
+from zmesh import Mesher
 
 import fnmatch
 import numpy as np
@@ -179,6 +182,11 @@ class DataSource:
         assert filename is not None, "n5 Filename could not be parsed from xml!"
 
         timepoints = self.load_n5(self.xml_path.parent / filename)
+        if len(timepoints) != 1:
+            self.project.logger.warning(
+                "Only single timepoints supported, ignoring all but the first!"
+            )
+
         self.timepoint = list(timepoints.values())[0]
 
         assert resolution == self.timepoint.resolution[::-1]
@@ -261,7 +269,9 @@ class DataSource:
         """
         if compression_level is None:
             compression_level = self.project.compression_level
-        data_at_level = getattr(self.timepoint, compression_level).data
+        data_at_level: z5py.dataset.Dataset = getattr(
+            self.timepoint, compression_level
+        ).data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
@@ -318,6 +328,19 @@ class DataSource:
             0
         ].compute()
         return labels
+
+    def calculate_mesh(self, smooth=True):
+        mesher = Mesher((1, 1, 1))
+
+        self.data
+
+        mesh = Trimesh(verts, faces, process=False)
+        mesh.fix_normals()
+        if smooth:
+            trimesh.smoothing.filter_humphrey(mesh)
+
+        self.logger.debug("Generated mesh for %s", self.id)
+        return mesh
 
     def organelles(
         self,

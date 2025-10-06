@@ -8,6 +8,7 @@ from organelle_morphology.distance_calculations import (
 )
 
 from pathlib import Path
+from dask.distributed import Client
 
 import numpy as np
 import pandas as pd
@@ -60,6 +61,8 @@ class Project:
         self._clipping = None
         if clipping is not None:
             self.clipping = clipping
+
+        self.client = Client()
 
         # The dictionary of data sources that we have added
         self.sources = {}
