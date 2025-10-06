@@ -764,7 +764,10 @@ class Project:
             return self._clipping
 
     @clipping.setter
-    def clipping(self, clipping: clipping_type):
+    def clipping(self, clipping: clipping_type | None):
+        if clipping is None:
+            self._clipping = None
+            return
         _clipping = np.array(clipping)
         if not np.all(_clipping[0] < _clipping[1]):
             raise ValueError(

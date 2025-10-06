@@ -12,7 +12,7 @@ from collections import defaultdict
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
-organelle_registry = {}
+organelle_registry: dict[str, "Organelle"] = {}
 
 
 def organelle_types() -> list[str]:
@@ -62,7 +62,7 @@ class Organelle:
             cls._name = name
 
     @classmethod
-    def construct(cls, source: str, labels: tuple[int] = ()):
+    def construct(cls, source, labels: tuple[int] = ()):
         """A trivial factory method for organelle instances.
 
         It constructs an instance per label. The construction process for each
@@ -85,8 +85,8 @@ class Organelle:
             verts, faces, _, _ = measure.marching_cubes(
                 self.data.compute(), spacing=self._source.resolution
             )
-        except RuntimeError:
-            logging.warning("Could not generate mesh for label %s", self.id)
+        except RuntimeError as e:
+            logging.warning("Could not generate mesh for label %s\n%s", self.id, e)
             self._mesh[self._source.project.compression_level] = None
             return None
         mesh = trimesh.Trimesh(verts, faces, process=False)
