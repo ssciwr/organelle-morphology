@@ -16,6 +16,7 @@ dependencies:
   - trimesh
   - z5py
   - pre-commit
+  - rich
   - pip:
       - python-fcl
       - setuptools==65.7.0
