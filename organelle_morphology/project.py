@@ -17,7 +17,7 @@ import plotly.graph_objects as go
 from tqdm import tqdm
 
 
-def _picklable_mesh_extractor(organelle):
+def _picklable_mesh_extractor(organelle: Organelle):
     return organelle.mesh
 
 

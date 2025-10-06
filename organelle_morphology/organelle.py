@@ -80,7 +80,7 @@ class Organelle:
     def __repr__(self):
         return f"{self.__class__.__name__}({self._organelle_id})"
 
-    def _generate_mesh(self, smooth=True):
+    def _generate_mesh(self, smooth=True) -> trimesh.Trimesh | None:
         try:
             verts, faces, _, _ = measure.marching_cubes(
                 self.data.compute(), spacing=self._source.resolution
