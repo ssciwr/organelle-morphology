@@ -90,7 +90,7 @@ class DataSource:
                 name + ": " + str(obj.__class__) + str(list(obj.attrs.items()))
             )
 
-            name_parts = name.split("/")
+            name_parts = Path(name).parts
 
             if len(name_parts) == 2:
                 # new timepoint
