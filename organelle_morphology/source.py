@@ -5,6 +5,8 @@ from trimesh import Trimesh
 from organelle_morphology.organelle import Organelle, organelle_registry
 
 import dask.array as da
+from dask.array.core import Array
+from dask.delayed import delayed
 from zmesh import Mesher
 
 import fnmatch
@@ -17,6 +19,22 @@ import z5py
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
+
+
+@delayed
+def _block_mesher(block):
+    mesher = Mesher((1, 1, 1))
+    mesher.mesh(block, close=False)
+    meshes = {}
+    for id in mesher.ids():
+        meshes[id] = mesher.get(
+            id,
+            normals=False,
+            reduction_factor=1,
+            voxel_centered=False,
+            max_error=None,  # None: max 1 voxel, otherwise unit of data
+        )
+    return meshes
 
 
 @dataclass
@@ -254,10 +272,10 @@ class DataSource:
         return self._morphology_map
 
     @property
-    def data(self) -> da.Array:
+    def data(self) -> Array:
         return self.get_data(None)
 
-    def get_data(self, compression_level: Optional[str]) -> da.Array:
+    def get_data(self, compression_level: Optional[str]) -> Array:
         """Get data of this source as array.
 
         Args:
@@ -330,9 +348,8 @@ class DataSource:
         return labels
 
     def calculate_mesh(self, smooth=True):
-        mesher = Mesher((1, 1, 1))
-
-        self.data
+        d_data = self.data.to_delayed()
+        verts, faces = _block_mesher(d_data)
 
         mesh = Trimesh(verts, faces, process=False)
         mesh.fix_normals()
