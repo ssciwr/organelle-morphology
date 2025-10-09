@@ -1,7 +1,6 @@
 from typing import Optional
 from pathlib import Path
 
-from trimesh import Trimesh
 from organelle_morphology.organelle import Organelle, organelle_registry
 
 import dask.array as da
@@ -349,15 +348,17 @@ class DataSource:
 
     def calculate_mesh(self, smooth=True):
         d_data = self.data.to_delayed()
-        verts, faces = _block_mesher(d_data)
+        meshes = np.empty_like(d_data)
+        for index, d_block in np.ndenumerate(d_data):
+            meshes[index] = _block_mesher(d_block)
 
-        mesh = Trimesh(verts, faces, process=False)
-        mesh.fix_normals()
-        if smooth:
-            trimesh.smoothing.filter_humphrey(mesh)
-
-        self.logger.debug("Generated mesh for %s", self.id)
-        return mesh
+        # mesh = Trimesh(verts, faces, process=False)
+        # mesh.fix_normals()
+        # if smooth:
+        #     trimesh.smoothing.filter_humphrey(mesh)
+        #
+        # self.logger.debug("Generated mesh for %s", self.id)
+        return
 
     def organelles(
         self,
