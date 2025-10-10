@@ -1,8 +1,10 @@
+from collections import defaultdict
 from typing import Optional
 from pathlib import Path
 
 from organelle_morphology.organelle import Organelle, organelle_registry
 
+from dask import persist
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import delayed
@@ -17,15 +19,18 @@ import z5py
 
 import warnings
 
+from organelle_morphology.util import disk_cache
+
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
 
-@delayed
+@delayed(nout=2)
 def _block_mesher(block):
     mesher = Mesher((1, 1, 1))
     mesher.mesh(block, close=False)
     meshes = {}
     for id in mesher.ids():
+        assert meshes.get(id) is None, f"{id} was in mesh already!"
         meshes[id] = mesher.get(
             id,
             normals=False,
@@ -33,7 +38,7 @@ def _block_mesher(block):
             voxel_centered=False,
             max_error=None,  # None: max 1 voxel, otherwise unit of data
         )
-    return meshes
+    return meshes, list(meshes.keys())
 
 
 @dataclass
@@ -94,6 +99,8 @@ class DataSource:
         self._mesh_properties = {}
         self._meshes = {}
         self._morphology_map = {}
+        self._meshes_chunked = None
+        self._ids_to_chunks = None
 
         # The computed organelles are stored
         self._organelles = None
@@ -340,17 +347,58 @@ class DataSource:
     @property
     def labels(self) -> tuple[int]:
         """Return the list of labels present in the data source."""
-        # TODO: avoid compute calls
-        labels = da.where(da.unique(self.data).compute() != self.background_label)[
-            0
-        ].compute()
+        unique_labels = da.unique(self.data).compute()
+        labels = unique_labels[np.nonzero(unique_labels != self.background_label)]
         return labels
+
+    @property
+    def meshes_chunked(self) -> np.ndarray:
+        if self._meshes_chunked is None:
+            self.calculate_mesh()
+        return self._meshes_chunked
+
+    @property
+    def ids_to_chunks(self) -> dict:
+        if self._ids_to_chunks is None:
+            self.calculate_mesh()
+        return self._ids_to_chunks
 
     def calculate_mesh(self, smooth=True):
         d_data = self.data.to_delayed()
-        meshes = np.empty_like(d_data)
+        self._meshes_chunked = np.empty_like(d_data)
+        ids_chunked = np.empty_like(d_data)
+
         for index, d_block in np.ndenumerate(d_data):
-            meshes[index] = _block_mesher(d_block)
+            meshes_chunk, ids_chunk = _block_mesher(d_block)
+            self._meshes_chunked[index] = meshes_chunk
+            ids_chunked[index] = ids_chunk
+
+        # flatten the ids and meshes
+        d_ids = []
+        d_indices = []
+        d_meshes = []
+        for index, ids_chunk in np.ndenumerate(ids_chunked):
+            d_ids.append(ids_chunk)
+            d_indices.append(index)
+            d_meshes.append(self._meshes_chunked[index])
+
+        @delayed
+        def build_chunk_lookup(ids_chunks, indices):
+            res = defaultdict(list)
+            for ids, index in zip(ids_chunks, indices):
+                for id in ids:
+                    res[id].append(index)
+
+            return res
+
+        # TODO: Find a way to cache on workers
+        # d_meshes = persist(d_meshes)[0]
+        self._ids_to_chunks = build_chunk_lookup(d_ids, d_indices).compute()
+        amounts, freqs = np.unique(
+            [len(idxs) for idxs in self._ids_to_chunks.values()], return_counts=True
+        )
+        for amount, frq in zip(amounts, freqs):
+            self.project.logger.debug(f"{frq} labels in {amount} chunks")
 
         # mesh = Trimesh(verts, faces, process=False)
         # mesh.fix_normals()

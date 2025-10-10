@@ -1,3 +1,4 @@
+from typing import Optional
 from organelle_morphology.util import disk_cache
 
 import numpy as np
@@ -12,7 +13,7 @@ from collections import defaultdict
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
-organelle_registry: dict[str, "Organelle"] = {}
+organelle_registry: dict[str, type["Organelle"]] = {}
 
 
 def organelle_types() -> list[str]:
@@ -25,25 +26,21 @@ def organelle_types() -> list[str]:
 
 
 class Organelle:
-    def __init__(self, source, source_label: int, organelle_id: str):
-        """The organelle base class implementing generic geometric properties.
+    def __init__(self, source, source_label: int):
+        """The organelle base class
+
+        Holds references to its mesh and label. Also holds analysis results.
 
         Note that instances of Organelle typically are not instantiated directly,
         but through the corresponding subclass of OrganelleFactory.
 
-        :param source:
-            The data source instance holding the data for this organelle.
-        :type source: organelle_morphology.source.DataSource
-
-        :param source_label:
-            The label used in the original data to identify this organelle.
-
-        :param organelle_id:
-            The string ID that is used to refer to this organelle.
+        Args:
+            source: The source object containing this organelle
+            source_label: label used in the original data for this organelle.
         """
         self._source = source
         self._source_label = source_label
-        self._organelle_id = organelle_id
+        self._organelle_id = f"{self._name}_{str(source_label).zfill(4)}"
         self._mesh_properties = {}
         self._mesh = {}
         self._morphology_map = {}
@@ -55,14 +52,16 @@ class Organelle:
 
         self.logger = self._source.project.logger
 
-    def __init_subclass__(cls, name=None):
+    def __init_subclass__(cls, name: Optional[str] = None):
         """Register a given subclass in the global dictionary 'organelles'"""
         if name is not None:
             organelle_registry[name] = cls
             cls._name = name
+        else:
+            cls._name = "organelle"
 
     @classmethod
-    def construct(cls, source, labels: tuple[int] = ()):
+    def construct(cls, source, labels: tuple[int]):
         """A trivial factory method for organelle instances.
 
         It constructs an instance per label. The construction process for each
@@ -74,7 +73,6 @@ class Organelle:
             yield organelle_registry[cls._name](
                 source=source,
                 source_label=label,
-                organelle_id=f"{cls._name}_{str(label).zfill(4)}",
             )
 
     def __repr__(self):
@@ -384,12 +382,16 @@ class Organelle:
     def sampled_skeleton(self, value):
         self._sampled_skeleton = value
 
+    def _get_mesh(self):
+        chunks = self._source.ids_to_chunks[self._source_label]
+        # TODO: finish this
+
     @property
     def mesh(self):
         """Get the mesh for this organelle"""
         with disk_cache(self._source.project, f"mesh_{self._organelle_id}") as cache:
             if self._source.project.compression_level not in cache:
-                cache[self._source.project.compression_level] = self._generate_mesh()
+                cache[self._source.project.compression_level] = self._get_mesh()
 
             return cache[self._source.project.compression_level]
 

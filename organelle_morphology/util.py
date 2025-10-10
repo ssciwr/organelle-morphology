@@ -11,14 +11,14 @@ from tqdm import tqdm
 
 
 @contextlib.contextmanager
-def disk_cache(project, name, maxsize=10000):
+def disk_cache(project_path: Path, name, maxsize=10000):
     # Define the cache
     cache = shelved_cache.PersistentCache(
         cachetools.LRUCache,
         str(
             xdg.xdg_cache_home()
             / "organelle_morphology"
-            / hashlib.sha256(str(project.path.absolute()).encode("utf-8")).hexdigest()
+            / hashlib.sha256(str(project_path.absolute()).encode("utf-8")).hexdigest()
             / name
         ),
         maxsize=maxsize,
