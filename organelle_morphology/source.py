@@ -4,11 +4,11 @@ from pathlib import Path
 
 from organelle_morphology.organelle import Organelle, organelle_registry
 
-from dask import persist
+from dask import persist, compute
 import dask.array as da
 from dask.array.core import Array
-from dask.delayed import delayed
-from zmesh import Mesher
+from dask.delayed import Delayed, delayed
+from zmesh import Mesh, Mesher
 
 import fnmatch
 import numpy as np
@@ -25,19 +25,35 @@ warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
 
 @delayed(nout=2)
-def _block_mesher(block):
+def _block_mesher(block, space_offset: tuple[int, ...]):
+    """Delayed function to calculate meshes from label data
+
+    Args:
+        block: 3D array containing labels
+        space_offset: 3D tuple containing the offset of the current block
+            in relation to the whole data. The vertices are therefore *not*
+            local to the block, but can directly be merged with other blocks.
+
+    Returns:
+        meshes: Dict with labels as keys and meshes as values.
+        labels: list of labels present in this block.
+
+    """
+
     mesher = Mesher((1, 1, 1))
     mesher.mesh(block, close=False)
     meshes = {}
     for id in mesher.ids():
         assert meshes.get(id) is None, f"{id} was in mesh already!"
-        meshes[id] = mesher.get(
+        mesh = mesher.get(
             id,
             normals=False,
             reduction_factor=1,
-            voxel_centered=False,
+            voxel_centered=True,
             max_error=None,  # None: max 1 voxel, otherwise unit of data
         )
+        mesh.vertices += space_offset
+        meshes[id] = mesh
     return meshes, list(meshes.keys())
 
 
@@ -100,7 +116,7 @@ class DataSource:
         self._meshes = {}
         self._morphology_map = {}
         self._meshes_chunked = None
-        self._ids_to_chunks = None
+        self._ids_to_chunks: Optional[dict] = None
 
         # The computed organelles are stored
         self._organelles = None
@@ -353,9 +369,49 @@ class DataSource:
 
     @property
     def meshes_chunked(self) -> np.ndarray:
+        """Get an array over all chunks containing dask delayed objects."""
         if self._meshes_chunked is None:
             self.calculate_mesh()
         return self._meshes_chunked
+
+    def get_meshes_from_id(self, id: int) -> Optional[list[Delayed]]:
+        """Given the label id get the associated meshes."""
+
+        if (chunks := self.ids_to_chunks.get(id)) is None:
+            return None
+
+        return [self.meshes_chunked[chunk][id] for chunk in chunks]
+
+    def merge_meshes(self, meshes: list[Delayed]) -> Mesh:
+        @delayed(nout=2)
+        def get_faces_verts(meshes):
+            faces = [np.array(m.faces) for m in meshes]
+            offsets = [0] + [m.vertices.shape[0] for m in meshes][:-1]
+            for f, offset in zip(faces, offsets):
+                f += offset
+            faces = np.concatenate(faces)
+            verts = np.concatenate([m.vertices for m in meshes])
+            return verts, faces
+
+        verts, faces = compute(*get_faces_verts(meshes))
+        return Mesh(
+            vertices=verts,
+            faces=faces,
+            normals=None,
+        )
+
+    @delayed
+    def _mesh_mover(
+        self,
+        mesh: Mesh,
+        space_offset: Optional[tuple[int, int, int]] = None,
+        id_offset: Optional[int] = None,
+    ):
+        if space_offset is not None:
+            mesh.vertices += space_offset
+        if id_offset is not None:
+            mesh.faces += id_offset
+        return mesh
 
     @property
     def ids_to_chunks(self) -> dict:
@@ -364,26 +420,8 @@ class DataSource:
         return self._ids_to_chunks
 
     def calculate_mesh(self, smooth=True):
-        d_data = self.data.to_delayed()
-        self._meshes_chunked = np.empty_like(d_data)
-        ids_chunked = np.empty_like(d_data)
-
-        for index, d_block in np.ndenumerate(d_data):
-            meshes_chunk, ids_chunk = _block_mesher(d_block)
-            self._meshes_chunked[index] = meshes_chunk
-            ids_chunked[index] = ids_chunk
-
-        # flatten the ids and meshes
-        d_ids = []
-        d_indices = []
-        d_meshes = []
-        for index, ids_chunk in np.ndenumerate(ids_chunked):
-            d_ids.append(ids_chunk)
-            d_indices.append(index)
-            d_meshes.append(self._meshes_chunked[index])
-
         @delayed
-        def build_chunk_lookup(ids_chunks, indices):
+        def build_chunk_lookup(ids_chunks, indices) -> defaultdict:
             res = defaultdict(list)
             for ids, index in zip(ids_chunks, indices):
                 for id in ids:
@@ -391,9 +429,36 @@ class DataSource:
 
             return res
 
-        # TODO: Find a way to cache on workers
-        # d_meshes = persist(d_meshes)[0]
-        self._ids_to_chunks = build_chunk_lookup(d_ids, d_indices).compute()
+        d_data = self.data.to_delayed()
+        self._meshes_chunked = np.empty_like(d_data)
+        ids_chunked = np.empty_like(d_data)
+        size_offset_cumsum = [
+            np.cumsum(np.array([0] + list(ch))) for ch in self.data.chunks
+        ]
+
+        for index, d_block in np.ndenumerate(d_data):
+            space_offset = tuple(
+                int(size_offset_cumsum[i][c]) for i, c in enumerate(index)
+            )
+            meshes_chunk, ids_chunk = _block_mesher(d_block, space_offset)
+            self._meshes_chunked[index] = meshes_chunk
+            ids_chunked[index] = ids_chunk
+
+        # flatten the ids and delayed meshes
+        d_ids = []
+        indices = []
+        d_meshes = []
+        for index, ids_chunk in np.ndenumerate(ids_chunked):
+            mesh = self._meshes_chunked[index]
+            d_ids.append(ids_chunk)
+            indices.append(index)
+            d_meshes.append(mesh)
+
+        self._storage = persist(*d_meshes)
+
+        self._ids_to_chunks: defaultdict = build_chunk_lookup(d_ids, indices).compute()
+
+        # get some statistics
         amounts, freqs = np.unique(
             [len(idxs) for idxs in self._ids_to_chunks.values()], return_counts=True
         )
