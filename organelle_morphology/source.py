@@ -1,4 +1,5 @@
 from collections import defaultdict
+from itertools import combinations
 from typing import Optional
 from pathlib import Path
 
@@ -19,7 +20,6 @@ import z5py
 
 import warnings
 
-from organelle_morphology.util import disk_cache
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
@@ -48,13 +48,19 @@ def _block_mesher(block, space_offset: tuple[int, ...]):
         mesh = mesher.get(
             id,
             normals=False,
-            reduction_factor=1,
-            voxel_centered=True,
+            reduction_factor=0,
+            voxel_centered=False,
             max_error=None,  # None: max 1 voxel, otherwise unit of data
         )
         mesh.vertices += space_offset
         meshes[id] = mesh
     return meshes, list(meshes.keys())
+
+
+@delayed
+def _block_ids(block):
+    labels = np.unique(block)
+    return list(filter(lambda i: i != 0, labels))
 
 
 @dataclass
@@ -117,6 +123,10 @@ class DataSource:
         self._morphology_map = {}
         self._meshes_chunked = None
         self._ids_to_chunks: Optional[dict] = None
+        self._labels = None
+
+        # to avoid recomputation, persisted delayed objects need to be held
+        self._storage = {}
 
         # The computed organelles are stored
         self._organelles = None
@@ -361,11 +371,9 @@ class DataSource:
         )
 
     @property
-    def labels(self) -> tuple[int]:
+    def labels(self) -> list[int]:
         """Return the list of labels present in the data source."""
-        unique_labels = da.unique(self.data).compute()
-        labels = unique_labels[np.nonzero(unique_labels != self.background_label)]
-        return labels
+        return list(self.ids_to_chunks.keys())
 
     @property
     def meshes_chunked(self) -> np.ndarray:
@@ -383,7 +391,9 @@ class DataSource:
         return [self.meshes_chunked[chunk][id] for chunk in chunks]
 
     def merge_meshes(self, meshes: list[Delayed]) -> Mesh:
-        @delayed(nout=2)
+        """Merges two delayed meshes into one concrete new Mesh object"""
+
+        @delayed(nout=2)  # pyright: ignore
         def get_faces_verts(meshes):
             faces = [np.array(m.faces) for m in meshes]
             offsets = [0] + [m.vertices.shape[0] for m in meshes][:-1]
@@ -417,17 +427,18 @@ class DataSource:
     def ids_to_chunks(self) -> dict:
         if self._ids_to_chunks is None:
             self.calculate_mesh()
+        assert self._ids_to_chunks is not None
         return self._ids_to_chunks
 
     def calculate_mesh(self, smooth=True):
         @delayed
-        def build_chunk_lookup(ids_chunks, indices) -> defaultdict:
+        def build_chunk_lookup(ids_chunks, indices) -> dict:
             res = defaultdict(list)
             for ids, index in zip(ids_chunks, indices):
                 for id in ids:
                     res[id].append(index)
 
-            return res
+            return dict(res)
 
         d_data = self.data.to_delayed()
         self._meshes_chunked = np.empty_like(d_data)
@@ -454,9 +465,10 @@ class DataSource:
             indices.append(index)
             d_meshes.append(mesh)
 
-        self._storage = persist(*d_meshes)
+        self._storage["d_meshes"] = persist(*d_meshes)
 
-        self._ids_to_chunks: defaultdict = build_chunk_lookup(d_ids, indices).compute()
+        self._ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
+        assert self._ids_to_chunks is not None  # for linter
 
         # get some statistics
         amounts, freqs = np.unique(
@@ -472,6 +484,18 @@ class DataSource:
         #
         # self.logger.debug("Generated mesh for %s", self.id)
         return
+
+    def fix_meshes_across_chunks(self):
+        # Util functions
+        def get_adjacent_blocks(blocks):
+            for a, b in combinations(blocks):
+                pass
+
+        # main body
+        labels_to_fix = {k: v for k, v in self.ids_to_chunks.items() if len(v) > 1}
+
+        for label, chunks in labels_to_fix.items():
+            pass
 
     def organelles(
         self,

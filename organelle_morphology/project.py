@@ -65,7 +65,7 @@ class Project:
         self.client = Client()
 
         # The dictionary of data sources that we have added
-        self.sources = {}
+        self.sources: dict[str, DataSource] = {}
 
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
