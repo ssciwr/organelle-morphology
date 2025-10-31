@@ -78,8 +78,16 @@ plt.show(block=False)
 ids_to_fix = {k:v for k,v in s.ids_to_chunks.items() if len(v) > 1}
 chunks = ids_to_fix[label]
 
+# %% merge overlap
+tmesh.vertices
 
+import trimesh
+tmesh = trimesh.Trimesh(mmesh.vertices, mmesh.faces, process=False)
+tmesh.merge_vertices()
+tmesh.show()
 
+# %% duplicates?
+np.unique(tmesh.vertices, axis=0, return_counts=True)
 
 # %% fix while merging??
 # fixing meshes does not work as there are less verts than raw points

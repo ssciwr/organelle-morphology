@@ -3,9 +3,11 @@ from itertools import combinations
 from typing import Optional
 from pathlib import Path
 
+from trimesh import Trimesh
+
 from organelle_morphology.organelle import Organelle, organelle_registry
 
-from dask import persist, compute
+from dask import persist
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
@@ -124,6 +126,7 @@ class DataSource:
         self._meshes_chunked = None
         self._ids_to_chunks: Optional[dict] = None
         self._labels = None
+        self._meshes_merged = {}  # When merging meshes, the ids must be stored here
 
         # to avoid recomputation, persisted delayed objects need to be held
         self._storage = {}
@@ -380,35 +383,46 @@ class DataSource:
         """Get an array over all chunks containing dask delayed objects."""
         if self._meshes_chunked is None:
             self.calculate_mesh()
-        return self._meshes_chunked
+        return self._meshes_chunked  # pyright: ignore
 
-    def get_meshes_from_id(self, id: int) -> Optional[list[Delayed]]:
+    def get_meshes_from_id(self, ind: int) -> Optional[list[Delayed]]:
         """Given the label id get the associated meshes."""
 
-        if (chunks := self.ids_to_chunks.get(id)) is None:
+        if self._meshes_chunked is None:
+            self.calculate_mesh()
+        if ind in self._meshes_merged:
+            return [self._meshes_merged[ind]]
+
+        if (chunks := self.ids_to_chunks.get(ind)) is None:
             return None
 
-        return [self.meshes_chunked[chunk][id] for chunk in chunks]
+        return [self.meshes_chunked[chunk][ind] for chunk in chunks]
 
-    def merge_meshes(self, meshes: list[Delayed]) -> Mesh:
-        """Merges two delayed meshes into one concrete new Mesh object"""
+    def merge_meshes(self, meshes: list[Delayed]) -> Delayed:
+        """Merges two delayed meshes into one concrete new Mesh object
 
-        @delayed(nout=2)  # pyright: ignore
-        def get_faces_verts(meshes):
-            faces = [np.array(m.faces) for m in meshes]
-            offsets = [0] + [m.vertices.shape[0] for m in meshes][:-1]
-            for f, offset in zip(faces, offsets):
-                f += offset
-            faces = np.concatenate(faces)
-            verts = np.concatenate([m.vertices for m in meshes])
-            return verts, faces
+        Needs overlapping meshes, otherwise the intersections will not be
+        connected.
+        """
 
-        verts, faces = compute(*get_faces_verts(meshes))
-        return Mesh(
-            vertices=verts,
-            faces=faces,
-            normals=None,
-        )
+        @delayed
+        def to_trimesh(mesh):
+            return Trimesh(mesh.vertices, mesh.faces)
+
+        @delayed
+        def merge_two_trimesh(tmeshes: list[Trimesh]):
+            tmesh: Trimesh = sum(tmeshes)
+            return tmesh
+
+        tmeshes = [to_trimesh(mesh) for mesh in meshes]
+
+        while len(tmeshes) > 1:
+            merged = []
+            for pair in combinations(tmeshes, 2):
+                merged.append(merge_two_trimesh(pair))
+            tmeshes = merged
+
+        return tmeshes[0]
 
     @delayed
     def _mesh_mover(
@@ -430,7 +444,7 @@ class DataSource:
         assert self._ids_to_chunks is not None
         return self._ids_to_chunks
 
-    def calculate_mesh(self, smooth=True):
+    def calculate_mesh(self, smooth=True, overlap=True):
         @delayed
         def build_chunk_lookup(ids_chunks, indices) -> dict:
             res = defaultdict(list)
@@ -440,7 +454,12 @@ class DataSource:
 
             return dict(res)
 
-        d_data = self.data.to_delayed()
+        if overlap:
+            d_data = da.overlap.overlap(
+                self.data, depth={0: 2, 1: 2, 2: 2}, boundary={0: 0, 1: 0, 2: 0}
+            ).to_delayed()
+        else:
+            d_data = self.data.to_delayed()
         self._meshes_chunked = np.empty_like(d_data)
         ids_chunked = np.empty_like(d_data)
         size_offset_cumsum = [
@@ -465,37 +484,29 @@ class DataSource:
             indices.append(index)
             d_meshes.append(mesh)
 
+        # keep references to make mesh persistend
         self._storage["d_meshes"] = persist(*d_meshes)
 
         self._ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
         assert self._ids_to_chunks is not None  # for linter
 
         # get some statistics
-        amounts, freqs = np.unique(
-            [len(idxs) for idxs in self._ids_to_chunks.values()], return_counts=True
+        all_chunks = list(self._ids_to_chunks.values())
+        all_ids = np.array(list(self._ids_to_chunks.keys()))
+        id_amounts = [len(idxs) for idxs in all_chunks]
+        amounts, inverse, freqs = np.unique(
+            id_amounts, return_counts=True, return_inverse=True
         )
         for amount, frq in zip(amounts, freqs):
             self.project.logger.debug(f"{frq} labels in {amount} chunks")
 
-        # mesh = Trimesh(verts, faces, process=False)
-        # mesh.fix_normals()
-        # if smooth:
-        #     trimesh.smoothing.filter_humphrey(mesh)
-        #
-        # self.logger.debug("Generated mesh for %s", self.id)
-        return
-
-    def fix_meshes_across_chunks(self):
-        # Util functions
-        def get_adjacent_blocks(blocks):
-            for a, b in combinations(blocks):
-                pass
-
-        # main body
-        labels_to_fix = {k: v for k, v in self.ids_to_chunks.items() if len(v) > 1}
-
-        for label, chunks in labels_to_fix.items():
-            pass
+        # TODO:fix broken meshes
+        duplicate_ids = all_ids[np.nonzero(inverse != 0)]
+        for ind in duplicate_ids:
+            chunk_idxs = self._ids_to_chunks[ind]
+            meshes = [self._meshes_chunked[idx] for idx in chunk_idxs]
+            merged_mesh = self.merge_meshes(meshes)
+            self._meshes_merged[ind] = merged_mesh
 
     def organelles(
         self,
