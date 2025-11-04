@@ -26,10 +26,10 @@ def disk_cache(project_path: Path, name, maxsize=10000):
 
     # Ensure that the cache contains a timestamp
     if "timestamp" not in cache:
-        cache["timestamp"] = project.path.stat().st_mtime
+        cache["timestamp"] = project_path.stat().st_mtime
 
     # Maybe decide to invalidate the cache based on the data timestamp
-    if cache.get("timestamp") != project.path.stat().st_mtime:
+    if cache.get("timestamp") != project_path.stat().st_mtime:
         cache.clear()
 
     # Return the cache

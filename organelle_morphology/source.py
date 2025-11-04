@@ -1,13 +1,14 @@
 from collections import defaultdict
-from itertools import combinations
+from time import time
 from typing import Optional
 from pathlib import Path
 
 from trimesh import Trimesh
 
+import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
 
-from dask import persist
+from dask import persist, compute
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
@@ -21,6 +22,8 @@ from dataclasses import dataclass, field
 import z5py
 
 import warnings
+
+from organelle_morphology.util import disk_cache
 
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
@@ -50,19 +53,13 @@ def _block_mesher(block, space_offset: tuple[int, ...]):
         mesh = mesher.get(
             id,
             normals=False,
-            reduction_factor=0,
+            reduction_factor=1,
             voxel_centered=False,
             max_error=None,  # None: max 1 voxel, otherwise unit of data
         )
         mesh.vertices += space_offset
-        meshes[id] = mesh
+        meshes[id] = Trimesh(mesh.vertices, mesh.faces, process=False)
     return meshes, list(meshes.keys())
-
-
-@delayed
-def _block_ids(block):
-    labels = np.unique(block)
-    return list(filter(lambda i: i != 0, labels))
 
 
 @dataclass
@@ -87,7 +84,7 @@ class Data_level:
 class DataSource:
     def __init__(
         self,
-        project,
+        project: "organelle_morphology.Project",
         xml_path: Path,
         organelle: Optional[str],
         background_label: int = 0,
@@ -109,32 +106,30 @@ class DataSource:
         :type organelle: str
         """
 
-        self.project = project
+        self.project: "organelle_morphology.Project" = project
         self.xml_path = xml_path
         self.org_name = organelle
         self.background_label = background_label
+        self.logger = self.project.logger
 
         if not organelle_registry.get(self.org_name):
             raise ValueError(f"Unknown organelle class {self.org_name}")
 
-        # The data will be loaded lazily
-        self._metadata: Optional[dict] = None
-        self._basic_geometric_properties = {}
-        self._mesh_properties = {}
-        self._meshes = {}
-        self._morphology_map = {}
-        self._meshes_chunked = None
-        self._ids_to_chunks: Optional[dict] = None
-        self._labels = None
-        self._meshes_merged = {}  # When merging meshes, the ids must be stored here
+        self._metadata = None
 
-        # to avoid recomputation, persisted delayed objects need to be held
-        self._storage = {}
-
-        # The computed organelles are stored
-        self._organelles = None
-
-        self.logger = self.project.logger
+        self._default_values = {
+            "_basic_geometric_properties": {},
+            "_mesh_properties": {},
+            "_meshes": None,
+            "_computed_compression": None,
+            "_morphology_map": {},
+            "_meshes_chunked": None,
+            "_ids_to_chunks": None,
+            "_labels": None,
+            "_storage": {},
+            "_organelles": None,
+        }
+        self.clear_memory_cache()
 
     def load_n5(self, n5: Path) -> dict[str, Timepoint]:
         f = z5py.File(n5, "r")
@@ -192,21 +187,21 @@ class DataSource:
                 .find("ViewSetups")
                 .findall("ViewSetup")
             )
-            size = (
+            size: str = (
                 xmldata.find("SequenceDescription")
                 .find("ViewSetups")
                 .find("ViewSetup")
                 .find("size")
                 .text
             )
-            name = (
+            name: str = (
                 xmldata.find("SequenceDescription")
                 .find("ViewSetups")
                 .find("ViewSetup")
                 .find("name")
                 .text
             )
-            resolution = (
+            resolution: str = (
                 xmldata.find("SequenceDescription")
                 .find("ViewSetups")
                 .find("ViewSetup")
@@ -265,6 +260,7 @@ class DataSource:
         if self._metadata is None:
             self.load_metadata()
 
+        assert self._metadata is not None
         return self._metadata
 
     @property
@@ -342,7 +338,7 @@ class DataSource:
         return data
 
     @property
-    def coarse_data(self) -> da.Array:
+    def coarse_data(self) -> Array:
         """Return the coarsest version of the dataset.
 
         This can be used for algorithms that do not critically depend
@@ -376,27 +372,84 @@ class DataSource:
     @property
     def labels(self) -> list[int]:
         """Return the list of labels present in the data source."""
-        return list(self.ids_to_chunks.keys())
+        return list(self.meshes.keys())
+
+    # @property
+    # def meshes_chunked(self) -> np.ndarray:
+    #     """Get an array over all chunks containing dask delayed objects."""
+    #     # TODO: Is this needed?
+    #     if self._meshes_chunked is None:
+    #         self.calculate_mesh()
+    #     return self._meshes_chunked  # pyright: ignore
 
     @property
-    def meshes_chunked(self) -> np.ndarray:
-        """Get an array over all chunks containing dask delayed objects."""
-        if self._meshes_chunked is None:
-            self.calculate_mesh()
-        return self._meshes_chunked  # pyright: ignore
+    def meshes(self) -> dict[int, Delayed]:
+        @delayed
+        def _get_from_cache(path, cache_name, key):
+            with disk_cache(path, cache_name) as cache:
+                verts, faces = cache[key]
 
-    def get_meshes_from_id(self, ind: int) -> Optional[list[Delayed]]:
-        """Given the label id get the associated meshes."""
+            return Trimesh(verts, faces)
 
-        if self._meshes_chunked is None:
-            self.calculate_mesh()
-        if ind in self._meshes_merged:
-            return [self._meshes_merged[ind]]
+        self.logger.debug("Requested meshes")
+        if self._meshes is None or (
+            self._computed_compression != self.project.compression_level
+        ):
+            self.logger.debug("Meshes not loaded")
+            self._meshes = {}
+            cache_name = f"meshes_{self.project.compression_level}"
+            with disk_cache(self.project.path, cache_name) as cache:
+                if "labels" in cache:
+                    self.logger.debug("Meshes in cache, loading..")
 
-        if (chunks := self.ids_to_chunks.get(ind)) is None:
-            return None
+                    labels = cache["labels"]
+                    for label in labels:
+                        self._meshes[label] = _get_from_cache(
+                            self.project.path, cache_name, label
+                        )
+                    self._storage["ref_meshes_ids"] = persist(*self._meshes.values())
+                    self.logger.debug(f"Timings: 1: {t1 - t0}, 2: {t2 - t1}")
 
-        return [self.meshes_chunked[chunk][ind] for chunk in chunks]
+                    self._computed_compression = self.project.compression_level
+                    self.logger.debug("Meshes loaded from cache")
+
+                else:
+                    self.logger.debug("Meshes not in cache, calculating..")
+                    self.calculate_mesh()
+                    self.logger.debug("Saving meshes to cache..")
+                    cache["labels"] = list(self._meshes.keys())
+                    meshes_d = list(self._meshes.values())
+                    meshes = compute(*meshes_d)
+                    for label, tmesh in zip(self._meshes.keys(), meshes):
+                        # TODO: distributed saving necessary?
+                        # Currently moves all meshes to central node,
+                        # but cache is not threadsave anyway
+                        cache[label] = (tmesh.vertices, tmesh.faces)
+
+                    self.logger.debug("Meshes saved in cache")
+
+        return self._meshes
+
+    def get_bounding_box_of_mesh(self, mesh: Trimesh | Delayed):
+        """Calculate the corner with the smallest and the one
+        with the biggest corrdinates.
+
+        Returns:
+        -------
+            min: np.ndarray
+                First corner
+            max: np.ndarray
+                Second corner
+        """
+
+        if isinstance(mesh, Delayed):
+            mesh = mesh.compute()
+        assert isinstance(mesh, Trimesh)
+
+        min = np.min(mesh.vertices, axis=0)
+        max = np.max(mesh.vertices, axis=0)
+
+        return min, max
 
     def merge_meshes(self, meshes: list[Delayed]) -> Delayed:
         """Merges two delayed meshes into one concrete new Mesh object
@@ -406,45 +459,42 @@ class DataSource:
         """
 
         @delayed
-        def to_trimesh(mesh):
-            return Trimesh(mesh.vertices, mesh.faces)
-
-        @delayed
         def merge_two_trimesh(tmeshes: list[Trimesh]):
-            tmesh: Trimesh = sum(tmeshes)
+            tmesh: Trimesh = sum(tmeshes)  # pyright: ignore
             return tmesh
 
-        tmeshes = [to_trimesh(mesh) for mesh in meshes]
-
-        while len(tmeshes) > 1:
+        while (length := len(meshes)) > 1:
             merged = []
-            for pair in combinations(tmeshes, 2):
-                merged.append(merge_two_trimesh(pair))
-            tmeshes = merged
+            for i, _ in enumerate(meshes[::2]):
+                j = length - (i + 1)
+                # odd-length: indices meet in the middle
+                if i == j:
+                    merged.append(meshes[i])
+                    break
+                merged.append(merge_two_trimesh([meshes[i], meshes[j]]))
+            meshes = merged
 
-        return tmeshes[0]
-
-    @delayed
-    def _mesh_mover(
-        self,
-        mesh: Mesh,
-        space_offset: Optional[tuple[int, int, int]] = None,
-        id_offset: Optional[int] = None,
-    ):
-        if space_offset is not None:
-            mesh.vertices += space_offset
-        if id_offset is not None:
-            mesh.faces += id_offset
-        return mesh
+        return meshes[0]
 
     @property
     def ids_to_chunks(self) -> dict:
-        if self._ids_to_chunks is None:
+        if self._ids_to_chunks == {}:
             self.calculate_mesh()
-        assert self._ids_to_chunks is not None
         return self._ids_to_chunks
 
-    def calculate_mesh(self, smooth=True, overlap=True):
+    def calculate_mesh(self, reduction_factor=1, overlap=True):
+        """Compute meshes for this source.
+
+        Meshes crossing chunks are merged.
+        Populates following fields:
+         * self._meshes
+         * self._meshes_chunked
+         * self._ids_to_chunks
+
+        Respects the set compression and clipping of the project.
+        Computation is done in parallel using the dask client of the project.
+        """
+
         @delayed
         def build_chunk_lookup(ids_chunks, indices) -> dict:
             res = defaultdict(list)
@@ -484,8 +534,8 @@ class DataSource:
             indices.append(index)
             d_meshes.append(mesh)
 
-        # keep references to make mesh persistend
-        self._storage["d_meshes"] = persist(*d_meshes)
+        # calculate meshes and keep references to make mesh persistend on workers
+        self._storage["ref_meshes_ids"] = persist(*(d_meshes + d_ids))
 
         self._ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
         assert self._ids_to_chunks is not None  # for linter
@@ -500,13 +550,25 @@ class DataSource:
         for amount, frq in zip(amounts, freqs):
             self.project.logger.debug(f"{frq} labels in {amount} chunks")
 
-        # TODO:fix broken meshes
         duplicate_ids = all_ids[np.nonzero(inverse != 0)]
         for ind in duplicate_ids:
             chunk_idxs = self._ids_to_chunks[ind]
-            meshes = [self._meshes_chunked[idx] for idx in chunk_idxs]
+            meshes = [self._meshes_chunked[idx][ind] for idx in chunk_idxs]
             merged_mesh = self.merge_meshes(meshes)
-            self._meshes_merged[ind] = merged_mesh
+            self._meshes[ind] = merged_mesh
+
+        unique_ids = all_ids[np.nonzero(inverse == 0)]
+        for ind in unique_ids:
+            self._meshes[ind] = self._meshes_chunked[self._ids_to_chunks[ind][0]][ind]
+
+        self._computed_compression = self.project.compression_level
+
+    def clear_memory_cache(self):
+        """Invalidates memory caches.
+        Necessary after change of compression level or clipping.
+        """
+        for k, v in self._default_values.items():
+            setattr(self, k, v)
 
     def organelles(
         self,

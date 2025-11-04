@@ -108,7 +108,7 @@ class Project:
         xml_path: Path | str,
         organelle: Optional[str] = None,
         background_label: int = 0,
-    ) -> None:
+    ) -> DataSource:
         """Connect a data source in the project with an organelle type
 
         Args:
@@ -117,6 +117,9 @@ class Project:
                 Must be on the strings returned by organelle_morphology.organelle_types
             background_label: The label in the data source that is used to encode the background.
                 Assumed to be 0.
+
+        Returns:
+            DataSource: Also accessable as `project[xml_name]`
 
         Raises:
             ValueError: Source already loaded
@@ -152,6 +155,7 @@ class Project:
                 f"{source_obj.metadata['levels']}"
             )
         self.sources[xml_path.stem] = source_obj
+        return source_obj
 
     def skeletonize_wavefront(
         self,
@@ -498,34 +502,18 @@ class Project:
                     f"Requested level {level} not available in source {s_name}!\n"
                     f"Levels in source: {s.metadata['levels']}"
                 )
+        if getattr(self, "_compression_level", None) != level:
+            # TODO: Invalidate caches!
+            for source in self.sources.values():
+                source.clear_memory_cache()
 
         self._compression_level = level
 
     def calculate_meshes(self):
         """Trigger the calculation of meshes for all organelles"""
 
-        for organelle in tqdm(self.organelles()):
-            _picklable_mesh_extractor(organelle)
-        # with parallel_pool(len(self.organelles())) as (pool, pbar):
-        #     for organelle in self.organelles():
-        #         result = pool.apply_async(
-        #             _picklable_mesh_extractor,
-        #             (organelle,),
-        #             callback=lambda _: pbar.update(),
-        #         )
-        #         result_list.append(result)
-        #     [result.get() for result in result_list]
-        # pool_results = []
-        # with parallel_pool(len(self.organelles())) as (pool, pbar):
-        #     tasks = [organelle for organelle in self.organelles()]
-        #     map_result = pool.map_async(_picklable_mesh_extractor, tasks)
-        #     for organelle, result in enumerate(map_result.get()):
-        #         pbar.update()
-
-        # with parallel_pool(len(self.organelles())) as (pool, pbar):
-        #     tasks = [organelle for organelle in self.organelles()]
-        #     for organelle, result in enumerate(pool.imap_unordered(_picklable_mesh_extractor, tasks)):
-        #         pbar.update()
+        for source in self.sources.values():
+            source.calculate_mesh()
 
     @property
     def geometric_properties(self):
