@@ -15,11 +15,6 @@ import pandas as pd
 
 from collections import defaultdict
 import plotly.graph_objects as go
-from tqdm import tqdm
-
-
-def _picklable_mesh_extractor(organelle: Organelle):
-    return organelle.mesh
 
 
 clipping_type = tuple[tuple[float, float, float], tuple[float, float, float]]
@@ -62,8 +57,6 @@ class Project:
         if clipping is not None:
             self.clipping = clipping
 
-        self.client = Client()
-
         # The dictionary of data sources that we have added
         self.sources: dict[str, DataSource] = {}
 
@@ -93,6 +86,8 @@ class Project:
 
         # debug help
         self.use_cache = True
+
+        self.client = Client()
 
     def set_loglevel(self, loglevel: Optional[str]):
         if loglevel:

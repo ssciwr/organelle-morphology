@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 
 @contextlib.contextmanager
-def disk_cache(project_path: Path, name, maxsize=10000):
+def disk_cache(project_path: Path, name, maxsize=1000000):
     # Define the cache
     cache = shelved_cache.PersistentCache(
         cachetools.LRUCache,
@@ -25,12 +25,12 @@ def disk_cache(project_path: Path, name, maxsize=10000):
     )
 
     # Ensure that the cache contains a timestamp
-    if "timestamp" not in cache:
-        cache["timestamp"] = project_path.stat().st_mtime
+    # if "timestamp" not in cache:
+    #     cache["timestamp"] = project_path.stat().st_mtime
 
     # Maybe decide to invalidate the cache based on the data timestamp
-    if cache.get("timestamp") != project_path.stat().st_mtime:
-        cache.clear()
+    # if cache.get("timestamp") != project_path.stat().st_mtime:
+    #     cache.clear()
 
     # Return the cache
     yield cache

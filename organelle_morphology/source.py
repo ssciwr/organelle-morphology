@@ -12,6 +12,8 @@ from dask import persist, compute
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
+
+# from dask.distributed import print
 from zmesh import Mesh, Mesher
 
 import fnmatch
@@ -397,26 +399,31 @@ class DataSource:
         ):
             self.logger.debug("Meshes not loaded")
             self._meshes = {}
-            cache_name = f"meshes_{self.project.compression_level}"
+            cache_name = f"meshes_{self.xml_path.name}_{self.project.compression_level}"
+            labels = None
             with disk_cache(self.project.path, cache_name) as cache:
                 if "labels" in cache:
-                    self.logger.debug("Meshes in cache, loading..")
-
+                    self.logger.debug("Meshes in cache, reading labels..")
                     labels = cache["labels"]
-                    for label in labels:
-                        self._meshes[label] = _get_from_cache(
-                            self.project.path, cache_name, label
-                        )
-                    self._storage["ref_meshes_ids"] = persist(*self._meshes.values())
-                    self.logger.debug(f"Timings: 1: {t1 - t0}, 2: {t2 - t1}")
 
-                    self._computed_compression = self.project.compression_level
-                    self.logger.debug("Meshes loaded from cache")
+            if labels:
+                self.logger.debug(f"{len(labels)} labels found in cache")
 
-                else:
-                    self.logger.debug("Meshes not in cache, calculating..")
-                    self.calculate_mesh()
-                    self.logger.debug("Saving meshes to cache..")
+                for label in labels:
+                    self._meshes[label] = _get_from_cache(
+                        self.project.path, cache_name, label
+                    )
+                self._storage["ref_meshes_ids"] = persist(*self._meshes.values())
+
+                self._computed_compression = self.project.compression_level
+                self.logger.debug("Meshes loaded from cache")
+
+            else:
+                self.logger.debug("Meshes not in cache, calculating..")
+                self.calculate_mesh()
+                self.logger.debug("Saving meshes to cache..")
+
+                with disk_cache(self.project.path, cache_name) as cache:
                     cache["labels"] = list(self._meshes.keys())
                     meshes_d = list(self._meshes.values())
                     meshes = compute(*meshes_d)
@@ -426,7 +433,15 @@ class DataSource:
                         # but cache is not threadsave anyway
                         cache[label] = (tmesh.vertices, tmesh.faces)
 
-                    self.logger.debug("Meshes saved in cache")
+                with disk_cache(self.project.path, cache_name) as cache:
+                    assert cache["labels"] == list(self._meshes.keys())
+                    for label, mesh in self._meshes.items():
+                        v, f = cache[label]
+                        mesh = mesh.compute()
+                        np.testing.assert_equal(v, mesh.vertices)
+                        np.testing.assert_equal(f, mesh.faces)
+
+                self.logger.debug("Meshes saved in cache")
 
         return self._meshes
 
