@@ -69,7 +69,6 @@ with disk_cache(p.path, cache_name) as cache:
 
 # %%
 label = 65500028 # crossing two chunks in er_it00_b0_7_stitched
-check_cached_labels()
 mmesh = s.meshes[label].compute()
 mmesh
 

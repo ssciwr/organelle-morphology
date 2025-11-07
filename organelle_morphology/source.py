@@ -25,7 +25,7 @@ import z5py
 
 import warnings
 
-from organelle_morphology.util import disk_cache
+from organelle_morphology.util import Cache
 
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
@@ -387,11 +387,16 @@ class DataSource:
     @property
     def meshes(self) -> dict[int, Delayed]:
         @delayed
-        def _get_from_cache(path, cache_name, key):
-            with disk_cache(path, cache_name) as cache:
-                verts, faces = cache[key]
+        def _get_from_cache(cache_name, key):
+            cache = Cache(cache_name)
+            verts, faces = cache[key]
 
             return Trimesh(verts, faces)
+
+        @delayed
+        def _write_to_cache(cache_name, key, mesh):
+            cache = Cache(cache_name)
+            cache[key] = (mesh.vertices, mesh.faces)
 
         self.logger.debug("Requested meshes")
         if self._meshes is None or (
@@ -400,21 +405,18 @@ class DataSource:
             self.logger.debug("Meshes not loaded")
             self._meshes = {}
             cache_name = f"meshes_{self.xml_path.name}_{self.project.compression_level}"
+            cache = Cache(cache_name)
             labels = None
-            with disk_cache(self.project.path, cache_name) as cache:
-                if "labels" in cache:
-                    self.logger.debug("Meshes in cache, reading labels..")
-                    labels = cache["labels"]
 
-            if labels:
+            if "labels" in cache:
+                self.logger.debug("Meshes in cache, reading labels..")
+                labels = cache["labels"]
                 self.logger.debug(f"{len(labels)} labels found in cache")
 
                 for label in labels:
-                    self._meshes[label] = _get_from_cache(
-                        self.project.path, cache_name, label
-                    )
-                self._storage["ref_meshes_ids"] = persist(*self._meshes.values())
+                    self._meshes[label] = _get_from_cache(cache_name, label)
 
+                self._storage["ref_meshes_ids"] = persist(*self._meshes.values())
                 self._computed_compression = self.project.compression_level
                 self.logger.debug("Meshes loaded from cache")
 
@@ -423,23 +425,12 @@ class DataSource:
                 self.calculate_mesh()
                 self.logger.debug("Saving meshes to cache..")
 
-                with disk_cache(self.project.path, cache_name) as cache:
-                    cache["labels"] = list(self._meshes.keys())
-                    meshes_d = list(self._meshes.values())
-                    meshes = compute(*meshes_d)
-                    for label, tmesh in zip(self._meshes.keys(), meshes):
-                        # TODO: distributed saving necessary?
-                        # Currently moves all meshes to central node,
-                        # but cache is not threadsave anyway
-                        cache[label] = (tmesh.vertices, tmesh.faces)
-
-                with disk_cache(self.project.path, cache_name) as cache:
-                    assert cache["labels"] == list(self._meshes.keys())
-                    for label, mesh in self._meshes.items():
-                        v, f = cache[label]
-                        mesh = mesh.compute()
-                        np.testing.assert_equal(v, mesh.vertices)
-                        np.testing.assert_equal(f, mesh.faces)
+                cache["labels"] = list(self._meshes.keys())
+                meshes_d = list(self._meshes.values())
+                delayed_saves = []
+                for label, mesh_d in zip(self._meshes.keys(), meshes_d):
+                    delayed_saves.append(_write_to_cache(cache_name, label, mesh_d))
+                compute(*delayed_saves)
 
                 self.logger.debug("Meshes saved in cache")
 
