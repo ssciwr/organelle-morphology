@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, Optional
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import disk_cache, get_logger
@@ -84,6 +84,13 @@ class Project:
         self.set_loglevel(loglevel)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
+        # callables will be updated on demand
+        self._cache_settings = {
+            "project_path": lambda: self.path,
+            "clipping": lambda: self.clipping,
+            "disk": True,
+        }
+
         # debug help
         self.use_cache = True
 
@@ -97,6 +104,15 @@ class Project:
     @property
     def path(self) -> Path:
         return self._project_path
+
+    @property
+    def cache_settings(self):
+        d = dict()
+        for k, v in self._cache_settings.items():
+            if callable(v):
+                v = v()
+            d[k] = v
+        return d
 
     def add_source(
         self,
@@ -498,7 +514,6 @@ class Project:
                     f"Levels in source: {s.metadata['levels']}"
                 )
         if getattr(self, "_compression_level", None) != level:
-            # TODO: Invalidate caches!
             for source in self.sources.values():
                 source.clear_memory_cache()
 
@@ -761,7 +776,7 @@ class Project:
                 "coordinates of corner one must be smaller than of corner two"
             )
 
-        if not np.all(_clipping[0] > 0) or not np.all(_clipping[1] < 1):
+        if not np.all(_clipping[0] >= 0) or not np.all(_clipping[1] <= 1):
             raise ValueError("Clipping must be in [0, 1]^3")
 
         if len(_clipping) != 2 or len(_clipping[0]) != 3 or len(_clipping[1]) != 3:

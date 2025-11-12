@@ -12,8 +12,8 @@ from dask import persist, compute
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
+from dask.distributed import print as dprint
 
-# from dask.distributed import print
 from zmesh import Mesh, Mesher
 
 import fnmatch
@@ -29,39 +29,6 @@ from organelle_morphology.util import Cache
 
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
-
-
-@delayed(nout=2)
-def _block_mesher(block, space_offset: tuple[int, ...]):
-    """Delayed function to calculate meshes from label data
-
-    Args:
-        block: 3D array containing labels
-        space_offset: 3D tuple containing the offset of the current block
-            in relation to the whole data. The vertices are therefore *not*
-            local to the block, but can directly be merged with other blocks.
-
-    Returns:
-        meshes: Dict with labels as keys and meshes as values.
-        labels: list of labels present in this block.
-
-    """
-
-    mesher = Mesher((1, 1, 1))
-    mesher.mesh(block, close=False)
-    meshes = {}
-    for id in mesher.ids():
-        assert meshes.get(id) is None, f"{id} was in mesh already!"
-        mesh = mesher.get(
-            id,
-            normals=False,
-            reduction_factor=1,
-            voxel_centered=False,
-            max_error=None,  # None: max 1 voxel, otherwise unit of data
-        )
-        mesh.vertices += space_offset
-        meshes[id] = Trimesh(mesh.vertices, mesh.faces, process=False)
-    return meshes, list(meshes.keys())
 
 
 @dataclass
@@ -376,26 +343,18 @@ class DataSource:
         """Return the list of labels present in the data source."""
         return list(self.meshes.keys())
 
-    # @property
-    # def meshes_chunked(self) -> np.ndarray:
-    #     """Get an array over all chunks containing dask delayed objects."""
-    #     # TODO: Is this needed?
-    #     if self._meshes_chunked is None:
-    #         self.calculate_mesh()
-    #     return self._meshes_chunked  # pyright: ignore
-
     @property
     def meshes(self) -> dict[int, Delayed]:
         @delayed
-        def _get_from_cache(cache_name, key):
-            cache = Cache(cache_name)
+        def _get_from_cache(key, project_path, clipping, cache_name, disk):
+            cache = Cache(project_path, clipping, cache_name, disk)
             verts, faces = cache[key]
 
             return Trimesh(verts, faces)
 
         @delayed
-        def _write_to_cache(cache_name, key, mesh):
-            cache = Cache(cache_name)
+        def _write_to_cache(key, mesh, project_path, clipping, cache_name, disk):
+            cache = Cache(project_path, clipping, cache_name, disk)
             cache[key] = (mesh.vertices, mesh.faces)
 
         self.logger.debug("Requested meshes")
@@ -405,7 +364,9 @@ class DataSource:
             self.logger.debug("Meshes not loaded")
             self._meshes = {}
             cache_name = f"meshes_{self.xml_path.name}_{self.project.compression_level}"
-            cache = Cache(cache_name)
+            cache_settings = self.project.cache_settings
+            cache_settings["cache_name"] = cache_name
+            cache = Cache(**cache_settings)
             labels = None
 
             if "labels" in cache:
@@ -414,9 +375,11 @@ class DataSource:
                 self.logger.debug(f"{len(labels)} labels found in cache")
 
                 for label in labels:
-                    self._meshes[label] = _get_from_cache(cache_name, label)
+                    self._meshes[label] = _get_from_cache(label, **cache_settings)
 
-                self._storage["ref_meshes_ids"] = persist(*self._meshes.values())
+                # keep meshes in distributed memory, gc previously computed meshes
+                self._storage["ref_meshes"] = persist(*self._meshes.values())
+
                 self._computed_compression = self.project.compression_level
                 self.logger.debug("Meshes loaded from cache")
 
@@ -428,8 +391,10 @@ class DataSource:
                 cache["labels"] = list(self._meshes.keys())
                 meshes_d = list(self._meshes.values())
                 delayed_saves = []
-                for label, mesh_d in zip(self._meshes.keys(), meshes_d):
-                    delayed_saves.append(_write_to_cache(cache_name, label, mesh_d))
+                for label, mesh_d in self._meshes.items():
+                    delayed_saves.append(
+                        _write_to_cache(label, mesh_d, **cache_settings)
+                    )
                 compute(*delayed_saves)
 
                 self.logger.debug("Meshes saved in cache")
@@ -480,7 +445,16 @@ class DataSource:
                 merged.append(merge_two_trimesh([meshes[i], meshes[j]]))
             meshes = merged
 
-        return meshes[0]
+        mesh = meshes[0]
+        mesh.merge_vertices(
+            merge_tex=True, merge_norm=True, digits_vertex=2, digits_norm=2, digits_uv=2
+        )
+        dprint(
+            "Merging, unique: ", np.unique(mesh.unique_faces(), return_counts=True)[1]
+        )
+        mesh.update_faces(mesh.unique_faces())
+
+        return mesh
 
     @property
     def ids_to_chunks(self) -> dict:
@@ -488,7 +462,12 @@ class DataSource:
             self.calculate_mesh()
         return self._ids_to_chunks
 
-    def calculate_mesh(self, reduction_factor=1, overlap=True):
+    def calculate_mesh(
+        self,
+        reduction_factor=0,
+        overlap=True,
+        simplify: Optional[float] = None,
+    ):
         """Compute meshes for this source.
 
         Meshes crossing chunks are merged.
@@ -501,6 +480,64 @@ class DataSource:
         Computation is done in parallel using the dask client of the project.
         """
 
+        @delayed(nout=2)
+        def _block_mesher(block, space_offset: tuple[int, ...], reduction_factor=0):
+            """Delayed function to calculate meshes from label data
+
+            Args:
+                block: 3D array containing labels
+                space_offset: 3D tuple containing the offset of the current block
+                    in relation to the whole data. The vertices are therefore *not*
+                    local to the block, but can directly be merged with other blocks.
+
+            Returns:
+                meshes: Dict with labels as keys and meshes as values.
+                labels: list of labels present in this block.
+
+            """
+            # calculate slice planes, assuming overlap of 2 on all sides
+            bs = np.array(block.shape)
+            overlap = 2
+            slice_points = []
+            slice_normals = []
+
+            for i in range(3):
+                lower = bs.copy() / 2
+                lower[i] = overlap
+                slice_points.append(lower)
+                dir = np.zeros((3,))
+                dir[i] = 1
+                slice_normals.append(dir)
+
+                upper = bs.copy() / 2
+                upper[i] = bs[i] - overlap
+                slice_points.append(upper)
+                dir = np.zeros((3,))
+                dir[i] = -1
+                slice_normals.append(dir)
+
+            mesher = Mesher((1, 1, 1))
+            mesher.mesh(block, close=False)
+            meshes = {}
+            for id in mesher.ids():
+                assert meshes.get(id) is None, f"{id} was in mesh already!"
+                mesh = mesher.get(
+                    id,
+                    normals=False,
+                    reduction_factor=reduction_factor,
+                    voxel_centered=True,
+                    max_error=None,  # None: max 1 voxel, otherwise unit of data
+                )
+                mesh = Trimesh(mesh.vertices, mesh.faces, process=False)
+
+                for origin, normal in zip(slice_points, slice_normals):
+                    mesh = mesh.slice_plane(origin, normal)
+
+                mesh.vertices += space_offset
+                meshes[id] = mesh
+
+            return meshes, list(meshes.keys())
+
         @delayed
         def build_chunk_lookup(ids_chunks, indices) -> dict:
             res = defaultdict(list)
@@ -509,6 +546,12 @@ class DataSource:
                     res[id].append(index)
 
             return dict(res)
+
+        @delayed
+        def simplify_mesh(mesh, factor=0.1):
+            """Simplify a trimesh object"""
+            mesh = mesh.simplify_quadric_decimation(factor, aggression=1)
+            return mesh
 
         if overlap:
             d_data = da.overlap.overlap(
@@ -526,7 +569,9 @@ class DataSource:
             space_offset = tuple(
                 int(size_offset_cumsum[i][c]) for i, c in enumerate(index)
             )
-            meshes_chunk, ids_chunk = _block_mesher(d_block, space_offset)
+            meshes_chunk, ids_chunk = _block_mesher(
+                d_block, space_offset, reduction_factor
+            )
             self._meshes_chunked[index] = meshes_chunk
             ids_chunked[index] = ids_chunk
 
@@ -541,7 +586,7 @@ class DataSource:
             d_meshes.append(mesh)
 
         # calculate meshes and keep references to make mesh persistend on workers
-        self._storage["ref_meshes_ids"] = persist(*(d_meshes + d_ids))
+        self._storage["ref_meshes"] = persist(*(d_meshes + d_ids))
 
         self._ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
         assert self._ids_to_chunks is not None  # for linter
@@ -554,18 +599,28 @@ class DataSource:
             id_amounts, return_counts=True, return_inverse=True
         )
         for amount, frq in zip(amounts, freqs):
-            self.project.logger.debug(f"{frq} labels in {amount} chunks")
+            self.logger.debug(f"{frq} labels in {amount} chunks")
 
+        # Cleanup: Merge meshes crossing chunks
+        self._meshes = {}
         duplicate_ids = all_ids[np.nonzero(inverse != 0)]
         for ind in duplicate_ids:
             chunk_idxs = self._ids_to_chunks[ind]
             meshes = [self._meshes_chunked[idx][ind] for idx in chunk_idxs]
             merged_mesh = self.merge_meshes(meshes)
+            if simplify:
+                merged_mesh = simplify_mesh(merged_mesh, simplify)
             self._meshes[ind] = merged_mesh
 
         unique_ids = all_ids[np.nonzero(inverse == 0)]
         for ind in unique_ids:
-            self._meshes[ind] = self._meshes_chunked[self._ids_to_chunks[ind][0]][ind]
+            mesh = self._meshes_chunked[self._ids_to_chunks[ind][0]][ind]
+            if simplify:
+                mesh = simplify_mesh(mesh, simplify)
+            self._meshes[ind] = mesh
+
+        # keep references to make simplified meshes persistent, gc raw meshes
+        self._storage["ref_meshes"] = persist(*self._meshes.values())
 
         self._computed_compression = self.project.compression_level
 
@@ -573,6 +628,7 @@ class DataSource:
         """Invalidates memory caches.
         Necessary after change of compression level or clipping.
         """
+        self.logger.debug(f"Resetting source {self.org_name}: {self.xml_path.name}")
         for k, v in self._default_values.items():
             setattr(self, k, v)
 

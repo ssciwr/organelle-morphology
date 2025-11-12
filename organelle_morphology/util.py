@@ -19,7 +19,7 @@ class Disk_Store:
     def __init__(self, cache_name: str):
         self.path: Path = CACHE_DIR / cache_name
         if not self.path.exists():
-            self.path.mkdir()
+            self.path.mkdir(parents=True)
 
     def __setitem__(self, key, value):
         with open(self.path / str(key), "wb") as f:
@@ -52,8 +52,14 @@ class Disk_Store:
 
 
 class Cache:
-    def __init__(self, project_path: path, cache_name, disk=True):
-        self.cache_name = f"{project_path.name}/{cache_name}"
+    def __init__(
+        self,
+        project_path: Path,
+        clipping: tuple[tuple[float, float, float], tuple[float, float, float]],
+        cache_name,
+        disk=True,
+    ):
+        self.cache_name = f"{project_path.name}/{cache_name}/{clipping}"
         self.stores: list = [{}]
         self.disk = disk
         if disk:
@@ -83,10 +89,14 @@ class Cache:
             del store[key]
 
     def clear(self):
+        """Deletes all caches, in memory and on disk"""
         for store in self.stores:
             store.clear()
 
     def delete_disk_cache(self):
+        """Delete this cache from disk.
+        Does nothing if it was not saved to disk.
+        """
         if not self.disk:
             self.stores.append(Disk_Store(self.cache_name))
         ds: Disk_Store = self.stores.pop(-1)
