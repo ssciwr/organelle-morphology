@@ -3,7 +3,9 @@ from time import time
 from typing import Optional
 from pathlib import Path
 
+import matplotlib as mpl
 from trimesh import Trimesh
+import trimesh
 
 import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
@@ -29,6 +31,166 @@ from organelle_morphology.util import Cache
 
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
+
+
+@delayed(nout=2)
+def _block_mesher(
+    block,
+    space_offset: tuple[int, ...],
+    reduction_factor=0,
+    debug_color=0,
+):
+    """Delayed function to calculate meshes from label data
+
+    Args:
+        block: 3D array containing labels
+        space_offset: 3D tuple containing the offset of the current block
+            in relation to the whole data. The vertices are therefore *not*
+            local to the block, but can directly be merged with other blocks.
+
+    Returns:
+        meshes: Dict with labels as keys and meshes as values.
+        labels: list of labels present in this block.
+
+    """
+
+    def plane(origin, normal):
+        normal_i = np.array(normal, dtype=bool)
+        planeverts = np.stack([origin] * 4)
+        # axis along which to strech from origin to plane
+        for i, axis in enumerate((~normal_i).nonzero()[0]):
+            if i == 0:
+                planeverts[0, axis] += 20
+                planeverts[1, axis] += 20
+                planeverts[2, axis] -= 20
+                planeverts[3, axis] -= 20
+
+            else:
+                planeverts[0, axis] += 20
+                planeverts[2, axis] += 20
+                planeverts[1, axis] -= 20
+                planeverts[3, axis] -= 20
+
+        plane = Trimesh(planeverts, [[0, 1, 2], [3, 2, 1]])
+        plane += Trimesh(planeverts, [[2, 1, 0], [1, 2, 3]])
+
+        plane.visual.vertex_colors = (0, 0, 200, 80)
+        plane.visual.vertex_colors[:, [normal_i.nonzero()[0][0], 3]] = (
+            200,
+            100,
+        )
+        return plane
+
+    # calculate slice planes, assuming overlap of 2 on all sides
+    bs = np.array(block.shape)
+    overlap = 2  # 2
+    slice_points = []
+    slice_normals = []
+
+    for i in range(3):
+        lower = bs.copy() / 2
+        lower[i] = overlap
+        slice_points.append(lower)
+        dir = np.zeros((3,), dtype=int)
+        dir[i] = 1
+        slice_normals.append(dir)
+
+        upper = bs.copy() / 2
+        upper[i] = bs[i] - overlap
+        slice_points.append(upper)
+        dir = np.zeros((3,), dtype=int)
+        dir[i] = -1
+        slice_normals.append(dir)
+
+    mesher = Mesher((1, 1, 1))
+    mesher.mesh(block, close=False)
+    meshes = {}
+
+    for id in mesher.ids():
+        assert meshes.get(id) is None, f"{id} was in mesh already!"
+        mesh = mesher.get(
+            id,
+            normals=False,
+            reduction_factor=reduction_factor,
+            voxel_centered=True,
+            max_error=None,  # None: max 1 voxel, otherwise unit of data
+        )
+        mesh = Trimesh(mesh.vertices, mesh.faces, process=False)
+
+        parts = []
+        masks = []
+        if debug_color:
+            mesh.visual.vertex_colors[:, :] = trimesh.visual.random_color()
+            mesh.visual.vertex_colors[:, 3] = 120
+
+        for origin, normal in zip(slice_points, slice_normals):
+            mesh_slice = mesh.slice_plane(origin, normal)
+            assert mesh_slice is not None
+            if mesh_slice.vertices.shape[0] == 0:
+                continue
+
+            if debug_color:
+                if (
+                    mesh_slice.vertices.shape[0] != mesh.vertices.shape[0]
+                    or mesh_slice.faces.shape[0] != mesh.faces.shape[0]
+                ):
+                    normal_i = np.array(normal, dtype=bool)
+                    mask = np.logical_and(
+                        mesh.vertices[:, normal_i] < (origin[normal_i] + 1),
+                        mesh.vertices[:, normal_i] > (origin[normal_i] - 1),
+                    ).nonzero()[0]
+                    masks.append(mask)
+
+                    # Add removed slice in pink
+                    mesh_outer = mesh.slice_plane(origin, normal * -1)
+                    mesh_outer.visual.vertex_colors = (255, 0, 255, 100)
+                    parts.append(mesh_outer)
+
+                    org = mesh_slice.vertices.mean(axis=0)
+                    org[normal_i] = origin[normal_i]
+
+                    if debug_color >= 2:
+                        parts.append(plane(org, normal))
+                    if debug_color >= 3:
+                        mesh.visual.vertex_colors[:, :3] = (
+                            mesh.vertices / (mesh.vertices.max(axis=0)) * 200
+                        )
+                        mesh.visual.vertex_colors[:, 3] = 200
+            else:
+                mesh = mesh_slice
+        if masks:
+            mask = np.concatenate(masks)
+            mesh.visual.vertex_colors[mask] = (0, 255, 0, 180)
+        if parts:
+            mesh += sum(parts)
+        mesh.vertices += space_offset
+
+        meshes[id] = mesh
+
+    if debug_color >= 1:
+        try:
+            i, m = meshes.popitem()
+
+            verts = np.array(
+                [
+                    [0, 0, 0],
+                    [bs[0], 0, 0],
+                    [0, bs[1], 0],
+                    [0, 0, bs[2]],
+                    [bs[0], bs[1], 0],
+                    [0, bs[1], bs[2]],
+                    [bs[0], 0, bs[2]],
+                    [bs[0], bs[1], bs[2]],
+                ]
+            )
+            verts += space_offset
+            for v in verts:
+                m += trimesh.primitives.Sphere(3, v, subdivisions=1)
+            meshes[i] = m
+        except KeyError:
+            pass
+
+    return meshes, list(meshes.keys())
 
 
 @dataclass
@@ -287,6 +449,7 @@ class DataSource:
         """
         if compression_level is None:
             compression_level = self.project.compression_level
+
         data_at_level: z5py.dataset.Dataset = getattr(
             self.timepoint, compression_level
         ).data
@@ -296,9 +459,9 @@ class DataSource:
 
         if self.project.clipping is not None:
             lower_corner, upper_corner = self.project.clipping
-            data_shape = data_at_level.shape
-            clipped_low_corner = np.floor(lower_corner * data_shape).astype(int)
-            clipped_high_corner = np.ceil(upper_corner * data_shape).astype(int)
+            # data_shape = data_at_level.shape
+            clipped_low_corner = np.floor(lower_corner * data.shape).astype(int)
+            clipped_high_corner = np.ceil(upper_corner * data.shape).astype(int)
             cube_slice = tuple(
                 slice(clip_low, clip_high, 1)
                 for clip_low, clip_high in zip(clipped_low_corner, clipped_high_corner)
@@ -346,15 +509,15 @@ class DataSource:
     @property
     def meshes(self) -> dict[int, Delayed]:
         @delayed
-        def _get_from_cache(key, project_path, clipping, cache_name, disk):
-            cache = Cache(project_path, clipping, cache_name, disk)
+        def _get_from_cache(key, project_path, source, level, clipping, disk):
+            cache = Cache(project_path, source, level, clipping, disk)
             verts, faces = cache[key]
 
             return Trimesh(verts, faces)
 
         @delayed
-        def _write_to_cache(key, mesh, project_path, clipping, cache_name, disk):
-            cache = Cache(project_path, clipping, cache_name, disk)
+        def _write_to_cache(key, mesh, project_path, source, level, clipping, disk):
+            cache = Cache(project_path, source, level, clipping, disk)
             cache[key] = (mesh.vertices, mesh.faces)
 
         self.logger.debug("Requested meshes")
@@ -363,9 +526,8 @@ class DataSource:
         ):
             self.logger.debug("Meshes not loaded")
             self._meshes = {}
-            cache_name = f"meshes_{self.xml_path.name}_{self.project.compression_level}"
             cache_settings = self.project.cache_settings
-            cache_settings["cache_name"] = cache_name
+            cache_settings["source"] = self.xml_path.name
             cache = Cache(**cache_settings)
             labels = None
 
@@ -422,17 +584,43 @@ class DataSource:
 
         return min, max
 
-    def merge_meshes(self, meshes: list[Delayed]) -> Delayed:
-        """Merges two delayed meshes into one concrete new Mesh object
+    def merge_meshes(self, meshes: list[Delayed], color=None) -> Delayed:
+        """Merges delayed meshes into one concrete new Mesh object
 
         Needs overlapping meshes, otherwise the intersections will not be
         connected.
         """
 
         @delayed
-        def merge_two_trimesh(tmeshes: list[Trimesh]):
-            tmesh: Trimesh = sum(tmeshes)  # pyright: ignore
+        def color_mesh(tmesh, color):
+            if color:
+                if color == 1:
+                    tmesh.visual.vertex_colors = trimesh.visual.random_color()
+                elif color == 2:
+                    viridis = mpl.colormaps.get("viridis")
+                    tmesh.visual.face_colors = viridis.resampled(
+                        len(tmesh.faces)
+                    ).colors
             return tmesh
+
+        @delayed
+        def merge_two_trimesh(tmeshes: list[Trimesh]):
+            tmesh: Trimesh = Trimesh()
+            for mesh in tmeshes:
+                tmesh += mesh
+            tmesh.merge_vertices(
+                merge_tex=True,
+                merge_norm=True,
+                digits_vertex=2,
+                digits_norm=2,
+                digits_uv=2,
+            )
+            return tmesh
+
+        if color is None:
+            color = 0
+        if color:
+            meshes = [color_mesh(m, color) for m in meshes]
 
         while (length := len(meshes)) > 1:
             merged = []
@@ -445,16 +633,7 @@ class DataSource:
                 merged.append(merge_two_trimesh([meshes[i], meshes[j]]))
             meshes = merged
 
-        mesh = meshes[0]
-        mesh.merge_vertices(
-            merge_tex=True, merge_norm=True, digits_vertex=2, digits_norm=2, digits_uv=2
-        )
-        dprint(
-            "Merging, unique: ", np.unique(mesh.unique_faces(), return_counts=True)[1]
-        )
-        mesh.update_faces(mesh.unique_faces())
-
-        return mesh
+        return meshes[0]
 
     @property
     def ids_to_chunks(self) -> dict:
@@ -467,6 +646,7 @@ class DataSource:
         reduction_factor=0,
         overlap=True,
         simplify: Optional[float] = None,
+        debug_color: Optional[int] = None,
     ):
         """Compute meshes for this source.
 
@@ -479,64 +659,11 @@ class DataSource:
         Respects the set compression and clipping of the project.
         Computation is done in parallel using the dask client of the project.
         """
-
-        @delayed(nout=2)
-        def _block_mesher(block, space_offset: tuple[int, ...], reduction_factor=0):
-            """Delayed function to calculate meshes from label data
-
-            Args:
-                block: 3D array containing labels
-                space_offset: 3D tuple containing the offset of the current block
-                    in relation to the whole data. The vertices are therefore *not*
-                    local to the block, but can directly be merged with other blocks.
-
-            Returns:
-                meshes: Dict with labels as keys and meshes as values.
-                labels: list of labels present in this block.
-
-            """
-            # calculate slice planes, assuming overlap of 2 on all sides
-            bs = np.array(block.shape)
-            overlap = 2
-            slice_points = []
-            slice_normals = []
-
-            for i in range(3):
-                lower = bs.copy() / 2
-                lower[i] = overlap
-                slice_points.append(lower)
-                dir = np.zeros((3,))
-                dir[i] = 1
-                slice_normals.append(dir)
-
-                upper = bs.copy() / 2
-                upper[i] = bs[i] - overlap
-                slice_points.append(upper)
-                dir = np.zeros((3,))
-                dir[i] = -1
-                slice_normals.append(dir)
-
-            mesher = Mesher((1, 1, 1))
-            mesher.mesh(block, close=False)
-            meshes = {}
-            for id in mesher.ids():
-                assert meshes.get(id) is None, f"{id} was in mesh already!"
-                mesh = mesher.get(
-                    id,
-                    normals=False,
-                    reduction_factor=reduction_factor,
-                    voxel_centered=True,
-                    max_error=None,  # None: max 1 voxel, otherwise unit of data
-                )
-                mesh = Trimesh(mesh.vertices, mesh.faces, process=False)
-
-                for origin, normal in zip(slice_points, slice_normals):
-                    mesh = mesh.slice_plane(origin, normal)
-
-                mesh.vertices += space_offset
-                meshes[id] = mesh
-
-            return meshes, list(meshes.keys())
+        if debug_color is None:
+            if self.project.debug:
+                debug_color = 1
+            else:
+                debug_color = 0
 
         @delayed
         def build_chunk_lookup(ids_chunks, indices) -> dict:
@@ -567,10 +694,11 @@ class DataSource:
 
         for index, d_block in np.ndenumerate(d_data):
             space_offset = tuple(
-                int(size_offset_cumsum[i][c]) for i, c in enumerate(index)
+                int(size_offset_cumsum[i][c]) - (2 if overlap else 0)
+                for i, c in enumerate(index)
             )
             meshes_chunk, ids_chunk = _block_mesher(
-                d_block, space_offset, reduction_factor
+                d_block, space_offset, reduction_factor, debug_color
             )
             self._meshes_chunked[index] = meshes_chunk
             ids_chunked[index] = ids_chunk
@@ -607,7 +735,7 @@ class DataSource:
         for ind in duplicate_ids:
             chunk_idxs = self._ids_to_chunks[ind]
             meshes = [self._meshes_chunked[idx][ind] for idx in chunk_idxs]
-            merged_mesh = self.merge_meshes(meshes)
+            merged_mesh = self.merge_meshes(meshes, color=0)
             if simplify:
                 merged_mesh = simplify_mesh(merged_mesh, simplify)
             self._meshes[ind] = merged_mesh

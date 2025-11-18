@@ -55,11 +55,12 @@ class Cache:
     def __init__(
         self,
         project_path: Path,
-        clipping: tuple[tuple[float, float, float], tuple[float, float, float]],
-        cache_name,
+        source: str,
+        level: str,
+        clipping: str,
         disk=True,
     ):
-        self.cache_name = f"{project_path.name}/{cache_name}/{clipping}"
+        self.cache_name = f"{project_path.name}/{source}/{level}/{clipping}"
         self.stores: list = [{}]
         self.disk = disk
         if disk:
@@ -107,8 +108,26 @@ class Cache:
 
 def get_project_caches(project: "organelle_morphology.Project"):
     caches = []
-    for name in filter(lambda f: f.is_dir(), (CACHE_DIR / project.path.name).iterdir()):
-        caches.append(Cache(project.path.name, name, True))
+
+    project.logger.info(f"{CACHE_DIR / project.path.name}")
+    for source in filter(
+        lambda f: f.is_dir(), (CACHE_DIR / project.path.name).iterdir()
+    ):
+        project.logger.info(f"├─ /{source.name}")
+
+        for level in filter(lambda f: f.is_dir(), source.iterdir()):
+            project.logger.info(f"│  ├─ /{level.name}")
+            for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
+                project.logger.info(f"│  │  ├─ /{clip_dir.name}")
+                caches.append(
+                    Cache(
+                        project_path=project.path,
+                        source=source.name,
+                        level=level.name,
+                        clipping=clip_dir.name,
+                        disk=True,
+                    )
+                )
     project.logger.info(f"Found {len(caches)} caches for project {project.path.name}")
     return caches
 

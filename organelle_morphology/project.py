@@ -87,12 +87,14 @@ class Project:
         # callables will be updated on demand
         self._cache_settings = {
             "project_path": lambda: self.path,
-            "clipping": lambda: self.clipping,
+            "clipping": lambda: str(self.clipping),
+            "level": lambda: str(self.compression_level),
             "disk": True,
         }
 
         # debug help
         self.use_cache = True
+        self.debug = False
 
         self.client = Client()
 
@@ -766,15 +768,20 @@ class Project:
 
     @clipping.setter
     def clipping(self, clipping: clipping_type | None):
-        if clipping is None:
-            self._clipping = None
-            return
-        _clipping = np.array(clipping)
-        if not np.all(_clipping[0] < _clipping[1]):
+        if (clipping is not None) and not all(a < b for a, b in zip(*clipping)):
             raise ValueError(
                 "First clipping corner is lower left, second upper right. All "
                 "coordinates of corner one must be smaller than of corner two"
             )
+        if not np.all(np.array(clipping) == getattr(self, "clipping", None)):
+            if getattr(self, "sources", False):
+                for source in self.sources.values():
+                    source.clear_memory_cache()
+
+        if clipping is None:
+            self._clipping = None
+            return
+        _clipping = np.array(clipping)
 
         if not np.all(_clipping[0] >= 0) or not np.all(_clipping[1] <= 1):
             raise ValueError("Clipping must be in [0, 1]^3")
