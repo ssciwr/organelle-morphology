@@ -2,10 +2,7 @@
 # process itself. Being able to do this was the original reason to
 # introduce pyproject.toml
 [build-system]
-requires = [
-    "setuptools >=61",
-    "setuptools_scm >=7",
-]
+requires = ["setuptools >=61", "setuptools_scm >=7"]
 build-backend = "setuptools.build_meta"
 
 # This section provides general project metadata that is used across
@@ -15,54 +12,49 @@ build-backend = "setuptools.build_meta"
 name = "organelle_morphology"
 description = "Add short description here"
 readme = "README.md"
-maintainers = [
-    { name = "Dominic Kempf", email = "your@email.com" },
-]
+maintainers = [{ name = "Dominic Kempf", email = "your@email.com" }]
 dynamic = ["version"]
 requires-python = ">=3.10"
 license = { text = "MIT" }
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
-    "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-    "numpy",
-    "trimesh",
-    "scipy",
-    "scikit-image",
-    "python-fcl",
-    "plotly",
-    "cachetools",
-    "shelved_cache",
-    "xdg",
-    "skeletor",
-    "multiprocess",
+  "numpy",
+  "trimesh",
+  "scipy",
+  "scikit-image",
+  "python-fcl",
+  "plotly",
+  "cachetools",
+  "shelved_cache",
+  "xdg",
+  "skeletor",
+  "multiprocess",
 ]
 
 [project.optional-dependencies]
-tests = [
-    "pytest",
-    "pytest-cov",
-    "nbval",
-]
+tests = ["pytest", "pytest-cov", "nbval"]
 docs = [
-    "ipykernel",
-    "nbsphinx",
-    "nbsphinx-link",
-    "sphinx",
-    "sphinx_mdinclude",
-    "sphinx_rtd_theme",
+  "ipykernel",
+  "nbsphinx",
+  "nbsphinx-link",
+  "sphinx",
+  "sphinx_mdinclude",
+  "sphinx_rtd_theme",
 ]
+
+[tool.ruff]
+exclude = ["scripts/*.py"]
 
 
 # The following section contains setuptools-specific configuration
 # options. For a full reference of available options, check the overview
 # at https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
 [tool.setuptools]
-packages = [
-    "organelle_morphology",
-]
+packages = ["organelle_morphology"]
 
 # Configure setuptools_scm, which extracts the version number from
 # the version control system. For more information see its documentation:
@@ -74,7 +66,4 @@ write_to = "organelle_morphology/_version.py"
 
 # The following is the configuration for the pytest test suite
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
-    "notebooks",
-]
+testpaths = ["tests", "notebooks"]

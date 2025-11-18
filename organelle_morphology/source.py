@@ -1,23 +1,47 @@
+from typing import Optional
+from pathlib import Path
 from organelle_morphology.organelle import Organelle, organelle_registry
-from organelle_morphology.util import disk_cache, parallel_pool
 
-from elf.io import open_file
+import dask.array as da
 
 import fnmatch
-import json
 import numpy as np
-import pathlib
 import xml.etree.ElementTree as ET
 from skimage.measure import regionprops
+from dataclasses import dataclass, field
+import z5py
 
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
 
+@dataclass
+class Timepoint:
+    name: str
+    file: Path
+    resolution: list[int]
+    n5: str
+    downsamplingFactors: list = field(default_factory=list)
+    levels: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Data_level:
+    level: str
+    chunks: tuple
+    chunks_per_dimension: list
+    downsamplingFactor: list[int]
+    data: z5py.dataset.Dataset
+
+
 class DataSource:
     def __init__(
-        self, project, xml_path: pathlib.Path, organelle: str, background_label: int = 0
+        self,
+        project,
+        xml_path: Path,
+        organelle: Optional[str],
+        background_label: int = 0,
     ):
         """Initialize a data source.
 
@@ -36,15 +60,16 @@ class DataSource:
         :type organelle: str
         """
 
-        self._project = project
-        self._xml_path = xml_path
-        self._organelle = organelle
+        self.project = project
+        self.xml_path = xml_path
+        self.org_name = organelle
         self.background_label = background_label
 
+        if not organelle_registry.get(self.org_name):
+            raise ValueError(f"Unknown organelle class {self.org_name}")
+
         # The data will be loaded lazily
-        self._data = {}
-        self._coarse_data = None
-        self._metadata = None
+        self._metadata: Optional[dict] = None
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
         self._meshes = {}
@@ -53,19 +78,56 @@ class DataSource:
         # The computed organelles are stored
         self._organelles = None
 
-        self.logger = self._project.logger
+        self.logger = self.project.logger
 
-    @property
-    def metadata(self):
-        """Load the metadata for the given source and return it."""
+    def load_n5(self, n5: Path) -> dict[str, Timepoint]:
+        f = z5py.File(n5, "r")
+        timepoints = {}
+        self.project.logger.debug(f"Start loading {n5}, metadata structure:")
 
-        if self._metadata is None:
-            # Initialize the metadata dictionary
-            self._metadata = {}
+        def _meta_finder(name: str, obj):
+            self.project.logger.debug(
+                name + ": " + str(obj.__class__) + str(list(obj.attrs.items()))
+            )
 
-            # Read the XML file
-            tree = ET.parse(self._xml_path)
-            xmldata = tree.getroot()
+            name_parts = Path(name).parts
+
+            if len(name_parts) == 2:
+                # new timepoint
+                timepoints[name_parts[1]] = Timepoint(
+                    name=name_parts[1],
+                    file=n5,
+                    resolution=obj.attrs["resolution"],
+                    n5=obj.attrs["n5"],
+                )
+            if len(name_parts) == 3:
+                # new sampling level
+                assert isinstance(obj, z5py.dataset.Dataset), "Unkown data structure"
+                tp = timepoints[name_parts[1]]
+
+                dl = Data_level(
+                    level=name_parts[2],
+                    chunks=obj.chunks,
+                    chunks_per_dimension=obj.chunks_per_dimension,
+                    downsamplingFactor=obj.attrs["downsamplingFactors"],
+                    data=obj,
+                )
+
+                tp.downsamplingFactors.append(obj.attrs["downsamplingFactors"])
+                tp.levels.append(name_parts[2])
+
+                setattr(tp, name_parts[2], dl)
+
+        f.visititems(_meta_finder)
+        return timepoints
+
+    def load_metadata(self):
+        self._metadata = {}
+
+        # Read the XML file
+        tree = ET.parse(self.xml_path)
+        xmldata = tree.getroot()
+        try:
             filename = (
                 xmldata.find("SequenceDescription").find("ImageLoader").find("n5").text
             )
@@ -81,6 +143,13 @@ class DataSource:
                 .find("size")
                 .text
             )
+            name = (
+                xmldata.find("SequenceDescription")
+                .find("ViewSetups")
+                .find("ViewSetup")
+                .find("name")
+                .text
+            )
             resolution = (
                 xmldata.find("SequenceDescription")
                 .find("ViewSetups")
@@ -89,40 +158,58 @@ class DataSource:
                 .find("size")
                 .text
             )
-
-            # TODO: Extract more relevant metadata as we need it
-
-            # Make assertions on the given data
-            assert num_setups == 1
-
-            # Load the attributes JSON file for setup0
-            attributes_file = (
-                self._project._dataset_json_directory
-                / "images"
-                / "bdv-n5"
-                / filename
-                / "setup0"
-                / "attributes.json"
+            resolution = list((float(i) for i in resolution.split(" ")))
+            first_timepoint = int(
+                xmldata.find("SequenceDescription")
+                .find("Timepoints")
+                .find("first")
+                .text
             )
-            with open(attributes_file, "r") as f:
-                attributes = json.load(f)
+            last_timepoint = int(
+                xmldata.find("SequenceDescription").find("Timepoints").find("last").text
+            )
+            num_timepoints = last_timepoint - first_timepoint + 1
 
-            # Store the metadata
-            self._metadata["data_root"] = (
-                self._project._dataset_json_directory / "images" / "bdv-n5" / filename
-            )
-            self._metadata["downsampling"] = attributes["downsamplingFactors"]
-            self._metadata["size"] = tuple((int(i) for i in size.split(" ")))
-            self._metadata["resolution"] = tuple(
-                (float(i) for i in resolution.split(" "))
-            )
+        except AttributeError:
+            raise ValueError("Could not parse XML!")
+
+        # Make assertions on the given data
+        assert num_setups == 1, "Only one ViewSetup supported"
+        assert num_timepoints == 1, "Only one timepoint supported"
+        assert filename is not None, "n5 Filename could not be parsed from xml!"
+
+        timepoints = self.load_n5(self.xml_path.parent / filename)
+        self.timepoint = list(timepoints.values())[0]
+
+        assert resolution == self.timepoint.resolution[::-1]
+
+        coarse_level = self.timepoint.levels[0]
+        for level in self.timepoint.levels:
+            if int(level[-1]) > int(coarse_level[-1]):
+                coarse_level = level
+
+        # Store the metadata
+        self._metadata["data_root"] = self.xml_path / filename
+        self._metadata["downsampling"] = self.timepoint.downsamplingFactors
+        self._metadata["levels"] = self.timepoint.levels
+        self._metadata["size"] = tuple((int(i) for i in size.split(" ")))
+        self._metadata["resolution"] = resolution
+        self._metadata["name"] = name
+        self._metadata["coarse_level"] = coarse_level
+
+    @property
+    def metadata(self) -> dict:
+        """Return the metadata of this source. Loads the metadata, if necessary"""
+
+        if self._metadata is None:
+            self.load_metadata()
 
         return self._metadata
 
     @property
     def basic_geometric_properties(self):
         """get basic properties from scikit-image"""
-        comp_level = self._project.compression_level
+        comp_level = self.project.compression_level
 
         self.logger.debug("get basic properties from scikit-image")
         if comp_level not in self._basic_geometric_properties:
@@ -140,7 +227,7 @@ class DataSource:
             }
 
             self._basic_geometric_properties[comp_level] = {
-                f"{self._organelle}_{str(region['label']).zfill(4)}": {
+                f"{self.org_name}_{str(region['label']).zfill(4)}": {
                     prop_name: region[prop]
                     for prop_name, prop in filtered_region_props.items()
                 }
@@ -154,54 +241,52 @@ class DataSource:
         """Get the morphology map for all organelles"""
         self.logger.debug("get morphology map for all organelles")
 
-        with parallel_pool(len(self.organelles())) as (pool, pbar):
-            for organelle in self.organelles():
-                result = pool.apply_async(
-                    organelle.morphology_map,
-                    callback=lambda _: pbar.update(),
-                ).get()
-
-                self._morphology_map[organelle.id] = result
+        for organelle in self.organelles():
+            self._morphology_map[organelle.id] = organelle.morphology_map
         return self._morphology_map
 
     @property
-    def data(self) -> np.ndarray:
-        """Load the raw data."""
-        comp_level = self._project.compression_level
+    def data(self) -> da.Array:
+        return self.get_data(None)
 
-        if self._project.compression_level not in self._data:
-            with open_file(str(self.metadata["data_root"]), "r") as f:
-                self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"]
+    def get_data(self, compression_level: Optional[str]) -> da.Array:
+        """Get data of this source as array.
 
-        if self._project.clipping is not None:
-            lower_corner, upper_corner = self._project.clipping
-            data_shape = self._data[comp_level].shape
+        Args:
+            compression_level: Override the compression level specified in
+            the project. Default: None, get level from project.
+
+        Returns:
+            Dask array of the data. Respects the in the project set clipping.
+        """
+        if compression_level is None:
+            compression_level = self.project.compression_level
+        data_at_level = getattr(self.timepoint, compression_level).data
+
+        # chunk factor for efficieny, needs tuning
+        data = da.from_array(data_at_level, chunks="auto")
+
+        if self.project.clipping is not None:
+            lower_corner, upper_corner = self.project.clipping
+            data_shape = data_at_level.shape
             clipped_low_corner = np.floor(lower_corner * data_shape).astype(int)
             clipped_high_corner = np.ceil(upper_corner * data_shape).astype(int)
             cube_slice = tuple(
                 slice(clip_low, clip_high, 1)
                 for clip_low, clip_high in zip(clipped_low_corner, clipped_high_corner)
             )
-            self._data[comp_level] = f[f"setup0/timepoint0/s{comp_level}"][cube_slice]
-
-        return self._data[comp_level]
+            return data[cube_slice]
+        return data
 
     @property
-    def coarse_data(self) -> np.ndarray:
-        """Load the coarsest version of the dataset.
+    def coarse_data(self) -> da.Array:
+        """Return the coarsest version of the dataset.
 
         This can be used for algorithms that do not critically depend
-        on the data resolution and should be fast. The user's choice of
-        resolution for the analysis should always be respected.
+        on the data resolution and should be fast.
         """
 
-        if self._coarse_data is None:
-            with open_file(str(self.metadata["data_root"]), "r") as f:
-                self._coarse_data = f[
-                    f"setup0/timepoint0/s{len(self.metadata['downsampling']) - 1}"
-                ]
-
-        return self._coarse_data
+        return self.get_data(self.metadata["coarse_level"])
 
     @property
     def data_resolution(self) -> tuple[float]:
@@ -218,7 +303,9 @@ class DataSource:
                 r * d
                 for r, d in zip(
                     self.data_resolution,
-                    self.metadata["downsampling"][self._project.compression_level],
+                    getattr(
+                        self.timepoint, self.project.compression_level
+                    ).downsamplingFactor,
                 )
             )
         )
@@ -226,33 +313,50 @@ class DataSource:
     @property
     def labels(self) -> tuple[int]:
         """Return the list of labels present in the data source."""
-        labels = tuple(np.unique(self.data))
-        if self.background_label in labels:
-            labels = tuple(
-                [label for label in labels if label != self.background_label]
-            )
+        # TODO: avoid compute calls
+        labels = da.where(da.unique(self.data).compute() != self.background_label)[
+            0
+        ].compute()
         return labels
 
     def organelles(
         self,
         ids: str = "*",
-        return_ids: bool = False,
+        permanent_whitelist=None,
+        permanent_blacklist=None,
+    ) -> list[Organelle]:
+        """Return a list of organelle objects.
+
+        Args:
+            ids: glob pattern to match the ids. Default "*" includes all.
+            permanent_whitelist: ids to always include
+            permanent_blacklist: ids to always exclude
+
+        Returns:
+            List of organelle objects
+        """
+        filtered_ids = self.organelle_ids(
+            ids=ids,
+            permanent_whitelist=permanent_whitelist,
+            permanent_blacklist=permanent_blacklist,
+        )
+        return [self._organelles[id] for id in filtered_ids]
+
+    def organelle_ids(
+        self,
+        ids: str = "*",
         permanent_whitelist=None,
         permanent_blacklist=None,
     ) -> list[Organelle] | list[str]:
-        """Return a list of organelles found in the data source
+        """Return a list of organelle ids.
 
-        Depending on the return_ids argument, either the organelles are
-        returned as objects that can further inspected and used for analysis
-        or the list of organelle ids are returned. The ids parameter
-        is used to filter based on organelle ids.
+        Args:
+            ids: glob pattern to match the ids. Default "*" includes all.
+            permanent_whitelist: ids to always include
+            permanent_blacklist: ids to always exclude
 
-        :param ids:
-            The filtering expression for organelle ids to return. The default
-            of "*" returns all organelles. (What other syntax would we allow? fnmatch?)
-
-        :param return_ids:
-            Whether to only return ids or the actual organelle objects.
+        Returns:
+            List of organelle ids
         """
 
         # Ensure that all organelles are computed
@@ -260,7 +364,8 @@ class DataSource:
             self._organelles = {}
 
             # Iterate available organelle classes and construct organelles
-            orgclass = organelle_registry[self._organelle]
+            if not (orgclass := organelle_registry.get(self.org_name)):
+                raise ValueError(f"Unknown organelle class {self.org_name}")
             for organelle in orgclass.construct(self, self.labels):
                 self._organelles[organelle.id] = organelle
 
@@ -275,8 +380,4 @@ class DataSource:
         if permanent_whitelist is not None:
             filtered_ids.extend(permanent_whitelist)
 
-        # Return ids or organelle objects
-        if return_ids:
-            return filtered_ids
-        else:
-            return [self._organelles[id] for id in filtered_ids]
+        return filtered_ids

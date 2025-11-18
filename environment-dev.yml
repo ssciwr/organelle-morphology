@@ -1,23 +1,26 @@
-name:
-    morph
+name: morph
 channels:
-    - conda-forge
+  - conda-forge
 dependencies:
-    - pip
-    - scipy
-    - scikit-image
-    - python-elf
-    - numpy
-    - trimesh
-    - pytest
-    - pytest-cov
-    - nbval
-    - plotly
-    - cachetools
-    - multiprocess
-    - pip:
-        - python-fcl
-        - setuptools==65.7.0
-        - shelved_cache
-        - xdg
-        - skeletor
+  - cachetools
+  - dask
+  - nbval
+  - numpy
+  - python-elf
+  - pip
+  - plotly
+  - pytest
+  - pytest-cov
+  - scikit-image
+  - scipy
+  - trimesh
+  - z5py
+  - pre-commit
+  - rich
+  - pip:
+      - python-fcl
+      - setuptools==65.7.0
+      - shelved_cache
+      - xdg
+      - skeletor
+      - -e ./

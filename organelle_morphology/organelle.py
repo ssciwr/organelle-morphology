@@ -7,11 +7,12 @@ import logging
 import plotly.graph_objects as go
 import skeletor as sk
 import networkx
+import dask.array as da
 from collections import defaultdict
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
-organelle_registry = {}
+organelle_registry: dict[str, "Organelle"] = {}
 
 
 def organelle_types() -> list[str]:
@@ -20,7 +21,7 @@ def organelle_types() -> list[str]:
     The strings used here to encode the organelles are expected in
     various APIs when referring to a specific organelle.
     """
-    return organelle_registry.keys()
+    return list(organelle_registry.keys())
 
 
 class Organelle:
@@ -52,7 +53,7 @@ class Organelle:
         self._mcs = defaultdict(dict)
         self._mcs_dict = defaultdict(dict)
 
-        self.logger = self._source._project.logger
+        self.logger = self._source.project.logger
 
     def __init_subclass__(cls, name=None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -61,7 +62,7 @@ class Organelle:
             cls._name = name
 
     @classmethod
-    def construct(cls, source: str, labels: tuple[int] = ()):
+    def construct(cls, source, labels: tuple[int] = ()):
         """A trivial factory method for organelle instances.
 
         It constructs an instance per label. The construction process for each
@@ -79,14 +80,14 @@ class Organelle:
     def __repr__(self):
         return f"{self.__class__.__name__}({self._organelle_id})"
 
-    def _generate_mesh(self, smooth=True):
+    def _generate_mesh(self, smooth=True) -> trimesh.Trimesh | None:
         try:
             verts, faces, _, _ = measure.marching_cubes(
-                self.data, spacing=self._source.resolution
+                self.data.compute(), spacing=self._source.resolution
             )
-        except RuntimeError:
-            logging.warning("Could not generate mesh for label %s", self.id)
-            self._mesh[self._source._project.compression_level] = None
+        except RuntimeError as e:
+            logging.warning("Could not generate mesh for label %s\n%s", self.id, e)
+            self._mesh[self._source.project.compression_level] = None
             return None
         mesh = trimesh.Trimesh(verts, faces, process=False)
         mesh.fix_normals()
@@ -271,7 +272,7 @@ class Organelle:
 
         # override settings if special visualization is requested
         if show_morphology:
-            curvature_vertices = self.morphology_map()
+            curvature_vertices = self.morphology_map
             intensity = curvature_vertices
             colorscale = "Viridis"
             opacity = 1
@@ -386,11 +387,11 @@ class Organelle:
     @property
     def mesh(self):
         """Get the mesh for this organelle"""
-        with disk_cache(self._source._project, f"mesh_{self._organelle_id}") as cache:
-            if self._source._project.compression_level not in cache:
-                cache[self._source._project.compression_level] = self._generate_mesh()
+        with disk_cache(self._source.project, f"mesh_{self._organelle_id}") as cache:
+            if self._source.project.compression_level not in cache:
+                cache[self._source.project.compression_level] = self._generate_mesh()
 
-            return cache[self._source._project.compression_level]
+            return cache[self._source.project.compression_level]
 
     @property
     def id(self):
@@ -416,7 +417,7 @@ class Organelle:
     @property
     def mesh_properties(self):
         """Get the mesh data for this organelle"""
-        comp_level = self._source._project.compression_level
+        comp_level = self._source.project.compression_level
 
         if comp_level not in self._mesh_properties:
             self._mesh_properties[comp_level] = {}
@@ -437,9 +438,10 @@ class Organelle:
 
         return self._mesh_properties[comp_level]
 
+    @property
     def morphology_map(self):
         """Get the mesh data for this organelle"""
-        comp_level = self._source._project.compression_level
+        comp_level = self._source.project.compression_level
 
         # morph radius can be 0 if vertices are used as sample points.
         morph_radius = 0.0
@@ -543,7 +545,7 @@ class Organelle:
         """Get the raw data for this organelle
         by filtering the data of the source object"""
         source_ds = self._source.data[:]
-        org_ds = np.where(source_ds == self._source_label, source_ds, 0)
+        org_ds = da.where(source_ds == self._source_label, source_ds, 0)
 
         return org_ds
 

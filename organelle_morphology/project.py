@@ -1,62 +1,36 @@
-from organelle_morphology.organelle import Organelle, organelle_types
+from typing import Optional
+from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import disk_cache, parallel_pool
+from organelle_morphology.util import disk_cache, get_logger
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
 )
 
-import json
-import os
-import pathlib
-import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from collections import defaultdict
 import plotly.graph_objects as go
-import multiprocessing as mp
 from tqdm import tqdm
 
 
-def load_metadata(project_path: pathlib.Path) -> tuple[pathlib.Path, dict]:
-    """Load the project metadata JSON file
-
-    :param project_path:
-        The path to the project directory. The project metadata JSON file
-        is expected to be in this directory.
-    """
-
-    # This might be a CebraEM project
-    if os.path.exists(project_path / "project.json"):
-        with open(project_path / "project.json", "r") as f:
-            data = json.load(f)
-            if len(data["datasets"]) != 1:
-                raise ValueError("Only single dataset projects are supported")
-
-            return load_metadata(project_path / data["datasets"][0])
-
-    # This might be a mobie project
-    if os.path.exists(project_path / "dataset.json"):
-        with open(project_path / "dataset.json", "r") as f:
-            return project_path, json.load(f)
-
-    raise FileNotFoundError(
-        "Could not find project.json or dataset.json in the given directory"
-    )
-
-
-def _picklable_mesh_extractor(organelle):
+def _picklable_mesh_extractor(organelle: Organelle):
     return organelle.mesh
+
+
+clipping_type = tuple[tuple[float, float, float], tuple[float, float, float]]
 
 
 class Project:
     def __init__(
         self,
-        project_path: pathlib.Path | str = os.getcwd(),
-        clipping: tuple[tuple[float]] | None = None,
-        compression_level: int = 0,
+        project_path: Path | str,
+        clipping: Optional[clipping_type] = None,
+        compression_level: str = "s0",
+        loglevel: Optional[str] = None,
     ):
         """Instantiate an EM project
 
@@ -65,7 +39,7 @@ class Project:
         is loaded until it is required.
 
         :param project_path:
-            The location of the CebraEM/Mobie project
+            The location of the project.
 
         :param clipping:
             If not None, the data is clipped with the given lower left and the given
@@ -78,31 +52,17 @@ class Project:
             corresponds to the highest resolution.
         """
 
-        if isinstance(project_path, str):
-            project_path = pathlib.Path(project_path)
+        self._project_path = Path(project_path)
 
-        self._project_path = project_path
+        if not self.path.exists():
+            self.path.mkdir()
 
-        # Identify the directory that contains project metadata JSON
-        self._dataset_json_directory, self._project_metadata = load_metadata(
-            project_path
-        )
-
+        self._clipping = None
         if clipping is not None:
-            clipping = np.array(clipping)
-            if not np.all(clipping[0] < clipping[1]):
-                raise ValueError("Clipping lower left must be smaller than upper right")
-
-            if not np.all(clipping[0] > 0) or not np.all(clipping[1] < 1):
-                raise ValueError("Clipping must be in [0, 1]^3")
-
-            if len(clipping) != 2 or len(clipping[0]) != 3 or len(clipping[1]) != 3:
-                raise ValueError("Clipping must be a tuple of two tuples of length 3")
-
-        self._clipping = clipping
+            self.clipping = clipping
 
         # The dictionary of data sources that we have added
-        self._sources = {}
+        self.sources = {}
 
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
@@ -122,89 +82,73 @@ class Project:
         self.permanent_blacklist = []
 
         # The compression level at which we operate
-        if compression_level < 0:
-            raise ValueError(f"Compression level must be >= 0, got {compression_level}")
+        self.compression_level = compression_level
 
-        self._compression_level = compression_level
-
-        self.logger = logging.getLogger(project_path.stem)
-        self.logger.setLevel(logging.DEBUG)  # Set logger's level to INFO
-        self.logger.propagate = False
-        c_handler = logging.StreamHandler()
-        f_handler = logging.FileHandler(f"{project_path.stem}.log")
-
-        # Set levels - INFO for console, DEBUG for file
-        c_handler.setLevel(logging.INFO)
-        f_handler.setLevel(logging.DEBUG)
-
-        # Create formatters and add it to handlers
-        c_format = logging.Formatter("%(levelname)s - %(message)s")
-        f_format = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        c_handler.setFormatter(c_format)
-        f_handler.setFormatter(f_format)
-
-        # Add handlers to the logger
-        self.logger.addHandler(c_handler)
-        self.logger.addHandler(f_handler)
-        self.logger.info(f"\n ---- New Project {project_path} loaded----\n")
+        self.logger = get_logger(self.path.with_suffix(".log"))
+        self.set_loglevel(loglevel)
+        self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         # debug help
         self.use_cache = True
 
+    def set_loglevel(self, loglevel: Optional[str]):
+        if loglevel:
+            self.logger.handlers[0].setLevel(loglevel)
+            self.logger.debug(f"Set logging level to: {loglevel}")
+
     @property
-    def path(self):
+    def path(self) -> Path:
         return self._project_path
 
-    def available_sources(self) -> list[str]:
-        """List the data sources that are available in the project."""
-
-        return list(self.metadata["sources"].keys())
-
     def add_source(
-        self, source: str = None, organelle: str = None, background_label: int = 0
+        self,
+        xml_path: Path | str,
+        organelle: Optional[str] = None,
+        background_label: int = 0,
     ) -> None:
         """Connect a data source in the project with an organelle type
 
-        :param source:
-            The name of the data source in the original dataset. Must be
-            one of the names returned by available_sources.
+        Args:
+            source_path: The path to the xml source to add.
+            organelle: The name of the organelle that is labelled in the data source.
+                Must be on the strings returned by organelle_morphology.organelle_types
+            background_label: The label in the data source that is used to encode the background.
+                Assumed to be 0.
 
-        :param organelle:
-            The name of the organelle that is labelled in the data source.
-            Must be on the strings returned by organelle_morphology.organelle_types
-        :param background_label:
-            The label in the data source that is used to encode the background.
-            Assumed to be 0.
+        Raises:
+            ValueError: Source already loaded
+            ValueError: Compression level of project not available
         """
+        xml_path = Path(xml_path)
+        if xml_path.suffix != ".xml":
+            xml_path = xml_path.with_suffix(".xml")
 
-        if source not in self.available_sources():
-            raise ValueError(f"Unknown data source {source}")
+        if xml_path.stem in self.sources:
+            raise ValueError("Source already loaded!")
 
-        if organelle not in organelle_types():
-            raise ValueError(f"Unknown organelle type {organelle}")
+        # resolve relative to project path
+        if not xml_path.exists() and not xml_path.is_absolute():
+            if (self.path / xml_path).exists():
+                xml_path = self.path / xml_path
 
         # Instantiate the new source
-        source_path = self.metadata["sources"][source]["image"]["imageData"]["bdv.n5"][
-            "relativePath"
-        ]
         source_obj = DataSource(
             self,
-            self._dataset_json_directory / source_path,
+            xml_path,
             organelle,
             background_label,
         )
 
-        self.logger.info("Adding source %s", source)
+        self.logger.info(f"Adding source {source_obj.metadata['name']}")
 
         # Double-check that it provides the current compression level
-        if self.compression_level >= len(source_obj.metadata["downsampling"]):
+        if self.compression_level not in source_obj.metadata["levels"]:
             raise ValueError(
-                f"Compression level {self.compression_level} is not available for source {source}"
+                f"Compression level {self.compression_level} is not available "
+                f"for source {source_obj.metadata['name']}.\n Available levels:"
+                f"{source_obj.metadata['levels']}"
             )
-
-        self._sources[source] = source_obj
+        self.sources[xml_path.stem] = source_obj
 
     def skeletonize_wavefront(
         self,
@@ -230,7 +174,7 @@ class Project:
         :param path_sample_dist: _description_, defaults to 0.1
         :type path_sample_dist: float, optional
         """
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         start_logger_str = (
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
@@ -260,7 +204,7 @@ class Project:
         skip_existing=False,
         path_sample_dist: float = 0.1,
     ):
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         start_logger_str = (
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
@@ -285,10 +229,10 @@ class Project:
         ids: str = "*",
         show_morphology: bool = False,
         show_skeleton: bool = False,
-        mcs_label: str = None,
+        mcs_label: Optional[str] = None,
         height: int = 800,
     ):
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         if mcs_label and mcs_label not in self._mcs_labels:
             raise ValueError(
@@ -324,7 +268,7 @@ class Project:
                         marker=dict(size=1, color="red"),
                     )
                     fig.add_trace(sampled_scatter)
-                except:
+                except ValueError:
                     self.logger.warning(org.id, sampled_path, org.skeleton)
                     raise ValueError("sampled_path is not valid")
 
@@ -364,8 +308,8 @@ class Project:
                 f"Attribute must be one of 'names', 'contacts' or 'objects' but is {attribute}"
             )
 
-        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
-        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        orgs_1 = self.organelle_ids(ids=ids_source)
+        orgs_2 = self.organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         # Filter the DataFrame by row values
         filtered_df = distance_matrix[
@@ -397,13 +341,11 @@ class Project:
         elif attribute == "objects":
             obj_output_dict = defaultdict(list)
             for key in output_filtered_dict.keys():
-                new_key = self.organelles(ids=key, return_ids=False)[0]
+                new_key = self.organelles(ids=key)[0]
 
                 for key_target in output_filtered_dict[key]:
                     if key_target not in obj_output_dict.keys():
-                        obj_output_dict[new_key].extend(
-                            self.organelles(ids=key_target, return_ids=False)
-                        )
+                        obj_output_dict[new_key].extend(self.organelles(ids=key_target))
             return obj_output_dict
 
         return output_filtered_dict
@@ -423,8 +365,8 @@ class Project:
         mean: the mean distance between the organelles
         :type attribute: _type_
         """
-        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
-        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        orgs_1 = self.organelle_ids(ids=ids_source)
+        orgs_2 = self.organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
 
         if attribute == "dist":
@@ -491,8 +433,8 @@ class Project:
         ids_source="*",
         ids_target="*",
     ):
-        orgs_1 = self.organelles(ids=ids_source, return_ids=True)
-        orgs_2 = self.organelles(ids=ids_target, return_ids=True)
+        orgs_1 = self.organelle_ids(ids=ids_source)
+        orgs_2 = self.organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         fig = go.Figure()
         fig.add_trace(go.Histogram(x=distance_matrix.mean().values.flatten()))
@@ -521,7 +463,7 @@ class Project:
         :return: _description_
         :rtype: _type_
         """
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
         # drop organelles without skeleton
         valid_orgs = []
         for org in orgs:
@@ -540,10 +482,21 @@ class Project:
         return fig
 
     @property
-    def compression_level(self):
+    def compression_level(self) -> str:
         """The compression level used for our computations."""
 
         return self._compression_level
+
+    @compression_level.setter
+    def compression_level(self, level: str):
+        for s_name, s in self.sources.items():
+            if level not in s.metadata["levels"]:
+                raise ValueError(
+                    f"Requested level {level} not available in source {s_name}!\n"
+                    f"Levels in source: {s.metadata['levels']}"
+                )
+
+        self._compression_level = level
 
     def calculate_meshes(self):
         """Trigger the calculation of meshes for all organelles"""
@@ -595,7 +548,7 @@ class Project:
         # Trigger the calculation of all meshes in a parallel pool
 
         properties = {}
-        sources = list(self._sources.keys())
+        sources = list(self.sources.keys())
         cache_str = f"geometric_properties_{self.compression_level}_{sources}"
         with disk_cache(self, cache_str) as cache:
             if cache_str not in cache or not self.use_cache:
@@ -614,7 +567,7 @@ class Project:
 
         df = pd.DataFrame(properties).T
 
-        valid_organelles = self.organelles(return_ids=True)
+        valid_organelles = self.organelle_ids()
         df = df.loc[valid_organelles]
 
         return df
@@ -634,7 +587,7 @@ class Project:
 
         """
 
-        orgs = self.organelles(ids=ids, return_ids=False)
+        orgs = self.organelles(ids=ids)
 
         mcs_properties = {}
         for org in orgs:
@@ -726,7 +679,7 @@ class Project:
         """Get the morphology map for all organelles"""
 
         # results should be saved on a source level
-        for source_key, source in self._sources.items():
+        for source_key, source in self.sources.items():
             self._morphology_map[source_key] = source.morphology_map
 
         return self._morphology_map
@@ -771,7 +724,7 @@ class Project:
         """
         geo_props = self.geometric_properties
         self.logger.info(
-            f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff*100}% of the total volume."
+            f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff * 100}% of the total volume."
         )
 
         df_sorted = geo_props.loc[
@@ -793,37 +746,54 @@ class Project:
         )
 
     @property
-    def metadata(self):
-        """The project metadata stored in the project JSON file"""
+    def clipping(
+        self,
+    ) -> None | np.ndarray:
+        """The subcube of the original data to work with.
+        All operations performed in this project must respect the clipping
+        region set here.
 
-        return self._project_metadata
-
-    @property
-    def clipping(self):
-        """The subcube of the original data that we work with"""
+        Attribute clipping:
+            Tuple of two tuples of length three.
+            Must be the lower corner and the upper corner.
+        """
 
         if self._clipping is None:
             return None
         else:
             return self._clipping
 
+    @clipping.setter
+    def clipping(self, clipping: clipping_type | None):
+        if clipping is None:
+            self._clipping = None
+            return
+        _clipping = np.array(clipping)
+        if not np.all(_clipping[0] < _clipping[1]):
+            raise ValueError(
+                "First clipping corner is lower left, second upper right. All "
+                "coordinates of corner one must be smaller than of corner two"
+            )
+
+        if not np.all(_clipping[0] > 0) or not np.all(_clipping[1] < 1):
+            raise ValueError("Clipping must be in [0, 1]^3")
+
+        if len(_clipping) != 2 or len(_clipping[0]) != 3 or len(_clipping[1]) != 3:
+            raise ValueError("Clipping must be a tuple of two tuples of length 3")
+        self._clipping = _clipping
+
     def organelles(
-        self, ids: list[str] = "*", return_ids: bool = False
-    ) -> list[Organelle] | list[str]:
+        self,
+        ids: str | list[str] = "*",
+    ) -> list[Organelle]:
         """Return a list of organelles found in the dataset
 
         This requires previous adding of data sources using add_source.
-        Depending on the return_ids argument, either the organelles are
-        returned as objects that can further inspected and used for analysis
-        or the list of organelle ids are returned. The ids parameter
-        is used to filter based on organelle ids.
+        The ids parameter is used to filter based on organelle ids.
 
         :param ids:
             The filtering expression for organelle ids to return. The default
             of "*" returns all organelles. (What other syntax would we allow? fnmatch?)
-
-        :param return_ids:
-            Whether to only return ids or the actual organelle objects.
         """
 
         result = []
@@ -831,14 +801,46 @@ class Project:
             ids = [ids]
 
         for id_ in ids:
-            for source in self._sources.values():
+            for source in self.sources.values():
                 if id_ in self.permanent_blacklist:
                     continue
 
                 result.extend(
                     source.organelles(
                         id_,
-                        return_ids,
+                        self.permanent_whitelist,
+                        self.permanent_blacklist,
+                    )
+                )
+
+        return result
+
+    def organelle_ids(
+        self,
+        ids: str | list[str] = "*",
+    ) -> list[str]:
+        """Return a list of organelle ids found in the dataset
+
+        This requires previous adding of data sources using add_source.
+        The ids parameter is used to filter based on organelle ids.
+
+        :param ids:
+            The filtering expression for organelle ids to return. The default
+            of "*" returns all organelles. (What other syntax would we allow? fnmatch?)
+        """
+
+        result = []
+        if isinstance(ids, str):
+            ids = [ids]
+
+        for id_ in ids:
+            for source in self.sources.values():
+                if id_ in self.permanent_blacklist:
+                    continue
+
+                result.extend(
+                    source.organelle_ids(
+                        id_,
                         self.permanent_whitelist,
                         self.permanent_blacklist,
                     )

@@ -1,18 +1,14 @@
-from organelle_morphology.organelle import Organelle, organelle_types
-from organelle_morphology.source import DataSource
-from organelle_morphology.util import disk_cache, parallel_pool
+from organelle_morphology.util import disk_cache
 
 
 import trimesh
-import logging
 
 import numpy as np
 import pandas as pd
 
-from collections import defaultdict
-import plotly.graph_objects as go
-import multiprocessing as mp
 from tqdm import tqdm
+
+from organelle_morphology.util import disk_cache
 
 
 class MembraneContactSiteCalculator:
@@ -224,7 +220,7 @@ class MembraneContactSiteCalculator:
 
 
 def generate_distance_matrix(project) -> pd.DataFrame:
-    active_sources = list(project._sources.keys())
+    active_sources = list(project.sources.keys())
     with disk_cache(
         project, f"distance_matrix_{active_sources}_{project.compression_level}"
     ) as cache:
@@ -272,9 +268,9 @@ def generate_distance_matrix(project) -> pd.DataFrame:
                     distance_df.loc[id_1, id_2] = min_distance
                     distance_df.loc[id_2, id_1] = min_distance
 
-            cache[
-                f"distance_matrix_{active_sources}_{project.compression_level}"
-            ] = distance_df
+            cache[f"distance_matrix_{active_sources}_{project.compression_level}"] = (
+                distance_df
+            )
 
         else:
             project.logger.info("Retrieving distance matrix from cache")

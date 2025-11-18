@@ -1,5 +1,6 @@
-from organelle_morphology.project import *
+from organelle_morphology.project import Project
 from organelle_morphology.organelle import Organelle
+from organelle_morphology.source import DataSource
 from .synthetic_data_generator import generate_synthetic_dataset
 
 import pytest
@@ -7,14 +8,13 @@ import pathlib
 import tempfile
 import numpy as np
 import trimesh
-import copy
-import pandas as pd
+import trimesh.visual
 
 
 def test_synthetic_data_generation(
     synthetic_data, cebra_project_path, cebra_project_original_meshes
 ):
-    """Check that the synthetic data is correctly generated"""
+    """Check the synthetic data generation"""
 
     generate_synthetic_dataset()
 
@@ -23,7 +23,6 @@ def test_synthetic_data_generation(
     project_path_custom, original_meshes_custom = generate_synthetic_dataset(
         working_dir=tmp_dir, n_objects=30, object_size=20, object_distance=100, seed=42
     )
-
     # test default data
     project_path, original_meshes = synthetic_data
 
@@ -39,12 +38,10 @@ def test_synthetic_data_generation(
 
     project_path = pathlib.Path(project_path)
     for p_path in [project_path, project_path_custom]:
-        assert (p_path / "project.json").exists()
-        assert (p_path / "CebraEM" / "dataset.json").exists()
-        assert (p_path / "CebraEM" / "images" / "bdv-n5" / "synth_data.n5").exists()
-        assert (p_path / "CebraEM" / "images" / "bdv-n5" / "synth_data.xml").exists()
+        assert (p_path / "synth_data.n5").exists()
+        assert (p_path / "synth_data.xml").exists()
 
-        organell_path = p_path / "CebraEM" / "images" / "bdv-n5" / "synth_data.n5"
+        organell_path = p_path / "synth_data.n5"
         assert (organell_path / "setup0" / "timepoint0" / "s0").exists()
         assert (organell_path / "setup0" / "timepoint0" / "s3").exists()
 
@@ -54,18 +51,11 @@ def test_valid_project_init(cebra_project_path):
 
     # With a pathlib.Path object
     project = Project(project_path=cebra_project_path)
-    assert project.metadata
+    assert project.path == cebra_project_path
 
     # With a string path
     project = Project(project_path=str(cebra_project_path))
-    assert project.metadata
-
-
-def test_invalid_project_init(tmp_path):
-    """Checks invalid construction of the Project class"""
-
-    with pytest.raises(FileNotFoundError):
-        project = Project(project_path=tmp_path)
+    assert project.path == cebra_project_path
 
 
 def test_project_clipping(cebra_project_path):
@@ -99,8 +89,8 @@ def test_project_clipping(cebra_project_path):
             clipping=((0.2, 0.2, 0.2), (0.8, 1.5, 0.8)),
         )
     # add a source and check that the clipping is correctly propagated
-    project.add_source(source="synth_data", organelle="mito")
-    assert project._sources["synth_data"].data.shape == (141, 144, 198)
+    project.add_source(xml_path="synth_data", organelle="mito")
+    assert list(project.sources.values())[0].data.shape == (141, 144, 198)
 
 
 def test_add_source(cebra_project):
@@ -109,19 +99,17 @@ def test_add_source(cebra_project):
     for oid, source in source_dict.items():
         if oid == "unknown":
             with pytest.raises(ValueError):
-                cebra_project.add_source(source=source, organelle=oid)
+                cebra_project.add_source(xml_path=source, organelle=oid)
             continue
         else:
-            cebra_project.add_source(source=source, organelle=oid)
+            cebra_project.add_source(xml_path=source, organelle=oid)
             # Check that we actually added organelles
-            assert cebra_project.organelles(ids=f"{oid}_*", return_ids=True)
+            assert cebra_project.organelles(ids=f"{oid}_*")
 
-    # Wrong organelle/source identifier should lead to error
-    with pytest.raises(ValueError):
+
+def test_add_source_wrong_source(cebra_project):
+    with pytest.raises(FileNotFoundError):
         cebra_project.add_source("wrong_source", "mito")
-
-    with pytest.raises(ValueError):
-        cebra_project.add_source("correct_source_todo", "wrong_organelle")
 
 
 def test_project_organelles(cebra_project_with_sources):
@@ -129,19 +117,17 @@ def test_project_organelles(cebra_project_with_sources):
 
     p = cebra_project_with_sources
 
-    for o in p.organelles("m*"):
+    for o, id in zip(p.organelles("m*"), p.organelle_ids("m*")):
         assert isinstance(o, Organelle)
         assert o.id.startswith("m")
-
-    assert p.organelles("m*", return_ids=True)
 
 
 def test_project_sources_data(cebra_project_with_sources):
     p = cebra_project_with_sources
 
-    assert p._sources["synth_data"].data
-    assert p._sources["synth_data"].data_resolution
-    assert p._sources["synth_data"].resolution
+    assert isinstance(p.sources["synth_data"], DataSource)
+    assert p.sources["synth_data"].org_name == "mito"
+    assert p.sources["synth_data"].background_label == 0
 
 
 def test_geometric_properties(
@@ -168,13 +154,6 @@ def test_geometric_properties(
             rtol=0.25,
             atol=500,
         )
-        # TODO@Gwydion: Fix this test
-        # assert np.isclose(
-        #     original_mesh["volume"],
-        #     geometric_properties["mesh_volume"],
-        #     rtol=0.25,
-        #     atol=500,
-        # )
         assert np.isclose(
             original_mesh["area"],
             geometric_properties["mesh_area"],
@@ -218,7 +197,7 @@ def test_show_mesh_scene(cebra_project_with_sources):
     p = cebra_project_with_sources
     meshes = p._meshes
 
-    scene = trimesh.scene.Scene()
+    scene = trimesh.Scene()
     for source_key in meshes.keys():
         for org_key in meshes[source_key].keys():
             mesh = meshes[source_key][org_key]
