@@ -47,21 +47,10 @@ for id in mesher.ids():
 # %%
 
 size = 60
-n_points = 10
+n_points = 20
 
 points = np.random.randint(0,size,n_points*3).reshape((-1,3))
 x,y,z = np.indices((size, size, size))
-
-# points = [
-#     (1, 2, 1),
-#     (19, 2, 9),
-#     (2, 13, 1),
-#     (2, 3, 19),
-#     (10, 10, 10),
-#     (5, 15, 6),
-#     (18, 10, 6),
-#     (19, 8, 19),
-# ]
 
 def cubify(p, x, y, z):
     cube = ((p[0] + np.random.randint(2,6)) > x) & (x >= (p[0]-np.random.randint(2,6))) & \
@@ -129,7 +118,7 @@ for i in range(len(points)):
     arr[np.argwhere(voxelarray == i+1)] = 1
     verts, faces, _, _ = measure.marching_cubes(arr)
 
-# @@@@@@@@@ 2 orders of magnitude faster with zmesh! @@@@@@@@@@@@
+# @@@@@@@@@ one order of magnitude faster with zmesh! @@@@@@@@@@@@
 # %%
 
 

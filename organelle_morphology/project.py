@@ -1,7 +1,7 @@
 from typing import Callable, Optional
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import disk_cache, get_logger
+from organelle_morphology.util import CACHE_DIR, Cache, disk_cache, get_logger
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
@@ -87,7 +87,7 @@ class Project:
         # callables will be updated on demand
         self._cache_settings = {
             "project_path": lambda: self.path,
-            "clipping": lambda: str(self.clipping),
+            "clipping": lambda: str(self.clipping).replace("\n", ""),
             "level": lambda: str(self.compression_level),
             "disk": True,
         }
@@ -855,3 +855,28 @@ class Project:
                 )
 
         return result
+
+    def get_caches(self):
+        caches = []
+
+        print(f"{CACHE_DIR / self.path.name}")
+        for source in filter(
+            lambda f: f.is_dir(), (CACHE_DIR / self.path.name).iterdir()
+        ):
+            print(f"├─ /{source.name}")
+
+            for level in filter(lambda f: f.is_dir(), source.iterdir()):
+                print(f"│  ├─ /{level.name}")
+                for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
+                    print(f"│  │  ├─ /{clip_dir.name}")
+                    caches.append(
+                        Cache(
+                            project_path=self.path,
+                            source=source.name,
+                            level=level.name,
+                            clipping=clip_dir.name,
+                            disk=True,
+                        )
+                    )
+        self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
+        return caches

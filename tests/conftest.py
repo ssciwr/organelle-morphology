@@ -1,49 +1,103 @@
+from functools import reduce
+from typing import Optional
 from organelle_morphology import Project
 
+import numpy as np
 import pytest
-from .synthetic_data_generator import generate_synthetic_dataset
 
 
-@pytest.fixture(scope="session")
-def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
-    """A fixture for a synthetic dataset"""
-    project, original_meshes = generate_synthetic_dataset(
-        n_objects=n_objects,
-        object_size=object_size,
-        object_distance=object_distance,
-        seed=seed,
+def cubify(p, x, y, z, min_s: int = 3, max_s: Optional[int] = 6, z_offset=0):
+    """Turn point to cube"""
+    if max_s is not None:
+        assert min_s < max_s
+        cube = (
+            ((p[0] + np.random.randint(min_s, max_s)) > x)
+            & (x >= (p[0] - np.random.randint(min_s, max_s)))
+            & ((p[1] + np.random.randint(min_s, max_s)) > y)
+            & (y >= (p[1] - np.random.randint(min_s, max_s)))
+            & ((p[2] + np.random.randint(min_s, max_s)) > z)
+            & (z >= (p[2] - np.random.randint(min_s, max_s)))
+        )
+    else:
+        cube = (
+            ((p[0] + min_s) > x)
+            & (x >= (p[0] - min_s))
+            & ((p[1] + min_s) > y)
+            & (y >= (p[1] - min_s))
+            & ((p[2] + min_s + z_offset) > z)
+            & (z >= (p[2] - min_s - z_offset))
+        )
+
+    return cube
+
+
+@pytest.fixture
+def voxels_c_in_c(size=100):
+    cubes = []
+    x, y, z = np.indices((size, size, size))
+
+    # cube in cube
+    cube = cubify([50, 50, 50], x, y, z, 3, None, 0)
+    n_cube = np.zeros_like(cube, dtype=float)
+    n_cube[cube] = 1
+    cubes.append(n_cube)
+    cube = cubify([50, 50, 50], x, y, z, 6, None, 0)
+    n_cube = np.zeros_like(cube, dtype=float)
+    n_cube[cube] = 2
+    cubes.append(n_cube)
+
+    return reduce(np.add, cubes)
+
+
+@pytest.fixture
+def voxels_c_through_c(size=100):
+    cubes = []
+    x, y, z = np.indices((size, size, size))
+
+    # cube split by cube
+    cube = cubify([35, 50, 50], x, y, z, 6, None, -4)
+    n_cube = np.zeros_like(cube, dtype=float)
+    n_cube[cube] = 2
+    cubes.append(n_cube)
+    cube = cubify([35, 50, 50], x, y, z, 3, None, 2)
+    n_cube = np.zeros_like(cube, dtype=float)
+    n_cube[cube] = 3
+    cubes.append(n_cube)
+
+    return reduce(np.add, cubes)
+
+
+@pytest.fixture
+def voxels_c_on_edge(size=100):
+    cubes = []
+    x, y, z = np.indices((size, size, size))
+
+    static_points = np.array(
+        [
+            [0, 0, 0],  # completely outside
+            [20, 2, 1],  # partially outside
+        ]
     )
-    return (project, original_meshes)
+    for i, p in enumerate(static_points):
+        cube = cubify(p, x, y, z, 2, None)
+        n_cube = np.zeros_like(cube, dtype=float)
+        n_cube[cube] = i + 1
+        cubes.append(n_cube)
 
-
-@pytest.fixture(scope="session")
-def cebra_project_path(synthetic_data):
-    """A fixture return a path that conains a valid Cebra project"""
-    return synthetic_data[0]
-
-
-@pytest.fixture(scope="session")
-def cebra_project_original_meshes(synthetic_data):
-    """A fixture return a path that conains a valid Cebra project"""
-    return synthetic_data[1]
+    return reduce(np.add, cubes)
 
 
 @pytest.fixture
-def cebra_project(cebra_project_path):
-    """A fixture for a valid Cebra project instance"""
+def voxels_random(size=30, n_points=5):
+    points = np.random.randint(0, size, n_points * 3).reshape((-1, 3))
+    x, y, z = np.indices((size, size, size))
 
-    return Project(cebra_project_path)
+    cubes = []
 
+    for i, p in enumerate(points):
+        cube = cubify(p, x, y, z)
+        n_cube = np.zeros_like(cube, dtype=float)
+        n_cube[cube] = i + 1
+        cubes.append(n_cube)
 
-@pytest.fixture
-def cebra_project_with_sources(cebra_project):
-    """A fixture for a valid Cebra project instance, incl. added sources"""
-
-    cebra_project.add_source("synth_data", "mito")
-    return cebra_project
-
-
-@pytest.fixture(autouse=True)
-def temporary_cache_directory(tmp_path, monkeypatch):
-    """A fixture that sets the cache directory to a temporary directory"""
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    return reduce(np.add, cubes)

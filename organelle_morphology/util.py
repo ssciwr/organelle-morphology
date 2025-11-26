@@ -106,32 +106,6 @@ class Cache:
         self.disk = False
 
 
-def get_project_caches(project: "organelle_morphology.Project"):
-    caches = []
-
-    project.logger.info(f"{CACHE_DIR / project.path.name}")
-    for source in filter(
-        lambda f: f.is_dir(), (CACHE_DIR / project.path.name).iterdir()
-    ):
-        project.logger.info(f"├─ /{source.name}")
-
-        for level in filter(lambda f: f.is_dir(), source.iterdir()):
-            project.logger.info(f"│  ├─ /{level.name}")
-            for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
-                project.logger.info(f"│  │  ├─ /{clip_dir.name}")
-                caches.append(
-                    Cache(
-                        project_path=project.path,
-                        source=source.name,
-                        level=level.name,
-                        clipping=clip_dir.name,
-                        disk=True,
-                    )
-                )
-    project.logger.info(f"Found {len(caches)} caches for project {project.path.name}")
-    return caches
-
-
 @contextlib.contextmanager
 def disk_cache(project_path: Path, name, maxsize=1000000):
     # Define the cache

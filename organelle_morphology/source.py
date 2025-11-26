@@ -55,35 +55,34 @@ def _block_mesher(
     """
 
     def plane(origin, normal):
+        """Plane for debug view"""
         normal_i = np.array(normal, dtype=bool)
         planeverts = np.stack([origin] * 4)
         # axis along which to strech from origin to plane
         for i, axis in enumerate((~normal_i).nonzero()[0]):
             if i == 0:
-                planeverts[0, axis] += 20
-                planeverts[1, axis] += 20
-                planeverts[2, axis] -= 20
-                planeverts[3, axis] -= 20
+                planeverts[0, axis] += 50
+                planeverts[1, axis] += 50
+                planeverts[2, axis] -= 50
+                planeverts[3, axis] -= 50
 
             else:
-                planeverts[0, axis] += 20
-                planeverts[2, axis] += 20
-                planeverts[1, axis] -= 20
-                planeverts[3, axis] -= 20
+                planeverts[0, axis] += 50
+                planeverts[2, axis] += 50
+                planeverts[1, axis] -= 50
+                planeverts[3, axis] -= 50
 
         plane = Trimesh(planeverts, [[0, 1, 2], [3, 2, 1]])
         plane += Trimesh(planeverts, [[2, 1, 0], [1, 2, 3]])
 
-        plane.visual.vertex_colors = (0, 0, 200, 80)
-        plane.visual.vertex_colors[:, [normal_i.nonzero()[0][0], 3]] = (
-            200,
-            100,
-        )
+        plane.visual.vertex_colors = (0, 0, 0, 40)
+        plane.visual.vertex_colors[:, [normal_i.nonzero()[0][0]]] = 200
+
         return plane
 
     # calculate slice planes, assuming overlap of 2 on all sides
     bs = np.array(block.shape)
-    overlap = 2  # 2
+    overlap = 2
     slice_points = []
     slice_normals = []
 
@@ -105,6 +104,7 @@ def _block_mesher(
     mesher = Mesher((1, 1, 1))
     mesher.mesh(block, close=False)
     meshes = {}
+    assert len(mesher.ids()) == np.unique(block).shape[0] - 1  # zero is no label
 
     for id in mesher.ids():
         assert meshes.get(id) is None, f"{id} was in mesh already!"
@@ -123,13 +123,16 @@ def _block_mesher(
             mesh.visual.vertex_colors[:, :] = trimesh.visual.random_color()
             mesh.visual.vertex_colors[:, 3] = 120
 
+        planes = []
         for origin, normal in zip(slice_points, slice_normals):
             mesh_slice = mesh.slice_plane(origin, normal)
             assert mesh_slice is not None
-            if mesh_slice.vertices.shape[0] == 0:
+            if mesh_slice.vertices.shape[0] == 0 and not debug_color:
+                mesh = mesh_slice
                 continue
 
             if debug_color:
+                planes.append(plane(origin, normal))
                 if (
                     mesh_slice.vertices.shape[0] != mesh.vertices.shape[0]
                     or mesh_slice.faces.shape[0] != mesh.faces.shape[0]
@@ -146,26 +149,23 @@ def _block_mesher(
                     mesh_outer.visual.vertex_colors = (255, 0, 255, 100)
                     parts.append(mesh_outer)
 
-                    org = mesh_slice.vertices.mean(axis=0)
-                    org[normal_i] = origin[normal_i]
-
-                    if debug_color >= 2:
-                        parts.append(plane(org, normal))
                     if debug_color >= 3:
                         mesh.visual.vertex_colors[:, :3] = (
                             mesh.vertices / (mesh.vertices.max(axis=0)) * 200
                         )
                         mesh.visual.vertex_colors[:, 3] = 200
             else:
+                # Debug views contain the non-sliced mesh!
                 mesh = mesh_slice
         if masks:
             mask = np.concatenate(masks)
             mesh.visual.vertex_colors[mask] = (0, 255, 0, 180)
         if parts:
             mesh += sum(parts)
-        mesh.vertices += space_offset
 
-        meshes[id] = mesh
+        if mesh.vertices.shape[0] > 0:
+            mesh.vertices += space_offset
+            meshes[id] = mesh
 
     if debug_color >= 1:
         try:
@@ -186,6 +186,10 @@ def _block_mesher(
             verts += space_offset
             for v in verts:
                 m += trimesh.primitives.Sphere(3, v, subdivisions=1)
+            if debug_color >= 2:
+                pl = sum(planes)
+                pl.vertices += space_offset
+                m += pl
             meshes[i] = m
         except KeyError:
             pass
@@ -527,7 +531,7 @@ class DataSource:
             self.logger.debug("Meshes not loaded")
             self._meshes = {}
             cache_settings = self.project.cache_settings
-            cache_settings["source"] = self.xml_path.name
+            cache_settings["source"] = self.xml_path.stem
             cache = Cache(**cache_settings)
             labels = None
 
@@ -546,7 +550,7 @@ class DataSource:
                 self.logger.debug("Meshes loaded from cache")
 
             else:
-                self.logger.debug("Meshes not in cache, calculating..")
+                self.logger.info("Meshes not in cache, calculating..")
                 self.calculate_mesh()
                 self.logger.debug("Saving meshes to cache..")
 
@@ -727,7 +731,7 @@ class DataSource:
             id_amounts, return_counts=True, return_inverse=True
         )
         for amount, frq in zip(amounts, freqs):
-            self.logger.debug(f"{frq} labels in {amount} chunks")
+            self.logger.info(f"{frq} labels in {amount} chunks")
 
         # Cleanup: Merge meshes crossing chunks
         self._meshes = {}

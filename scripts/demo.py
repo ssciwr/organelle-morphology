@@ -8,18 +8,21 @@ from pathlib import Path
 from tqdm import tqdm
 import trimesh
 from trimesh import Trimesh
+from zmesh import Mesh, Mesher
 from organelle_morphology import Project
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 
 from dask import compute
+from organelle_morphology.util import disk_cache
 
 viridis = mpl.colormaps.get("viridis")
 # %%
 project_path = Path.cwd() / "example_analysis"
 p = Project(project_path, compression_level="s2", loglevel="DEBUG", clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)))
 p.add_source("../data/Interphase_4T/mito_it00_b0_7_stitched.xml", "mito")
+s = p.sources["mito_it00_b0_7_stitched"]
 p.add_source("../data/Interphase_4T/er_it00_b0_7_stitched.xml", "er")
 s = p.sources["er_it00_b0_7_stitched"]
 
@@ -36,73 +39,34 @@ print(len(s.labels))
 
 # %% change compression
 p.clipping = None
-p.clipping = [[0.6,0,0.3], [1,1,0.9]]
+p.clipping = [[0.6,0,0], [1,1,1]]
 p.compression_level = "s3"
 print(len(s.labels))
 
 mmesh = s.merge_meshes(list(s.meshes.values()), color=1).compute()
 mmesh.show()
 
+# %% debug colors
+s = p.sources["mito_it00_b0_7_stitched"]
+p.clipping = [[0.6,0,0], [1,1,1]]
+s.calculate_mesh(debug_color=2)
+mmesh = s.merge_meshes(list(s.meshes.values()), color=0).compute()
+mmesh.show()
+
 # %%
 p.clipping = [[0.6,0.6,0.4], [0.8,0.8,0.6]]
+p.clipping = [[0.6,0.3,0.0], [0.8,0.8,1]]
 p.compression_level = "s1"
-s.calculate_mesh(debug_color=1)
 print(len(s.labels))
 
 mmesh = s.merge_meshes(list(s.meshes.values()), color=0).compute()
 mmesh.show()
 
 # %%
-s = p.sources["mito_it00_b0_7_stitched"]
-p.clipping = [[0.3,0.3,0.3], [1,1,1]]
-p.compression_level = "s3"
-s.calculate_mesh(debug_color=3)
-print(len(s.labels))
-
-mmesh = s.merge_meshes(list(s.meshes.values()), color=0).compute()
-mmesh.show()
-
-# %% Broken region
-s = p.sources["mito_it00_b0_7_stitched"]
-p.clipping = [[0.6,0.6,0.5], [0.8,0.8,0.8]]
-p.compression_level = "s0"
-s.calculate_mesh(debug_color=3)
-print(len(s.labels))
-
-mmesh = s.merge_meshes(list(s.meshes.values()), color=0).compute()
-mmesh.show()
-
-# %% CLIPPING PROBLEM
-s = p.sources["mito_it00_b0_7_stitched"]
-p.clipping = [[0.6,0.6,0.5], [0.8,0.8,0.8]]
-p.compression_level = "s0"
-chunks = [
-    np.array([0,0,1]),
-    np.array([0,1,1]),
-    np.array([0,0,2]),
-    np.array([0,1,2]),
-]
-blocks = [s.data.blocks[*c] for c in chunks]
-a = np.concatenate(blocks[:2], axis=1)
-b = np.concatenate(blocks[2:], axis=1)
-block = np.concatenate((a,b), axis=2)
-
-
-# %%
-p.clipping = None
-offset_frac = [0.6, 0.6, 0.5]
-zero = np.array(s.data.shape) * offset_frac
-zero = np.array(zero, dtype=int)
-size = (58,437,512) # chunks from above
-end = zero + size
-
-s.data
 
 
 # %%
 
-# %%
-# %%
 
 
 # %% ## Blender ##
