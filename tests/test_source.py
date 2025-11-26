@@ -67,9 +67,9 @@ def test_block_mesher_random_no_offset(voxels_random, repeat):
     voxels = voxels_random
     n_labels = np.unique(
         voxels[
-            2:28,
-            2:28,
-            2:28,
+            2:29,
+            2:29,
+            2:29,
         ]
     ).shape[0]
     meshes, ids = compute(
@@ -92,9 +92,9 @@ def test_block_mesher_random_offset(voxels_random, repeat):
     voxels = voxels_random
     n_labels = np.unique(
         voxels[
-            2:28,
-            2:28,
-            2:28,
+            2:29,
+            2:29,
+            2:29,
         ]
     ).shape[0]
     meshes, ids = compute(
@@ -120,9 +120,9 @@ def test_block_mesher_debug_colors(voxels_random, debug_color):
     voxels = voxels_random
     n_labels = np.unique(
         voxels[
-            2:28,
-            2:28,
-            2:28,
+            2:29,
+            2:29,
+            2:29,
         ]
     ).shape[0]
     meshes, ids = compute(
