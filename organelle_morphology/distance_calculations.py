@@ -1,14 +1,9 @@
-from organelle_morphology.util import disk_cache
-
-
 import trimesh
 
 import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
-
-from organelle_morphology.util import disk_cache
 
 
 class MembraneContactSiteCalculator:

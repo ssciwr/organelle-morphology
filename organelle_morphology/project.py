@@ -1,7 +1,7 @@
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import CACHE_DIR, Cache, disk_cache, get_logger
+from organelle_morphology.util import CACHE_DIR, Cache, get_logger
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
@@ -90,6 +90,7 @@ class Project:
             "clipping": lambda: str(self.clipping).replace("\n", ""),
             "level": lambda: str(self.compression_level),
             "disk": True,
+            "cache_path": lambda: self.path,
         }
 
         # debug help

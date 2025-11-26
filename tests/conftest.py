@@ -61,7 +61,7 @@ def voxels_c_through_c(size=100):
     n_cube[cube] = 2
     cubes.append(n_cube)
     cube = cubify([35, 50, 50], x, y, z, 3, None, 2)
-    n_cube = np.zeros_like(cube, dtype=float)
+    n_cube = np.zeros_like(cube, dtype=int)
     n_cube[cube] = 3
     cubes.append(n_cube)
 
@@ -81,7 +81,7 @@ def voxels_c_on_edge(size=100):
     )
     for i, p in enumerate(static_points):
         cube = cubify(p, x, y, z, 2, None)
-        n_cube = np.zeros_like(cube, dtype=float)
+        n_cube = np.zeros_like(cube, dtype=int)
         n_cube[cube] = i + 1
         cubes.append(n_cube)
 
@@ -97,7 +97,7 @@ def voxels_random(size=30, n_points=5):
 
     for i, p in enumerate(points):
         cube = cubify(p, x, y, z)
-        n_cube = np.zeros_like(cube, dtype=float)
+        n_cube = np.zeros_like(cube, dtype=int)
         n_cube[cube] = i + 1
         cubes.append(n_cube)
 
@@ -114,3 +114,22 @@ def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
         seed=seed,
     )
     return (project_path, original_meshes)
+
+
+@pytest.fixture(scope="session")
+def project_path(synthetic_data):
+    """A fixture return a path that conains a valid project"""
+    return synthetic_data[0]
+
+
+@pytest.fixture
+def project(project_path):
+    """A fixture for a valid project instance"""
+    return Project(project_path)
+
+
+@pytest.fixture
+def project_with_sources(project):
+    """A fixture for a valid project instance, incl. added sources"""
+    project.add_source("synth_data", "mito")
+    return project

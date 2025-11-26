@@ -13,13 +13,13 @@ from organelle_morphology import Project
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import tempfile
 
 from dask import compute
-from organelle_morphology.util import disk_cache
 
 viridis = mpl.colormaps.get("viridis")
 # %%
-project_path = Path.cwd() / "example_analysis"
+project_path = Path.cwd() / ".." / "example_analysis"
 p = Project(project_path, compression_level="s2", loglevel="DEBUG", clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)))
 p.add_source("../data/Interphase_4T/mito_it00_b0_7_stitched.xml", "mito")
 s = p.sources["mito_it00_b0_7_stitched"]

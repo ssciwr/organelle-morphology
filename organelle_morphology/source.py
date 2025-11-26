@@ -112,7 +112,7 @@ def _block_mesher(
             id,
             normals=False,
             reduction_factor=reduction_factor,
-            voxel_centered=True,
+            voxel_centered=False,
             max_error=None,  # None: max 1 voxel, otherwise unit of data
         )
         mesh = Trimesh(mesh.vertices, mesh.faces, process=False)
@@ -513,15 +513,19 @@ class DataSource:
     @property
     def meshes(self) -> dict[int, Delayed]:
         @delayed
-        def _get_from_cache(key, project_path, source, level, clipping, disk):
-            cache = Cache(project_path, source, level, clipping, disk)
+        def _get_from_cache(
+            key, project_path, source, level, clipping, disk, cache_path
+        ):
+            cache = Cache(project_path, source, level, clipping, disk, cache_path)
             verts, faces = cache[key]
 
             return Trimesh(verts, faces)
 
         @delayed
-        def _write_to_cache(key, mesh, project_path, source, level, clipping, disk):
-            cache = Cache(project_path, source, level, clipping, disk)
+        def _write_to_cache(
+            key, mesh, project_path, source, level, clipping, disk, cache_path
+        ):
+            cache = Cache(project_path, source, level, clipping, disk, cache_path)
             cache[key] = (mesh.vertices, mesh.faces)
 
         self.logger.debug("Requested meshes")
@@ -807,6 +811,7 @@ class DataSource:
         # Ensure that all organelles are computed
         if self._organelles is None:
             self._organelles = {}
+            self.logger.debug(f"Initializing Organelles {self.org_name}")
 
             # Iterate available organelle classes and construct organelles
             if not (orgclass := organelle_registry.get(self.org_name)):

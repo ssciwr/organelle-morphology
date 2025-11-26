@@ -1,10 +1,7 @@
 from typing import Optional
-from organelle_morphology.util import disk_cache
 
 import numpy as np
 import trimesh
-from skimage import measure
-import logging
 import plotly.graph_objects as go
 import skeletor as sk
 import networkx
@@ -26,7 +23,7 @@ def organelle_types() -> list[str]:
 
 
 class Organelle:
-    def __init__(self, source, source_label: int):
+    def __init__(self, source, label: int):
         """The organelle base class
 
         Holds references to its mesh and label. Also holds analysis results.
@@ -36,13 +33,12 @@ class Organelle:
 
         Args:
             source: The source object containing this organelle
-            source_label: label used in the original data for this organelle.
+            label: label used in the original data for this organelle.
         """
-        self._source = source
-        self._source_label = source_label
-        self._organelle_id = f"{self._name}_{str(source_label).zfill(4)}"
+        self.source = source
+        self.label = label
+        self._organelle_id = f"{self._name}_{str(label).zfill(4)}"
         self._mesh_properties = {}
-        self._mesh = {}
         self._morphology_map = {}
         self._skeleton = None
         self._sampled_skeleton = None
@@ -50,7 +46,7 @@ class Organelle:
         self._mcs = defaultdict(dict)
         self._mcs_dict = defaultdict(dict)
 
-        self.logger = self._source.project.logger
+        self.logger = self.source.project.logger
 
     def __init_subclass__(cls, name: Optional[str] = None):
         """Register a given subclass in the global dictionary 'organelles'"""
@@ -72,28 +68,11 @@ class Organelle:
         for label in labels:
             yield organelle_registry[cls._name](
                 source=source,
-                source_label=label,
+                label=label,
             )
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self._organelle_id})"
-
-    def _generate_mesh(self, smooth=True) -> trimesh.Trimesh | None:
-        try:
-            verts, faces, _, _ = measure.marching_cubes(
-                self.data.compute(), spacing=self._source.resolution
-            )
-        except RuntimeError as e:
-            logging.warning("Could not generate mesh for label %s\n%s", self.id, e)
-            self._mesh[self._source.project.compression_level] = None
-            return None
-        mesh = trimesh.Trimesh(verts, faces, process=False)
-        mesh.fix_normals()
-        if smooth:
-            trimesh.smoothing.filter_humphrey(mesh)
-
-        self.logger.debug("Generated mesh for %s", self.id)
-        return mesh
 
     def _generate_skeleton(
         self,
@@ -151,6 +130,8 @@ class Organelle:
                     cont, sampling_dist=sampling_dist, progress=False
                 )
                 skel.mesh = fixed_mesh
+            else:
+                raise ValueError(f"Unknown skeletonize_type: {skeletonization_type}")
 
             sk.post.clean_up(skel, inplace=True, theta=theta)
             sk.post.radii(skel, method="knn")
@@ -382,18 +363,10 @@ class Organelle:
     def sampled_skeleton(self, value):
         self._sampled_skeleton = value
 
-    def _get_mesh(self):
-        chunks = self._source.ids_to_chunks[self._source_label]
-        # TODO: finish this
-
     @property
     def mesh(self):
         """Get the mesh for this organelle"""
-        with disk_cache(self._source.project, f"mesh_{self._organelle_id}") as cache:
-            if self._source.project.compression_level not in cache:
-                cache[self._source.project.compression_level] = self._get_mesh()
-
-            return cache[self._source.project.compression_level]
+        return self.source.meshes[self.label]
 
     @property
     def id(self):
@@ -414,12 +387,12 @@ class Organelle:
         "voxel_solidity":ratio of pixels in the convex hull to those in the region
 
         """
-        return self._source.basic_geometric_properties[self.id]
+        return self.source.basic_geometric_properties[self.id]
 
     @property
     def mesh_properties(self):
         """Get the mesh data for this organelle"""
-        comp_level = self._source.project.compression_level
+        comp_level = self.source.project.compression_level
 
         if comp_level not in self._mesh_properties:
             self._mesh_properties[comp_level] = {}
@@ -443,7 +416,7 @@ class Organelle:
     @property
     def morphology_map(self):
         """Get the mesh data for this organelle"""
-        comp_level = self._source.project.compression_level
+        comp_level = self.source.project.compression_level
 
         # morph radius can be 0 if vertices are used as sample points.
         morph_radius = 0.0
@@ -543,13 +516,11 @@ class Organelle:
         return self._mcs_dict
 
     @property
-    def data(self):
+    def data(self) -> da.Array:
         """Get the raw data for this organelle
         by filtering the data of the source object"""
-        source_ds = self._source.data[:]
-        org_ds = da.where(source_ds == self._source_label, source_ds, 0)
-
-        return org_ds
+        source_ds = self.source.data[:]
+        return da.where(source_ds == self.label, source_ds, 0)
 
 
 class Mitochondrium(Organelle, name="mito"):
