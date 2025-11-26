@@ -4,6 +4,7 @@ from organelle_morphology import Project
 
 import numpy as np
 import pytest
+from .synthetic_data_generator import generate_synthetic_dataset
 
 
 def cubify(p, x, y, z, min_s: int = 3, max_s: Optional[int] = 6, z_offset=0):
@@ -101,3 +102,15 @@ def voxels_random(size=30, n_points=5):
         cubes.append(n_cube)
 
     return reduce(np.add, cubes)
+
+
+@pytest.fixture(scope="session")
+def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
+    """A fixture for a synthetic dataset"""
+    project_path, original_meshes = generate_synthetic_dataset(
+        n_objects=n_objects,
+        object_size=object_size,
+        object_distance=object_distance,
+        seed=seed,
+    )
+    return (project_path, original_meshes)
