@@ -9,10 +9,10 @@ from tqdm import tqdm
 import trimesh
 from trimesh import Trimesh
 from zmesh import Mesh, Mesher
-from organelle_morphology import Project
+from organelle_morphology import Project, merge_meshes
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
 import tempfile
 
 from dask import compute
@@ -35,6 +35,7 @@ d.compute().show()
 # %% clear memory, load from cache
 s.clear_memory_cache()
 print(len(s.labels))
+c = p.get_caches()
 
 
 # %% change compression
@@ -43,27 +44,37 @@ p.clipping = [[0.6,0,0], [1,1,1]]
 p.compression_level = "s3"
 print(len(s.labels))
 
-mmesh = s.merge_meshes(list(s.meshes.values()), color=1).compute()
+mmesh = merge_meshes(list(s.meshes.values()), color=1).compute()
 mmesh.show()
 
 # %% debug colors
 s = p.sources["mito_it00_b0_7_stitched"]
 p.clipping = [[0.6,0,0], [1,1,1]]
 s.calculate_mesh(debug_color=2)
-mmesh = s.merge_meshes(list(s.meshes.values()), color=0).compute()
+mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 mmesh.show()
 
-# %%
-p.clipping = [[0.6,0.6,0.4], [0.8,0.8,0.6]]
-p.clipping = [[0.6,0.3,0.0], [0.8,0.8,1]]
+# %% weired cubes in the middle
+s = p.sources["mito_it00_b0_7_stitched"]
+p.clipping = [[0.3,0,0], [0.7,1,1]]
+p.compression_level = "s2" # also on other levels
+s.calculate_mesh(debug_color=1)
+mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
+mmesh.show()
+
+# %% high-res
+p.clipping = [[0.6,0.3,0.4], [0.8,0.8,1]]
 p.compression_level = "s1"
 print(len(s.labels))
-
-mmesh = s.merge_meshes(list(s.meshes.values()), color=0).compute()
+mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 mmesh.show()
 
-# %%
+# %% Project API
+p.clipping = [[0.6,0,0], [1,1,1]]
+p.compression_level = "s3"
 
+mmesh = p.merged_meshes(color=1)
+mmesh.show()
 
 # %%
 

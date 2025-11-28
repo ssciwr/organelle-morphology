@@ -1,24 +1,23 @@
-import contextlib
 from pathlib import Path
-from typing import Optional
-import cachetools
-import hashlib
+from typing import Optional, Iterable
 import logging
 
-from multiprocess.pool import Pool
-import shelved_cache
+from dask.delayed import Delayed, delayed
+from trimesh import Trimesh
+import trimesh
+import matplotlib as mpl
 import xdg
-from tqdm import tqdm
 import pickle
+from collections import defaultdict, deque
+import time
 
-import organelle_morphology
 
 CACHE_DIR = xdg.xdg_cache_home() / "organelle_morphology"
 
 
 class Disk_Store:
-    def __init__(self, cache_name: str, cache_path: Path):
-        self.path: Path = cache_path / cache_name
+    def __init__(self, cache_name: str, cache_root: Path):
+        self.path: Path = cache_root / cache_name
         if not self.path.exists():
             self.path.mkdir(parents=True)
 
@@ -60,14 +59,14 @@ class Cache:
         level: str,
         clipping: str,
         disk=True,
-        cache_path: Optional[Path] = None,
+        cache_root: Optional[Path] = None,
     ):
-        self.cache_name = f"{project_path.name}/{source}/{level}/{clipping}"
+        self.cache_name = f"cache_{project_path.name}/{source}/{level}/{clipping}"
         self.stores: list = [{}]
         self.disk = disk
-        self.cache_path = cache_path if cache_path else CACHE_DIR
+        self.cache_root = cache_root if cache_root else CACHE_DIR
         if disk:
-            self.stores.append(Disk_Store(self.cache_name, self.cache_path))
+            self.stores.append(Disk_Store(self.cache_name, self.cache_root))
 
     def __setitem__(self, key, value):
         for store in self.stores:
@@ -92,75 +91,121 @@ class Cache:
         for store in self.stores:
             del store[key]
 
-    def clear(self):
+    def clear_all(self):
         """Deletes all caches, in memory and on disk"""
         for store in self.stores:
             store.clear()
 
-    def delete_disk_cache(self):
+    def clear_disk_cache(self):
         """Delete this cache from disk.
         Does nothing if it was not saved to disk.
         """
         if not self.disk:
-            self.stores.append(Disk_Store(self.cache_name, self.cache_path))
+            self.stores.append(Disk_Store(self.cache_name, self.cache_root))
         ds: Disk_Store = self.stores.pop(-1)
         ds.clear()
         ds.path.rmdir()
         self.disk = False
 
-
-#
-# @contextlib.contextmanager
-# def disk_cache(project_path: Path, name, maxsize=1000000):
-#     # Define the cache
-#     cache = shelved_cache.PersistentCache(
-#         cachetools.LRUCache,
-#         str(
-#             xdg.xdg_cache_home()
-#             / "organelle_morphology"
-#             / hashlib.sha256(str(project_path.absolute()).encode("utf-8")).hexdigest()
-#             / name
-#         ),
-#         maxsize=maxsize,
-#     )
-#
-#     # Ensure that the cache contains a timestamp
-#     if "timestamp" not in cache:
-#         cache["timestamp"] = project_path.stat().st_mtime
-#
-#     # Maybe decide to invalidate the cache based on the data timestamp
-#     if cache.get("timestamp") != project_path.stat().st_mtime:
-#         cache.clear()
-#
-#     # Return the cache
-#     yield cache
-#
-#     # Close the cache file handle
-#     cache.close()
+    def clear_memory_cache(self):
+        """Clear the memory cache. Other caches (disk) remain untouched"""
+        self.stores[0].clear()
 
 
-# not sure yet wether to fully remove it or try to integrate it again.
+@delayed
+def color_delayed_trimesh(tmesh: Trimesh, color: int):
+    if color:
+        if color == 1:
+            tmesh.visual.vertex_colors = trimesh.visual.random_color()
+        elif color == 2:
+            viridis = mpl.colormaps.get("viridis")
+            tmesh.visual.face_colors = viridis.resampled(len(tmesh.faces)).colors
+        elif color < 0:
+            cm = mpl.colormaps.get("tab20")
+            tmesh.visual.face_colors = cm.colors[-color % 20]
 
-#
-# @contextlib.contextmanager
-# def parallel_pool(total=None, cores=None):
-#     """A context manager that runs the code in parallel"""
-#     # Create a process pool
-#
-#     pool = Pool(cores)
-#
-#     # Run the code in parallel
-#     if total:
-#         pbar = tqdm(total=total)
-#         yield pool, pbar
-#
-#     else:
-#         yield pool
-#
-#     # Close the pool
-#     pool.close()
-#     pool.join()
-#
+    return tmesh
+
+
+@delayed
+def merge_delayed_trimeshes(tmeshes: list[Trimesh]):
+    tmesh = Trimesh()
+    for mesh in tmeshes:
+        tmesh += mesh
+    tmesh.merge_vertices(
+        merge_tex=True,
+        merge_norm=True,
+        digits_vertex=2,
+        digits_norm=2,
+        digits_uv=2,
+    )
+    return tmesh
+
+
+def merge_meshes(meshes: Iterable[Delayed], color: Optional[int] = None) -> Delayed:
+    """Merges delayed meshes into one concrete new Mesh object
+
+    Needs overlapping meshes, otherwise the intersections will not be
+    connected.
+    """
+
+    meshes = list(meshes)
+    if color is None:
+        color = 0
+    if color:
+        meshes = [color_delayed_trimesh(m, color) for m in meshes]
+
+    while (length := len(meshes)) > 1:
+        merged = []
+        for i, _ in enumerate(meshes[::2]):
+            j = length - (i + 1)
+            # odd-length: indices meet in the middle
+            if i == j:
+                merged.append(meshes[i])
+                break
+            merged.append(merge_delayed_trimeshes([meshes[i], meshes[j]]))
+        meshes = merged
+
+    return meshes[0]
+
+
+class FrequencyFilter(logging.Filter):
+    def __init__(self, threshold=10, burst_threshold=3, window_size=4):
+        self.threshold = threshold  # Log every nth occurrence in a short period
+        self.burst_threshold = (
+            burst_threshold  # Emit log immediately if below this threshold
+        )
+        self.window_size = window_size  # Time window for counting occurrences (seconds)
+        self.cache = defaultdict(lambda: {"count": 0, "queue": deque()})
+
+    def filter(self, record):
+        current_time = time.time()
+        entry = self.cache[record.getMessage()]
+
+        # Remove old entries from the queue
+        n_removed = -self.burst_threshold
+        while entry["queue"] and current_time - entry["queue"][0] > self.window_size:
+            n_removed += 1
+            entry["count"] -= 1
+            entry["queue"].popleft()
+
+        entry["count"] += 1
+        entry["queue"].append(current_time)
+
+        if entry["count"] <= self.burst_threshold:
+            return True
+        elif (
+            entry["count"] % self.threshold == 0
+            and current_time - entry["queue"][0] < self.window_size
+        ):
+            print(
+                f"(skipped {self.threshold - self.burst_threshold} duplicate log entries)"
+            )
+
+        return False
+
+
+frequency_filter = FrequencyFilter(threshold=103, burst_threshold=3, window_size=2)
 
 
 def get_logger(file: Path):
@@ -179,6 +224,9 @@ def get_logger(file: Path):
     f_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     c_handler.setFormatter(c_format)
     f_handler.setFormatter(f_format)
+
+    # frequency filtering
+    c_handler.addFilter(frequency_filter)
 
     # Add handlers to the logger
     logger.addHandler(c_handler)

@@ -57,7 +57,7 @@ class Organelle:
             cls._name = "organelle"
 
     @classmethod
-    def construct(cls, source, labels: tuple[int]):
+    def construct(cls, source, labels: list[int]):
         """A trivial factory method for organelle instances.
 
         It constructs an instance per label. The construction process for each

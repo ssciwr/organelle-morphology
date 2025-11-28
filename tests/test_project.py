@@ -1,12 +1,18 @@
 from organelle_morphology.project import Project
-from organelle_morphology.organelle import Organelle
-from organelle_morphology.source import DataSource
 from .synthetic_data_generator import generate_synthetic_dataset
+
+from dask.distributed import LocalCluster
 
 import pytest
 import pathlib
-import tempfile
 import numpy as np
+
+
+@pytest.fixture(scope="session")
+def client():
+    cluster = LocalCluster()
+    yield cluster.get_client()
+    cluster.close()
 
 
 def test_synthetic_data_generation(synthetic_data, tmp_path):
@@ -38,55 +44,62 @@ def test_synthetic_data_generation(synthetic_data, tmp_path):
         assert (organell_path / "setup0" / "timepoint0" / "s3").exists()
 
 
-def test_valid_project_init(synthetic_data):
+def test_valid_project_init(synthetic_data, client):
     """Checks standard construction of the Project object"""
     cebra_project_path = synthetic_data[0]
     # With a pathlib.Path object
-    project = Project(project_path=cebra_project_path)
+    project = Project(project_path=cebra_project_path, client=client)
     assert project.path == cebra_project_path
 
     # With a string path
-    project = Project(project_path=str(cebra_project_path))
+    project = Project(project_path=str(cebra_project_path), client=client)
     assert project.path == cebra_project_path
 
 
-def test_project_clipping(synthetic_data):
+def test_project_clipping(synthetic_data, client):
     """Checks that the clipping values are correctly validated"""
     cebra_project_path = synthetic_data[0]
 
     # A correct clipping
     clip = ((0.2, 0.2, 0.2), (0.8, 0.8, 0.8))
-    project = Project(project_path=cebra_project_path, clipping=clip)
+    project = Project(project_path=cebra_project_path, clipping=clip, client=client)
     assert np.all(project.clipping == clip)
 
     # Incorrect clippings throw
 
     with pytest.raises(ValueError):
-        Project(project_path=cebra_project_path, clipping=((0.2, 0.2), (0.8, 0.8)))
+        Project(
+            project_path=cebra_project_path,
+            clipping=((0.2, 0.2), (0.8, 0.8)),
+            client=client,
+        )
 
     with pytest.raises(ValueError):
         Project(
             project_path=cebra_project_path,
             clipping=((0.2, 0.6, 0.2), (0.8, 0.5, 0.8)),
+            client=client,
         )
     with pytest.raises(ValueError):
         Project(
             project_path=cebra_project_path,
             clipping=((-0.2, 0.2, 0.2), (0.8, 0.5, 0.8)),
+            client=client,
         )
     with pytest.raises(ValueError):
         Project(
             project_path=cebra_project_path,
             clipping=((0.2, 0.2, 0.2), (0.8, 1.5, 0.8)),
+            client=client,
         )
     # add a source and check that the clipping is correctly propagated
     project.add_source(xml_path="synth_data", organelle="mito")
     assert list(project.sources.values())[0].data.shape == (141, 144, 198)
 
 
-def test_add_source(synthetic_data):
+def test_add_source(synthetic_data, client):
     """Check adding source to a given project"""
-    project = Project(synthetic_data[0])
+    project = Project(synthetic_data[0], client=client)
     source_dict = {"mito": "synth_data", "unknown": "synth_data"}
     for oid, source in source_dict.items():
         if oid == "unknown":
@@ -106,7 +119,7 @@ def test_add_source(synthetic_data):
     assert s.project == project
 
 
-def test_add_source_wrong_source(synthetic_data):
-    project = Project(synthetic_data[0])
+def test_add_source_wrong_source(synthetic_data, client):
+    project = Project(synthetic_data[0], client=client)
     with pytest.raises(FileNotFoundError):
         project.add_source("wrong_source", "mito")

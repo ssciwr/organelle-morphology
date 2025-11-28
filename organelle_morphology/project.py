@@ -1,7 +1,10 @@
 from typing import Callable, Iterable, Optional
+
+from dask.delayed import Delayed
+from trimesh import Trimesh
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import CACHE_DIR, Cache, get_logger
+from organelle_morphology.util import CACHE_DIR, Cache, get_logger, merge_meshes
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
@@ -27,6 +30,7 @@ class Project:
         clipping: Optional[clipping_type] = None,
         compression_level: str = "s0",
         loglevel: Optional[str] = None,
+        client: Optional[Client] = None,
     ):
         """Instantiate an EM project
 
@@ -90,14 +94,17 @@ class Project:
             "clipping": lambda: str(self.clipping).replace("\n", ""),
             "level": lambda: str(self.compression_level),
             "disk": True,
-            "cache_path": lambda: self.path,
+            "cache_root": lambda: self.path,
         }
 
         # debug help
         self.use_cache = True
         self.debug = False
 
-        self.client = Client()
+        self.client = client if client else Client()
+
+    def __str__(self):
+        return f"Project at {self.path}"
 
     def set_loglevel(self, loglevel: Optional[str]):
         if loglevel:
@@ -106,7 +113,7 @@ class Project:
 
     @property
     def path(self) -> Path:
-        return self._project_path
+        return self._project_path.resolve()
 
     @property
     def cache_settings(self):
@@ -857,27 +864,80 @@ class Project:
 
         return result
 
+    def merged_meshes(
+        self, ids: str | list[str] = "*", color=1, delayed=False
+    ) -> Trimesh | Delayed:
+        """Get a mesh composed of all or some organelles
+
+        Set the compression level and clipping in the project.
+
+        Parameters
+        ----------
+        ids
+            Glob style filter for the organelles.
+            The default "*" returns all organelles in the project.
+        color
+            0: don't color the mesh
+            1: color per source or per id filter if multiple are supplied (default)
+            2: color per face
+        delayed
+            If True, return a dask delayed object instead of the computed mesh.
+            Default: False
+        """
+
+        if isinstance(ids, list):
+            organelles = [self.organelles(id) for id in ids]
+        else:
+            organelles = [s.organelles(ids) for s in self.sources.values()]
+        meshes = []
+        for i, orgs in enumerate(organelles):
+            c = 0
+            if color == 1:
+                # per filter or source
+                c = -(i + 1)
+            elif color == 2:
+                # per instance
+                c = 1
+            elif color == 3:
+                # per face
+                c = 2
+            meshes.append(merge_meshes([o.mesh for o in orgs], color=c))
+
+        mesh = merge_meshes(meshes)
+        if not delayed:
+            mesh = mesh.compute()
+        return mesh
+
     def get_caches(self):
         caches = []
-
-        print(f"{CACHE_DIR / self.path.name}")
-        for source in filter(
-            lambda f: f.is_dir(), (CACHE_DIR / self.path.name).iterdir()
-        ):
-            print(f"├─ /{source.name}")
-
+        cs = self.cache_settings
+        cache_dir = cs["cache_root"] / f"cache_{cs['project_path'].name}"
+        messages = ["*** List of Caches: ***"]
+        messages.append(str(cache_dir))
+        for source in filter(lambda f: f.is_dir(), (cache_dir).iterdir()):
+            messages.append(f"├─ /{source.name}")
             for level in filter(lambda f: f.is_dir(), source.iterdir()):
-                print(f"│  ├─ /{level.name}")
+                messages.append(f"│  ├─ /{level.name}")
                 for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
-                    print(f"│  │  ├─ /{clip_dir.name}")
+                    messages.append(f"│  │  ├─ /{clip_dir.name}")
                     caches.append(
                         Cache(
-                            project_path=self.path,
+                            project_path=cs["project_path"],
                             source=source.name,
                             level=level.name,
                             clipping=clip_dir.name,
                             disk=True,
+                            cache_root=cs["cache_root"],
                         )
                     )
+        self.logger.info("\n".join(messages))
         self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
         return caches
+
+    def clear_caches(self, clear_disk=False):
+        for source in self.sources.values():
+            source.clear_memory_cache()
+            source.cache.clear_memory_cache()
+        # iterate over what is on disk rather than the currently loaded sources
+        for cache in self.get_caches():
+            cache.clear_disk_cache()

@@ -16,7 +16,7 @@ from dask.array.core import Array
 from dask.delayed import Delayed, delayed
 from dask.distributed import print as dprint
 
-from zmesh import Mesh, Mesher
+from zmesh import Mesher
 
 import fnmatch
 import numpy as np
@@ -27,7 +27,7 @@ import z5py
 
 import warnings
 
-from organelle_morphology.util import Cache
+from organelle_morphology.util import Cache, merge_meshes
 
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
@@ -221,7 +221,7 @@ class DataSource:
         self,
         project: "organelle_morphology.Project",
         xml_path: Path,
-        organelle: Optional[str],
+        organelle: str,
         background_label: int = 0,
     ):
         """Initialize a data source.
@@ -252,19 +252,14 @@ class DataSource:
 
         self._metadata = None
 
-        self._default_values = {
-            "_basic_geometric_properties": {},
-            "_mesh_properties": {},
-            "_meshes": None,
-            "_computed_compression": None,
-            "_morphology_map": {},
-            "_meshes_chunked": None,
-            "_ids_to_chunks": None,
-            "_labels": None,
-            "_storage": {},
-            "_organelles": None,
-        }
+        # initializes hidden fields for properies
         self.clear_memory_cache()
+
+    def __repr__(self):
+        return f"<{type(self).__module__}> {self.xml_path.stem}"
+
+    def __str__(self):
+        return f"DataSource of xml: {self.xml_path.stem}"
 
     def load_n5(self, n5: Path) -> dict[str, Timepoint]:
         f = z5py.File(n5, "r")
@@ -506,6 +501,16 @@ class DataSource:
         )
 
     @property
+    def cache(self):
+        if self._cache is None:
+            cache_settings = self.project.cache_settings
+            cache_settings["source"] = self.xml_path.stem
+            cache = Cache(**cache_settings)
+        else:
+            cache = self._cache
+        return cache
+
+    @property
     def labels(self) -> list[int]:
         """Return the list of labels present in the data source."""
         return list(self.meshes.keys())
@@ -513,19 +518,12 @@ class DataSource:
     @property
     def meshes(self) -> dict[int, Delayed]:
         @delayed
-        def _get_from_cache(
-            key, project_path, source, level, clipping, disk, cache_path
-        ):
-            cache = Cache(project_path, source, level, clipping, disk, cache_path)
+        def _get_from_cache(key, cache):
             verts, faces = cache[key]
-
             return Trimesh(verts, faces)
 
         @delayed
-        def _write_to_cache(
-            key, mesh, project_path, source, level, clipping, disk, cache_path
-        ):
-            cache = Cache(project_path, source, level, clipping, disk, cache_path)
+        def _write_to_cache(key, mesh, cache):
             cache[key] = (mesh.vertices, mesh.faces)
 
         self.logger.debug("Requested meshes")
@@ -534,18 +532,15 @@ class DataSource:
         ):
             self.logger.debug("Meshes not loaded")
             self._meshes = {}
-            cache_settings = self.project.cache_settings
-            cache_settings["source"] = self.xml_path.stem
-            cache = Cache(**cache_settings)
             labels = None
 
-            if "labels" in cache:
+            if "labels" in self.cache:
                 self.logger.debug("Meshes in cache, reading labels..")
-                labels = cache["labels"]
+                labels = self.cache["labels"]
                 self.logger.debug(f"{len(labels)} labels found in cache")
 
                 for label in labels:
-                    self._meshes[label] = _get_from_cache(label, **cache_settings)
+                    self._meshes[label] = _get_from_cache(label, self.cache)
 
                 # keep meshes in distributed memory, gc previously computed meshes
                 self._storage["ref_meshes"] = persist(*self._meshes.values())
@@ -558,13 +553,11 @@ class DataSource:
                 self.calculate_mesh()
                 self.logger.debug("Saving meshes to cache..")
 
-                cache["labels"] = list(self._meshes.keys())
+                self.cache["labels"] = list(self._meshes.keys())
                 meshes_d = list(self._meshes.values())
                 delayed_saves = []
                 for label, mesh_d in self._meshes.items():
-                    delayed_saves.append(
-                        _write_to_cache(label, mesh_d, **cache_settings)
-                    )
+                    delayed_saves.append(_write_to_cache(label, mesh_d, self.cache))
                 compute(*delayed_saves)
 
                 self.logger.debug("Meshes saved in cache")
@@ -591,57 +584,6 @@ class DataSource:
         max = np.max(mesh.vertices, axis=0)
 
         return min, max
-
-    def merge_meshes(self, meshes: list[Delayed], color=None) -> Delayed:
-        """Merges delayed meshes into one concrete new Mesh object
-
-        Needs overlapping meshes, otherwise the intersections will not be
-        connected.
-        """
-
-        @delayed
-        def color_mesh(tmesh, color):
-            if color:
-                if color == 1:
-                    tmesh.visual.vertex_colors = trimesh.visual.random_color()
-                elif color == 2:
-                    viridis = mpl.colormaps.get("viridis")
-                    tmesh.visual.face_colors = viridis.resampled(
-                        len(tmesh.faces)
-                    ).colors
-            return tmesh
-
-        @delayed
-        def merge_two_trimesh(tmeshes: list[Trimesh]):
-            tmesh: Trimesh = Trimesh()
-            for mesh in tmeshes:
-                tmesh += mesh
-            tmesh.merge_vertices(
-                merge_tex=True,
-                merge_norm=True,
-                digits_vertex=2,
-                digits_norm=2,
-                digits_uv=2,
-            )
-            return tmesh
-
-        if color is None:
-            color = 0
-        if color:
-            meshes = [color_mesh(m, color) for m in meshes]
-
-        while (length := len(meshes)) > 1:
-            merged = []
-            for i, _ in enumerate(meshes[::2]):
-                j = length - (i + 1)
-                # odd-length: indices meet in the middle
-                if i == j:
-                    merged.append(meshes[i])
-                    break
-                merged.append(merge_two_trimesh([meshes[i], meshes[j]]))
-            meshes = merged
-
-        return meshes[0]
 
     @property
     def ids_to_chunks(self) -> dict:
@@ -743,7 +685,7 @@ class DataSource:
         for ind in duplicate_ids:
             chunk_idxs = self._ids_to_chunks[ind]
             meshes = [self._meshes_chunked[idx][ind] for idx in chunk_idxs]
-            merged_mesh = self.merge_meshes(meshes, color=0)
+            merged_mesh = merge_meshes(meshes, color=0)
             if simplify:
                 merged_mesh = simplify_mesh(merged_mesh, simplify)
             self._meshes[ind] = merged_mesh
@@ -765,12 +707,20 @@ class DataSource:
         Necessary after change of compression level or clipping.
         """
         self.logger.debug(f"Resetting source {self.org_name}: {self.xml_path.name}")
-        for k, v in self._default_values.items():
-            setattr(self, k, v)
+        self._basic_geometric_properties = {}
+        self._mesh_properties = {}
+        self._meshes = None
+        self._computed_compression = None
+        self._morphology_map = {}
+        self._meshes_chunked = None
+        self._ids_to_chunks = None
+        self._storage = {}
+        self._cache = None
+        self._organelles = None
 
     def organelles(
         self,
-        ids: str = "*",
+        ids: str | list[str] = "*",
         permanent_whitelist=None,
         permanent_blacklist=None,
     ) -> list[Organelle]:
@@ -784,12 +734,18 @@ class DataSource:
         Returns:
             List of organelle objects
         """
-        filtered_ids = self.organelle_ids(
-            ids=ids,
-            permanent_whitelist=permanent_whitelist,
-            permanent_blacklist=permanent_blacklist,
-        )
-        return [self._organelles[id] for id in filtered_ids]
+        result = []
+        if isinstance(ids, str):
+            ids = [ids]
+
+        for id_ in ids:
+            filtered_ids = self.organelle_ids(
+                ids=id_,
+                permanent_whitelist=permanent_whitelist,
+                permanent_blacklist=permanent_blacklist,
+            )
+            result.extend([self._organelles[id] for id in filtered_ids])
+        return result
 
     def organelle_ids(
         self,
