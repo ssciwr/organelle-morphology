@@ -27,7 +27,12 @@ import z5py
 
 import warnings
 
-from organelle_morphology.util import Cache, merge_meshes
+from organelle_morphology.util import (
+    Cache,
+    color_delayed_trimesh_rgba,
+    merge_meshes,
+    mesure_gaussian_curvature_delayed,
+)
 
 
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
@@ -424,13 +429,12 @@ class DataSource:
         return self._basic_geometric_properties[comp_level]
 
     @property
-    def morphology_map(self):
-        """Get the morphology map for all organelles"""
-        self.logger.debug("get morphology map for all organelles")
+    def curvature_map(self):
+        """Get the curvature map for all organelles"""
+        self.logger.debug("get curvature map for all organelles")
 
-        for organelle in self.organelles():
-            self._morphology_map[organelle.id] = organelle.morphology_map
-        return self._morphology_map
+        self.get_curvature(labels=None, color=False)
+        return self._curvature_map
 
     @property
     def data(self) -> Array:
@@ -506,9 +510,8 @@ class DataSource:
             cache_settings = self.project.cache_settings
             cache_settings["source"] = self.xml_path.stem
             cache = Cache(**cache_settings)
-        else:
-            cache = self._cache
-        return cache
+            self._cache = cache
+        return self._cache
 
     @property
     def labels(self) -> list[int]:
@@ -568,7 +571,7 @@ class DataSource:
         """Calculate the corner with the smallest and the one
         with the biggest corrdinates.
 
-        Returns:
+        Returns
         -------
             min: np.ndarray
                 First corner
@@ -584,6 +587,55 @@ class DataSource:
         max = np.max(mesh.vertices, axis=0)
 
         return min, max
+
+    def get_curvature(self, labels: Optional[int | list[int]], color=True, log=True):
+        """Calculate the curvature on vertices.
+        If no label is supplied, all meshes are calculated.
+        To color the meshes they are all moved to a singel worker, avoid for
+        large meshes.
+
+        Parameters
+        ----------
+        labels
+            Optional label or list of labels of meshes to compute the curvature for.
+        color
+            Whether to color the original mesh according to the curvature.
+            Defaults to True
+        log
+            Use a log color scale
+
+        Returns
+        -------
+        curvature
+            List of arrays of the curvature at each vertex. List over all labels.
+        mesh
+            Only returned if color is requested. List of computed meshes, colored
+            by curvature.
+        """
+        if labels is None:
+            labels = self.labels
+        if not isinstance(labels, (list, tuple)):
+            labels = [labels]
+
+        tasks = []
+        for label in labels:
+            dmesh = self.meshes[label]
+            if label in self._curvature_map:
+                curvature = self._curvature_map[label]
+                tasks.append(curvature)
+            else:
+                curvature = mesure_gaussian_curvature_delayed(dmesh)
+                tasks.append(curvature)
+            if color:
+                tasks.append(color_delayed_trimesh_rgba(dmesh, curvature, log=log))
+        step = 2 if color else 1
+        result = compute(*tasks)
+        self._curvature_map = {
+            label: result[::step][i] for i, label in enumerate(labels)
+        }
+        if color:
+            return result[::2], result[1::2]
+        return result
 
     @property
     def ids_to_chunks(self) -> dict:
@@ -711,60 +763,14 @@ class DataSource:
         self._mesh_properties = {}
         self._meshes = None
         self._computed_compression = None
-        self._morphology_map = {}
+        self._curvature_map = {}
         self._meshes_chunked = None
         self._ids_to_chunks = None
         self._storage = {}
         self._cache = None
         self._organelles = None
 
-    def organelles(
-        self,
-        ids: str | list[str] = "*",
-        permanent_whitelist=None,
-        permanent_blacklist=None,
-    ) -> list[Organelle]:
-        """Return a list of organelle objects.
-
-        Args:
-            ids: glob pattern to match the ids. Default "*" includes all.
-            permanent_whitelist: ids to always include
-            permanent_blacklist: ids to always exclude
-
-        Returns:
-            List of organelle objects
-        """
-        result = []
-        if isinstance(ids, str):
-            ids = [ids]
-
-        for id_ in ids:
-            filtered_ids = self.organelle_ids(
-                ids=id_,
-                permanent_whitelist=permanent_whitelist,
-                permanent_blacklist=permanent_blacklist,
-            )
-            result.extend([self._organelles[id] for id in filtered_ids])
-        return result
-
-    def organelle_ids(
-        self,
-        ids: str = "*",
-        permanent_whitelist=None,
-        permanent_blacklist=None,
-    ) -> list[Organelle] | list[str]:
-        """Return a list of organelle ids.
-
-        Args:
-            ids: glob pattern to match the ids. Default "*" includes all.
-            permanent_whitelist: ids to always include
-            permanent_blacklist: ids to always exclude
-
-        Returns:
-            List of organelle ids
-        """
-
-        # Ensure that all organelles are computed
+    def instantiate_organelles(self):
         if self._organelles is None:
             self._organelles = {}
             self.logger.debug(f"Initializing Organelles {self.org_name}")
@@ -775,15 +781,92 @@ class DataSource:
             for organelle in orgclass.construct(self, self.labels):
                 self._organelles[organelle.id] = organelle
 
-        # Filter the organelles with the given ids pattern
-        filtered_ids = fnmatch.filter(self._organelles.keys(), ids)
+    @property
+    def organelles(self) -> list[Organelle]:
+        self.instantiate_organelles()
+        return self.get_organelles(
+            ids="*",
+            permanent_whitelist=self.project.permanent_whitelist,
+            permanent_blacklist=self.project.permanent_blacklist,
+        )
 
-        if permanent_blacklist is not None:
-            filtered_ids = [
-                org_id for org_id in filtered_ids if org_id not in permanent_blacklist
-            ]
+    @property
+    def organelle_ids(self) -> list[str]:
+        self.instantiate_organelles()
+        return self.get_organelle_ids(
+            ids="*",
+            permanent_whitelist=self.project.permanent_whitelist,
+            permanent_blacklist=self.project.permanent_blacklist,
+        )
 
-        if permanent_whitelist is not None:
-            filtered_ids.extend(permanent_whitelist)
+    def get_organelles(
+        self,
+        ids: str | list[str] = "*",
+        permanent_whitelist=None,
+        permanent_blacklist=None,
+    ) -> list[Organelle]:
+        """Return a list of organelle objects.
+        Apply filters by id glob pattern and permanent filter lists.
 
-        return filtered_ids
+        Args:
+            ids: glob pattern to match the ids. Default "*" includes all.
+            permanent_whitelist: ids to always include,
+                does *not* respect the project setting.
+            permanent_blacklist: ids to always exclude,
+                does *not* respect the project setting.
+
+        Returns:
+            List of organelle objects
+        """
+        filtered_ids = self.get_organelle_ids(
+            ids=ids,
+            permanent_whitelist=permanent_whitelist,
+            permanent_blacklist=permanent_blacklist,
+        )
+        assert isinstance(self._organelles, dict), (
+            "RuntimeError: source._organelles did not get set!"
+        )
+        return [self._organelles[id] for id in filtered_ids]
+
+    def get_organelle_ids(
+        self,
+        ids: str | list[str] = "*",
+        permanent_whitelist=None,
+        permanent_blacklist=None,
+    ) -> list[str]:
+        """Return a list of organelle ids.
+        Computes self._organelles
+
+        Args:
+            ids: glob pattern to match the ids. Default "*" includes all.
+            permanent_whitelist: ids to always include,
+                does *not* respect the project setting.
+            permanent_blacklist: ids to always exclude,
+                does *not* respect the project setting.
+
+        Returns:
+            List of organelle ids
+        """
+        self.instantiate_organelles()
+        assert isinstance(self._organelles, dict)
+
+        result = []
+        if isinstance(ids, str):
+            ids = [ids]
+
+        for id_ in ids:
+            # Filter the organelles with the given ids pattern
+            filtered_ids = fnmatch.filter(self._organelles.keys(), id_)
+
+            if permanent_blacklist is not None:
+                filtered_ids = [
+                    org_id
+                    for org_id in filtered_ids
+                    if org_id not in permanent_blacklist
+                ]
+
+            if permanent_whitelist is not None:
+                filtered_ids.extend(permanent_whitelist)
+            result.extend(filtered_ids)
+
+        return result

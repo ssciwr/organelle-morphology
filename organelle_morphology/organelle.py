@@ -39,7 +39,6 @@ class Organelle:
         self.label = label
         self._organelle_id = f"{self._name}_{str(label).zfill(4)}"
         self._mesh_properties = {}
-        self._morphology_map = {}
         self._skeleton = None
         self._sampled_skeleton = None
         self._skeleton_info = {}
@@ -85,29 +84,46 @@ class Organelle:
         path_sample_dist: float = 0.1,
     ):
         """
-        Generates a skeleton for the organelle. The skeleton is generated and cleaned using the skeletor library.
+        Generates a skeleton for the organelle.
+        The skeleton is generated and cleaned using the skeletor library.
 
-        The last generated skeleton will be kept in memory and can be accessed using the skeleton or sampled_skeleton property.
-        :param skeletonization_type: The type of skeletonization to use. Can be either "wavefront" or "vertex_clusters".
+        The last generated skeleton will be kept in memory and can be accessed
+        using the skeleton or sampled_skeleton property.
+        Parameters:
+        -----------
+        skeletonization_type
+            The type of skeletonization to use. Can be either
+            "wavefront" or "vertex_clusters".
 
-        :param waves: The number of waves to use for the wavefront skeletonization. The higher the number of waves, the more branches are removed.
-        :param step_size: The step size for the wavefront skeletonization. The higher the step size, the less vertices are used for the skeleton.
-
-        :param theta: The threshold for the clean_up function. The higher the threshold, the more branches are removed.
-        :param epsilon: The epsilon value for the contract function. The higher the epsilon, the more the mesh is contracted.
-        :param sampling_dist: The sampling distance for the skeletonize function. The higher the sampling distance, the less vertices are used for the skeleton.
-        :param path_sample_dist: The distance between the sample points on the skeleton arms. The higher the distance, the less sample points are used.
+        waves
+            The number of waves to use for the wavefront skeletonization.
+            The higher the number of waves, the more branches are removed.
+        step_size
+            The step size for the wavefront skeletonization.
+            The higher the step size, the less vertices are used for the skeleton.
+        theta
+            The threshold for the clean_up function. The higher the threshold,
+            the more branches are removed.
+        epsilon
+            The epsilon value for the contract function. The higher the epsilon,
+            the more the mesh is contracted.
+        sampling_dist
+            The sampling distance for the skeletonize function. The higher
+            the sampling distance, the less vertices are used for the skeleton.
+        path_sample_dist
+            The distance between the sample points on the skeleton arms.
+            The higher the distance, the less sample points are used.
         """
 
         try:
-            fixed_mesh = sk.pre.fix_mesh(self.mesh)
+            fixed_mesh = sk.pre.fix_mesh(self.mesh.compute())
         except IndexError as e:
             self.logger.debug(
                 "Could not fix mesh in skeleton generation for %s with error %s"
                 % (self.id, e)
             )
 
-            fixed_mesh = self.mesh
+            fixed_mesh = self.mesh.compute()
 
         if skeletonization_type not in ["wavefront", "vertex_clusters"]:
             raise ValueError(
@@ -159,8 +175,9 @@ class Organelle:
 
     def _sample_skeleton(self, path_sample_dist: float = 0.1):
         # the sample points are points along the skeleton arms
-        # and the reference points are the vertices of the skeleton from which these samples have been generated.
-        # we need these to later calculate the normal vector for the plane which will intersect our mesh
+        # and the reference points are the vertices of the skeleton from which
+        # these samples have been generated. we need these to later calculate
+        # the normal vector for the plane which will intersect our mesh
         sampled_path = []
         reference_point = []
         for edge in self.skeleton.edges:
@@ -230,15 +247,15 @@ class Organelle:
 
     def plotly_mesh(
         self,
-        show_morphology: bool = False,
+        show_curvature: bool = False,
         show_skeleton: bool = False,
         mcs_label=False,
         mcs_filter_ids=None,
     ):
         # prepare the plotly mesh object for visualization
 
-        verts = self.mesh.vertices
-        faces = self.mesh.faces
+        verts = self.mesh.compute().vertices
+        faces = self.mesh.compute().faces
 
         # prepare data for plotly
         vertsT = np.transpose(verts)
@@ -250,8 +267,8 @@ class Organelle:
         opacity = 1
 
         # override settings if special visualization is requested
-        if show_morphology:
-            curvature_vertices = self.morphology_map
+        if show_curvature:
+            curvature_vertices = self.curvature_map
             intensity = curvature_vertices
             colorscale = "Viridis"
             opacity = 1
@@ -395,18 +412,19 @@ class Organelle:
         comp_level = self.source.project.compression_level
 
         if comp_level not in self._mesh_properties:
+            mesh = self.mesh.compute()
             self._mesh_properties[comp_level] = {}
 
-            self._mesh_properties[comp_level]["mesh_volume"] = self.mesh.volume
-            self._mesh_properties[comp_level]["mesh_area"] = self.mesh.area
-            self._mesh_properties[comp_level]["mesh_centroid"] = self.mesh.centroid
-            self._mesh_properties[comp_level]["mesh_inertia"] = self.mesh.moment_inertia
+            self._mesh_properties[comp_level]["mesh_volume"] = mesh.volume
+            self._mesh_properties[comp_level]["mesh_area"] = mesh.area
+            self._mesh_properties[comp_level]["mesh_centroid"] = mesh.centroid
+            self._mesh_properties[comp_level]["mesh_inertia"] = mesh.moment_inertia
 
-            self._mesh_properties[comp_level]["water_tight"] = self.mesh.is_watertight
+            self._mesh_properties[comp_level]["water_tight"] = mesh.is_watertight
             self._mesh_properties[comp_level]["sphericity"] = (
-                36 * np.pi * self.mesh.volume**2
-            ) ** (1 / 3) / self.mesh.area
-            dimensions = self.mesh.bounding_box_oriented.extents
+                36 * np.pi * mesh.volume**2
+            ) ** (1 / 3) / mesh.area
+            dimensions = mesh.bounding_box_oriented.extents
             self._mesh_properties[comp_level]["flatness_ratio"] = min(dimensions) / max(
                 dimensions
             )
@@ -414,26 +432,9 @@ class Organelle:
         return self._mesh_properties[comp_level]
 
     @property
-    def morphology_map(self):
+    def curvature_map(self):
         """Get the mesh data for this organelle"""
-        comp_level = self.source.project.compression_level
-
-        # morph radius can be 0 if vertices are used as sample points.
-        morph_radius = 0.0
-
-        if comp_level not in self._morphology_map:
-            mesh = self.mesh
-            if mesh is None:
-                self._morphology_map[comp_level] = None
-                return self._morphology_map[comp_level]
-
-            sample_points = mesh.vertices
-            curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
-                mesh, sample_points, radius=morph_radius
-            )
-
-            self._morphology_map[comp_level] = curvature_vertices
-        return self._morphology_map[comp_level]
+        return self.source.get_curvature(self.label, color=False)[0]
 
     def add_mcs(self, mcs_dict):
         mcs_target = mcs_dict["partner_id"]

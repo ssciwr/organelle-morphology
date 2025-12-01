@@ -134,3 +134,29 @@ def test_block_mesher_debug_colors(voxels_random, debug_color):
     )
     assert len(meshes) == n_labels - 1
     assert len(ids) == n_labels - 1
+
+
+def test_curvature_map(project_with_sources):
+    s = list(project_with_sources.sources.values())[0]
+    curvs = s.curvature_map
+    assert len(curvs) == 19
+
+
+def test_curvature(project_with_sources):
+    s = list(project_with_sources.sources.values())[0]
+    res = s.get_curvature(labels=None, color=True, log=True)
+    assert len(res) == 2
+    assert len(res[0]) == len(res[1])
+    assert all([v.shape == (m.vertices.shape[0],) for v, m in zip(res[0], res[1])])
+
+    res = s.get_curvature(labels=None, color=True, log=False)
+    assert len(res) == 2
+    assert len(res[0]) == len(res[1])
+    assert all([v.shape == (m.vertices.shape[0],) for v, m in zip(res[0], res[1])])
+
+    res = s.get_curvature(labels=None, color=False)
+    assert len(res) == 19
+    assert all([isinstance(r, np.ndarray) for r in res])
+
+    res = s.get_curvature(labels=s.labels[0], color=False)
+    assert len(res) == 1

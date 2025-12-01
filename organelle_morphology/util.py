@@ -3,6 +3,7 @@ from typing import Optional, Iterable
 import logging
 
 from dask.delayed import Delayed, delayed
+import numpy as np
 from trimesh import Trimesh
 import trimesh
 import matplotlib as mpl
@@ -113,7 +114,32 @@ class Cache:
 
 
 @delayed
-def color_delayed_trimesh(tmesh: Trimesh, color: int):
+def mesure_gaussian_curvature_delayed(tmesh: Trimesh):
+    # morph radius can be 0 if vertices are used as sample points.
+    morph_radius = 0.0
+    curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
+        tmesh, tmesh.vertices, radius=morph_radius
+    )
+    return curvature_vertices
+
+
+@delayed
+def color_delayed_trimesh_rgba(tmesh: Trimesh, values, log=True) -> Trimesh:
+    cm = mpl.colormaps["RdBu"].copy().reversed()
+    cm.set_extremes(under=(1, 0, 1, 1), over=(0, 1, 0, 1))
+    if log:
+        norm = mpl.colors.SymLogNorm(
+            linthresh=0.01, linscale=0.01, base=10, vmin=-5, vmax=5
+        )
+    else:
+        norm = mpl.colors.Normalize(vmin=-5, vmax=5)
+    colors = cm(norm(values))
+    tmesh.visual.vertex_colors = colors
+    return tmesh
+
+
+@delayed
+def color_delayed_trimesh(tmesh: Trimesh, color: int) -> Trimesh:
     if color:
         if color == 1:
             tmesh.visual.vertex_colors = trimesh.visual.random_color()

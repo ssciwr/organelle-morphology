@@ -76,7 +76,37 @@ p.compression_level = "s3"
 mmesh = p.merged_meshes(color=1)
 mmesh.show()
 
+# $$$$$$$$$$$$$
+# %% Organelles
+p.clipping = [[0.6,0,0], [1,1,1]]
+p.compression_level = "s3"
+s = p.sources["mito_it00_b0_7_stitched"]
+label = 88000113
+id_ = f"mito_{label}"
+o = s.get_organelles(ids=id_)[0]
+
 # %%
+# p.skeletonize_vertex_clusters(id_)
+p.skeletonize_wavefront(id_)
+o.skeleton.show()
+
+o.mesh_properties
+o.geometric_data
+
+o.curvature_map
+cm = mpl.colormaps["coolwarm"].copy()
+norm = mpl.colors.Normalize(vmin=o.curvature_map.min(), vmax=o.curvature_map.max())
+colors = cm(norm(o.curvature_map))
+mesh = o.mesh.compute()
+mesh.visual.vertex_colors = colors
+mesh.show()
+
+# %% Curvature
+curv, meshes = s.get_curvature(label)
+curv, meshes = s.get_curvature(None)
+
+
+
 
 
 

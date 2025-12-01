@@ -71,7 +71,7 @@ class Project:
 
         self._meshes = {}
         self._distance_matrix = None
-        self._morphology_map = {}
+        self._curvature_map = {}
 
         # {label: {max_distance: float, min_distance: float}}
         self._mcs_labels = {}
@@ -202,7 +202,7 @@ class Project:
         :param path_sample_dist: _description_, defaults to 0.1
         :type path_sample_dist: float, optional
         """
-        orgs = self.organelles(ids=ids)
+        orgs = self.get_organelles(ids=ids)
 
         start_logger_str = (
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
@@ -232,7 +232,7 @@ class Project:
         skip_existing=False,
         path_sample_dist: float = 0.1,
     ):
-        orgs = self.organelles(ids=ids)
+        orgs = self.get_organelles(ids=ids)
 
         start_logger_str = (
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
@@ -260,7 +260,7 @@ class Project:
         mcs_label: Optional[str] = None,
         height: int = 800,
     ):
-        orgs = self.organelles(ids=ids)
+        orgs = self.get_organelles(ids=ids)
 
         if mcs_label and mcs_label not in self._mcs_labels:
             raise ValueError(
@@ -336,8 +336,8 @@ class Project:
                 f"Attribute must be one of 'names', 'contacts' or 'objects' but is {attribute}"
             )
 
-        orgs_1 = self.organelle_ids(ids=ids_source)
-        orgs_2 = self.organelle_ids(ids=ids_target)
+        orgs_1 = self.get_organelle_ids(ids=ids_source)
+        orgs_2 = self.get_organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         # Filter the DataFrame by row values
         filtered_df = distance_matrix[
@@ -369,11 +369,13 @@ class Project:
         elif attribute == "objects":
             obj_output_dict = defaultdict(list)
             for key in output_filtered_dict.keys():
-                new_key = self.organelles(ids=key)[0]
+                new_key = self.get_organelles(ids=key)[0]
 
                 for key_target in output_filtered_dict[key]:
                     if key_target not in obj_output_dict.keys():
-                        obj_output_dict[new_key].extend(self.organelles(ids=key_target))
+                        obj_output_dict[new_key].extend(
+                            self.get_organelles(ids=key_target)
+                        )
             return obj_output_dict
 
         return output_filtered_dict
@@ -393,8 +395,8 @@ class Project:
         mean: the mean distance between the organelles
         :type attribute: _type_
         """
-        orgs_1 = self.organelle_ids(ids=ids_source)
-        orgs_2 = self.organelle_ids(ids=ids_target)
+        orgs_1 = self.get_organelle_ids(ids=ids_source)
+        orgs_2 = self.get_organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
 
         if attribute == "dist":
@@ -461,8 +463,8 @@ class Project:
         ids_source="*",
         ids_target="*",
     ):
-        orgs_1 = self.organelle_ids(ids=ids_source)
-        orgs_2 = self.organelle_ids(ids=ids_target)
+        orgs_1 = self.get_organelle_ids(ids=ids_source)
+        orgs_2 = self.get_organelle_ids(ids=ids_target)
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         fig = go.Figure()
         fig.add_trace(go.Histogram(x=distance_matrix.mean().values.flatten()))
@@ -491,7 +493,7 @@ class Project:
         :return: _description_
         :rtype: _type_
         """
-        orgs = self.organelles(ids=ids)
+        orgs = self.get_organelles(ids=ids)
         # drop organelles without skeleton
         valid_orgs = []
         for org in orgs:
@@ -565,7 +567,7 @@ class Project:
             if cache_str not in cache or not self.use_cache:
                 self.calculate_meshes()
 
-                for organelle in self.organelles():
+                for organelle in self.organelles:
                     properties[organelle.id] = (
                         organelle.geometric_data | organelle.mesh_properties
                     )
@@ -578,7 +580,7 @@ class Project:
 
         df = pd.DataFrame(properties).T
 
-        valid_organelles = self.organelle_ids()
+        valid_organelles = self.organelle_ids
         df = df.loc[valid_organelles]
 
         return df
@@ -598,7 +600,7 @@ class Project:
 
         """
 
-        orgs = self.organelles(ids=ids)
+        orgs = self.get_organelles(ids=ids)
 
         mcs_properties = {}
         for org in orgs:
@@ -678,7 +680,7 @@ class Project:
     @property
     def skeleton_info(self):
         skeleton_data = {}
-        for org in self.organelles():
+        for org in self.organelles:
             if org.skeleton is not None:
                 skeleton_data[org.id] = org.skeleton_info
         return pd.DataFrame(skeleton_data).T.sort_values(
@@ -686,14 +688,13 @@ class Project:
         )
 
     @property
-    def morphology_map(self):
-        """Get the morphology map for all organelles"""
+    def curvature_map(self):
+        """Get the curvature map for all organelles"""
 
-        # results should be saved on a source level
         for source_key, source in self.sources.items():
-            self._morphology_map[source_key] = source.morphology_map
+            self._curvature_map[source_key] = source.curvature_map
 
-        return self._morphology_map
+        return self._curvature_map
 
     @property
     def distance_matrix(self):
@@ -727,7 +728,8 @@ class Project:
         """Take the largest entries of the specified organelle type
         until their combined volume reaches the cutoff value.
 
-        :param organelle_type: The desired organelle type to perform the filter on. E.G "mito" or "er".
+        :param organelle_type: The desired organelle type to perform the filter on.
+            E.G "mito" or "er".
         :type organelle_type: str
         :param cutoff: The cutoff value between 0 and 1.
         :type cutoff: float
@@ -735,7 +737,8 @@ class Project:
         """
         geo_props = self.geometric_properties
         self.logger.info(
-            f"Filtering organelles of type {organelle_type} to the largest organelles that make up {cutoff * 100}% of the total volume."
+            f"Filtering organelles of type {organelle_type} to the largest "
+            f"organelles that make up {cutoff * 100}% of the total volume."
         )
 
         df_sorted = geo_props.loc[
@@ -798,7 +801,15 @@ class Project:
             raise ValueError("Clipping must be a tuple of two tuples of length 3")
         self._clipping = _clipping
 
-    def organelles(
+    @property
+    def organelles(self):
+        return self.get_organelles("*")
+
+    @property
+    def organelle_ids(self):
+        return self.get_organelle_ids("*")
+
+    def get_organelles(
         self,
         ids: str | list[str] = "*",
     ) -> list[Organelle]:
@@ -822,7 +833,7 @@ class Project:
                     continue
 
                 result.extend(
-                    source.organelles(
+                    source.get_organelles(
                         id_,
                         self.permanent_whitelist,
                         self.permanent_blacklist,
@@ -831,7 +842,7 @@ class Project:
 
         return result
 
-    def organelle_ids(
+    def get_organelle_ids(
         self,
         ids: str | list[str] = "*",
     ) -> list[str]:
@@ -855,7 +866,7 @@ class Project:
                     continue
 
                 result.extend(
-                    source.organelle_ids(
+                    source.get_organelle_ids(
                         id_,
                         self.permanent_whitelist,
                         self.permanent_blacklist,
@@ -885,10 +896,12 @@ class Project:
             Default: False
         """
 
-        if isinstance(ids, list):
-            organelles = [self.organelles(id) for id in ids]
+        # List of filters or list of sources
+        if isinstance(ids, (list, tuple)):
+            organelles = [self.get_organelles(id) for id in ids]
         else:
-            organelles = [s.organelles(ids) for s in self.sources.values()]
+            organelles = [s.get_organelles(ids) for s in self.sources.values()]
+
         meshes = []
         for i, orgs in enumerate(organelles):
             c = 0
@@ -937,7 +950,11 @@ class Project:
     def clear_caches(self, clear_disk=False):
         for source in self.sources.values():
             source.clear_memory_cache()
-            source.cache.clear_memory_cache()
-        # iterate over what is on disk rather than the currently loaded sources
-        for cache in self.get_caches():
-            cache.clear_disk_cache()
+            self.logger.debug("Cleared memory cache of all sources.")
+
+        if clear_disk:
+            # iterate over what is on disk rather than the currently loaded sources
+            i = -1
+            for i, cache in enumerate(self.get_caches()):
+                cache.clear_disk_cache()
+            self.logger.info(f"Deleted {i + 1} caches from disk.")
