@@ -1,20 +1,17 @@
 from collections import defaultdict
-from time import time
 from typing import Optional
 from pathlib import Path
 
-import matplotlib as mpl
 from trimesh import Trimesh
 import trimesh
 
 import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
 
-from dask import persist, compute
+from dask.base import persist, compute
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
-from dask.distributed import print as dprint
 
 from zmesh import Mesher
 

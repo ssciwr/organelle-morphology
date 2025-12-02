@@ -3,7 +3,6 @@ from typing import Optional, Iterable
 import logging
 
 from dask.delayed import Delayed, delayed
-import numpy as np
 from trimesh import Trimesh
 import trimesh
 import matplotlib as mpl
@@ -18,6 +17,8 @@ CACHE_DIR = xdg.xdg_cache_home() / "organelle_morphology"
 
 class Disk_Store:
     def __init__(self, cache_name: str, cache_root: Path):
+        self.cache_root = cache_root
+        self.cache_name = cache_name
         self.path: Path = cache_root / cache_name
         if not self.path.exists():
             self.path.mkdir(parents=True)
@@ -45,6 +46,14 @@ class Disk_Store:
     def clear(self):
         for f in self.path.iterdir():
             f.unlink()
+        self.path.rmdir()
+        for dir in self.path.parents:
+            if dir == self.cache_root:
+                break
+            try:
+                dir.rmdir()
+            except OSError:
+                break
 
     def get(self, key, default=None):
         if key in self:
@@ -105,7 +114,6 @@ class Cache:
             self.stores.append(Disk_Store(self.cache_name, self.cache_root))
         ds: Disk_Store = self.stores.pop(-1)
         ds.clear()
-        ds.path.rmdir()
         self.disk = False
 
     def clear_memory_cache(self):

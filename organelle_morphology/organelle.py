@@ -1,12 +1,13 @@
 from typing import Optional
 
 import numpy as np
-import trimesh
 import plotly.graph_objects as go
 import skeletor as sk
 import networkx
 import dask.array as da
 from collections import defaultdict
+
+import organelle_morphology
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
@@ -23,7 +24,7 @@ def organelle_types() -> list[str]:
 
 
 class Organelle:
-    def __init__(self, source, label: int):
+    def __init__(self, source: "organelle_morphology.DataSource", label: int):
         """The organelle base class
 
         Holds references to its mesh and label. Also holds analysis results.

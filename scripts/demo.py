@@ -15,7 +15,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tempfile
 
-from dask import compute
+from dask.base import compute
+
+from organelle_morphology.util import color_delayed_trimesh_rgba
 
 viridis = mpl.colormaps.get("viridis")
 # %%
@@ -40,7 +42,7 @@ c = p.get_caches()
 
 # %% change compression
 p.clipping = None
-p.clipping = [[0.6,0,0], [1,1,1]]
+p.clipping = [[0.6,0,0.3], [0.9,1,0.8]]
 p.compression_level = "s3"
 print(len(s.labels))
 
@@ -93,18 +95,17 @@ o.skeleton.show()
 o.mesh_properties
 o.geometric_data
 
-o.curvature_map
-cm = mpl.colormaps["coolwarm"].copy()
-norm = mpl.colors.Normalize(vmin=o.curvature_map.min(), vmax=o.curvature_map.max())
-colors = cm(norm(o.curvature_map))
-mesh = o.mesh.compute()
-mesh.visual.vertex_colors = colors
-mesh.show()
+merge_meshes(o.mesh, values=o.curvature_map).show()
 
 # %% Curvature
+o.curvature_map
+color_delayed_trimesh_rgba(o.mesh, o.curvature_map).compute().show()
+
 curv, meshes = s.get_curvature(label)
 curv, meshes = s.get_curvature(None)
+merge_meshes(meshes).compute().show()
 
+p.show()
 
 
 
@@ -114,12 +115,12 @@ curv, meshes = s.get_curvature(None)
 # uses mmesh
 import bpy
 
-er = bpy.data.meshes.new(name="er")      
+er = bpy.data.meshes.new(name="er")
 # er.vertices.foreach_set("co", verts) would be faster
 er.from_pydata(mmesh.vertices, mmesh.edges, mmesh.faces)
 er.update()
 er_obj = bpy.data.objects.new("er_mesh", er)
-bpy.context.scene.collection.objects.link(er_obj) 
+bpy.context.scene.collection.objects.link(er_obj)
 
 bpy.ops.object.select_all(action='DESELECT')
 er_obj.select_set(True)
@@ -143,7 +144,7 @@ bmesh = Trimesh(vertices=verts, faces=faces)
 bmesh.show()
 
 # %%
-with open("/home/kriedmiller/test/mmesh_overlap.stl", "wb") as f: 
+with open("/home/kriedmiller/test/mmesh_overlap.stl", "wb") as f:
     f.write(trimesh.exchange.stl.export_stl(mmesh))
 
 
@@ -157,4 +158,3 @@ np.unique(mmesh.unique_faces(),return_counts=True)
 mmesh.update_faces(mmesh.unique_faces())
 
 # %%
-

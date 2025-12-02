@@ -4,4 +4,5 @@ from organelle_morphology._version import version as __version__
 # Import the public API
 from organelle_morphology.organelle import organelle_types
 from organelle_morphology.project import Project
+from organelle_morphology.source import DataSource
 from organelle_morphology.util import merge_meshes

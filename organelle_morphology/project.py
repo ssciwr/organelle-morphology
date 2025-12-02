@@ -1,17 +1,17 @@
-from typing import Callable, Iterable, Optional
+from typing import Optional
 
 from dask.delayed import Delayed
 from trimesh import Trimesh
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import CACHE_DIR, Cache, get_logger, merge_meshes
+from organelle_morphology.util import Cache, get_logger, merge_meshes
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     _generate_mcs,
 )
 
 from pathlib import Path
-from dask.distributed import Client
+from dask.distributed import Client, LocalCluster
 
 import numpy as np
 import pandas as pd
@@ -101,7 +101,8 @@ class Project:
         self.use_cache = True
         self.debug = False
 
-        self.client = client if client else Client()
+        self.cluster = LocalCluster()
+        self.client = client if client else Client(self.cluster)
 
     def __str__(self):
         return f"Project at {self.path}"
@@ -255,7 +256,7 @@ class Project:
     def show(
         self,
         ids: str = "*",
-        show_morphology: bool = False,
+        show_curvature: bool = False,
         show_skeleton: bool = False,
         mcs_label: Optional[str] = None,
         height: int = 800,
@@ -277,7 +278,7 @@ class Project:
         for org in orgs:
             fig.add_traces(
                 org.plotly_mesh(
-                    show_morphology=show_morphology,
+                    show_curvature=show_curvature,
                     show_skeleton=show_skeleton,
                     mcs_label=mcs_label,
                     mcs_filter_ids=mcs_filter_ids,
@@ -921,7 +922,7 @@ class Project:
             mesh = mesh.compute()
         return mesh
 
-    def get_caches(self):
+    def get_caches(self) -> list[Cache]:
         caches = []
         cs = self.cache_settings
         cache_dir = cs["cache_root"] / f"cache_{cs['project_path'].name}"

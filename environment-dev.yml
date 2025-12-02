@@ -14,7 +14,6 @@ dependencies:
   - pytest-mock
   - scikit-image
   - scipy
-  - trimesh
   - z5py
   - pre-commit
   - rich
@@ -22,6 +21,7 @@ dependencies:
       - python-fcl
       - setuptools==65.7.0
       - shelved_cache
+      - trimesh[easy,recommend]
       - xdg
       - skeletor
       - -e ./
