@@ -4,10 +4,10 @@ from dask.delayed import Delayed
 from trimesh import Trimesh
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import Cache, get_logger, merge_meshes
+from organelle_morphology.util import Cache, clear_loggers, get_logger, merge_meshes
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
-    _generate_mcs,
+    generate_mcs,
 )
 
 from pathlib import Path
@@ -90,7 +90,7 @@ class Project:
 
         # callables will be updated on demand
         self._cache_settings = {
-            "project_path": lambda: self.path,
+            "project_name": lambda: self.path.name,
             "clipping": lambda: str(self.clipping).replace("\n", ""),
             "level": lambda: str(self.compression_level),
             "disk": True,
@@ -101,11 +101,14 @@ class Project:
         self.use_cache = True
         self.debug = False
 
-        self.cluster = LocalCluster()
+        self.cluster = client.cluster if client else LocalCluster()
         self.client = client if client else Client(self.cluster)
 
     def __str__(self):
         return f"Project at {self.path}"
+
+    def __del__(self):
+        clear_loggers()
 
     def set_loglevel(self, loglevel: Optional[str]):
         if loglevel:
@@ -446,7 +449,7 @@ class Project:
         if mcs_label in self._mcs_labels and not override_mcs_label:
             raise ValueError(f"MCS label {mcs_label} already exists in the project")
 
-        _generate_mcs(self, mcs_label, max_distance, min_distance)
+        generate_mcs(self, mcs_label, max_distance, min_distance)
 
     @property
     def mcs_labels(self):

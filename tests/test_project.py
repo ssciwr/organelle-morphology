@@ -8,13 +8,6 @@ import pathlib
 import numpy as np
 
 
-@pytest.fixture(scope="session")
-def client():
-    cluster = LocalCluster()
-    yield cluster.get_client()
-    cluster.close()
-
-
 def test_synthetic_data_generation(synthetic_data, tmp_path):
     """Check the synthetic data generation"""
 
@@ -109,7 +102,7 @@ def test_add_source(synthetic_data, client):
         else:
             project.add_source(xml_path=source, organelle=oid)
             # Check that we actually added organelles
-            assert project.organelles(ids=f"{oid}_*")
+            assert project.get_organelles(ids=f"{oid}_*")
 
             with pytest.raises(ValueError, match="Source already loaded!"):
                 project.add_source(xml_path=source, organelle=oid)
@@ -123,3 +116,21 @@ def test_add_source_wrong_source(synthetic_data, client):
     project = Project(synthetic_data[0], client=client)
     with pytest.raises(FileNotFoundError):
         project.add_source("wrong_source", "mito")
+
+
+def test_skeletonize_wavefront(mocker, project_with_sources):
+    mock_get_orgs = mocker.patch.object(project_with_sources, "get_organelles")
+    mock_orgs = [mocker.Mock()]
+    mock_get_orgs.return_value = mock_orgs
+    project_with_sources.skeletonize_wavefront()
+    mock_get_orgs.assert_called_with(ids="*")
+    mock_orgs[0]._generate_skeleton.assert_called_once()
+
+
+def test_skeletonize_vertex_clusters(mocker, project_with_sources):
+    mock_get_orgs = mocker.patch.object(project_with_sources, "get_organelles")
+    mock_orgs = [mocker.Mock()]
+    mock_get_orgs.return_value = mock_orgs
+    project_with_sources.skeletonize_wavefront()
+    mock_get_orgs.assert_called_with(ids="*")
+    mock_orgs[0]._generate_skeleton.assert_called_once()

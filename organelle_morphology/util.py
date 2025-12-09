@@ -10,6 +10,7 @@ import xdg
 import pickle
 from collections import defaultdict, deque
 import time
+import numpy as np
 
 
 CACHE_DIR = xdg.xdg_cache_home() / "organelle_morphology"
@@ -30,7 +31,8 @@ class Disk_Store:
     def __getitem__(self, key):
         if (self.path / str(key)).exists():
             with open(self.path / str(key), "rb") as f:
-                return pickle.load(f)
+                value = pickle.load(f)
+            return value
         else:
             raise KeyError(f"Key: {key} not found in {self.path}!")
 
@@ -64,14 +66,11 @@ class Disk_Store:
 class Cache:
     def __init__(
         self,
-        project_path: Path,
-        source: str,
-        level: str,
-        clipping: str,
+        cache_name: str,
         disk=True,
         cache_root: Optional[Path] = None,
     ):
-        self.cache_name = f"cache_{project_path.name}/{source}/{level}/{clipping}"
+        self.cache_name = cache_name
         self.stores: list = [{}]
         self.disk = disk
         self.cache_root = cache_root if cache_root else CACHE_DIR
@@ -84,8 +83,8 @@ class Cache:
 
     def __getitem__(self, key):
         for store in self.stores:
-            if value := store.get(key, None):
-                return value
+            if key in store:
+                return store.get(key)
         raise KeyError(f"Key {key} not in cache!")
 
     def __contains__(self, key):
@@ -203,7 +202,31 @@ def merge_meshes(meshes: Iterable[Delayed], color: Optional[int] = None) -> Dela
     return meshes[0]
 
 
+@delayed
+def bounding_box_delayed(mesh: Trimesh):
+    """Calculate the corner with the smallest and the one
+    with the biggest corrdinates.
+
+    Parameters
+    ----------
+    mesh
+        Trimesh
+
+    Returns
+    -------
+    min: np.ndarray
+        First corner
+    max: np.ndarray
+        Second corner
+    """
+    min = np.min(mesh.vertices, axis=0)
+    max = np.max(mesh.vertices, axis=0)
+    return min, max
+
+
 class FrequencyFilter(logging.Filter):
+    """Accumulate repeating log messages"""
+
     def __init__(self, threshold=10, burst_threshold=3, window_size=4):
         self.threshold = threshold  # Log every nth occurrence in a short period
         self.burst_threshold = (
@@ -266,3 +289,12 @@ def get_logger(file: Path):
     logger.addHandler(c_handler)
     logger.addHandler(f_handler)
     return logger
+
+
+def clear_loggers():
+    """Remove handlers from all loggers"""
+    loggers = [logging.getLogger()] + list(logging.Logger.manager.loggerDict.values())
+    for logger in loggers:
+        handlers = getattr(logger, "handlers", [])
+        for handler in handlers:
+            logger.removeHandler(handler)

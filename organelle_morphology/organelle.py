@@ -8,6 +8,7 @@ import dask.array as da
 from collections import defaultdict
 
 import organelle_morphology
+from organelle_morphology.util import bounding_box_delayed
 
 # The dictionary of registered organelle subclasses, mapping names
 # to classes
@@ -116,6 +117,11 @@ class Organelle:
             The higher the distance, the less sample points are used.
         """
 
+        if skeletonization_type not in ["wavefront", "vertex_clusters"]:
+            raise ValueError(
+                "Skeletonization type must be either 'wavefront' or 'vertex_clusters'."
+            )
+
         try:
             fixed_mesh = sk.pre.fix_mesh(self.mesh.compute())
         except IndexError as e:
@@ -126,10 +132,11 @@ class Organelle:
 
             fixed_mesh = self.mesh.compute()
 
-        if skeletonization_type not in ["wavefront", "vertex_clusters"]:
-            raise ValueError(
-                "Skeletonization type must be either 'wavefront' or 'vertex_clusters'."
-            )
+        if len(fixed_mesh.vertices) < 10:
+            self.logger.debug(f"Not enough vertices for skeleton! {self.id}")
+            self._skeleton = None
+            return
+
         try:
             if skeletonization_type == "wavefront":
                 skel = sk.skeletonize.by_wavefront(
@@ -170,7 +177,7 @@ class Organelle:
         except Exception as e:
             self.logger.debug(
                 "Could not generate skeleton for %s with error %s" % (self.id, e),
-                exc_info=True,
+                exc_info=False,
             )
             self._skeleton = None
 
@@ -391,6 +398,12 @@ class Organelle:
         """Get the organelle ID of this organelle"""
 
         return self._organelle_id
+
+    @property
+    def bounding_box(
+        self,
+    ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+        return bounding_box_delayed(self.mesh).compute()
 
     @property
     def geometric_data(self):

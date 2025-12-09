@@ -92,6 +92,7 @@ o = s.get_organelles(ids=id_)[0]
 p.skeletonize_wavefront(id_)
 o.skeleton.show()
 
+p.skeleton_info
 o.mesh_properties
 o.geometric_data
 
@@ -105,10 +106,34 @@ curv, meshes = s.get_curvature(label)
 curv, meshes = s.get_curvature(None)
 merge_meshes(meshes).compute().show()
 
-p.show()
+
+# %% distances
+
+m1 = o.mesh.compute()
+m2 = s.meshes[s.labels[0]].compute()
+m1.nearest.vertex(m2.vertices)
+
+for m in tqdm(s.meshes.values()):
+    m1.nearest.vertex(m.compute().vertices)
 
 
+p.distance_analysis()
+id1 = "mito_37800009"
+id2 = "mito_37900033"
+id3 = "er_69500010"
 
+o1= p.get_organelles(id1)[0]
+o2= p.get_organelles(id2)[0]
+o3= p.get_organelles(id3)[0]
+
+m1 = o1.mesh.compute()
+m2 = o2.mesh.compute()
+m3 = o3.mesh.compute()
+(m1+m3).show()
+
+p.search_mcs("my_search", 5)
+p.get_mcs_overview()
+p.get_mcs_properties()
 
 
 # %% ## Blender ##

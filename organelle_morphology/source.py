@@ -503,10 +503,18 @@ class DataSource:
 
     @property
     def cache(self):
+        """Get the cache for this source.
+
+        Returns the same cache object on consecutive calls.
+        On clipping or level change, this cache must be invalidated by calling
+        `source.clear_memory_cache()`
+        """
+
         if self._cache is None:
-            cache_settings = self.project.cache_settings
-            cache_settings["source"] = self.xml_path.stem
-            cache = Cache(**cache_settings)
+            cs = self.project.cache_settings
+            cs["source"] = self.xml_path.stem
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             self._cache = cache
         return self._cache
 
@@ -554,7 +562,7 @@ class DataSource:
                 self.logger.debug("Saving meshes to cache..")
 
                 self.cache["labels"] = list(self._meshes.keys())
-                meshes_d = list(self._meshes.values())
+                # meshes_d = list(self._meshes.values())
                 delayed_saves = []
                 for label, mesh_d in self._meshes.items():
                     delayed_saves.append(_write_to_cache(label, mesh_d, self.cache))
@@ -563,27 +571,6 @@ class DataSource:
                 self.logger.debug("Meshes saved in cache")
 
         return self._meshes
-
-    def get_bounding_box_of_mesh(self, mesh: Trimesh | Delayed):
-        """Calculate the corner with the smallest and the one
-        with the biggest corrdinates.
-
-        Returns
-        -------
-            min: np.ndarray
-                First corner
-            max: np.ndarray
-                Second corner
-        """
-
-        if isinstance(mesh, Delayed):
-            mesh = mesh.compute()
-        assert isinstance(mesh, Trimesh)
-
-        min = np.min(mesh.vertices, axis=0)
-        max = np.max(mesh.vertices, axis=0)
-
-        return min, max
 
     def get_curvature(self, labels: Optional[int | list[int]], color=True, log=True):
         """Calculate the curvature on vertices.

@@ -5,9 +5,12 @@ import pandas as pd
 
 from tqdm import tqdm
 
+import organelle_morphology
+from organelle_morphology.util import Cache
+
 
 class MembraneContactSiteCalculator:
-    def __init__(self, project):
+    def __init__(self, project: "organelle_morphology.Project"):
         self.use_cache = project.use_cache
         self.project = project
 
@@ -51,9 +54,9 @@ class MembraneContactSiteCalculator:
 
         """
         if mesh_1 is None:
-            mesh_1 = self.project.organelles(id_1)[0].mesh
+            mesh_1 = self.project.get_organelles(id_1)[0].mesh.compute()
         if mesh_2 is None:
-            mesh_2 = self.project.organelles(id_2)[0].mesh
+            mesh_2 = self.project.get_organelles(id_2)[0].mesh.compute()
 
         self._repair_meshes(mesh_1, mesh_2)
 
@@ -141,12 +144,12 @@ class MembraneContactSiteCalculator:
         self._vertices_source = self.mesh_source.vertices[self._vertices_index_source]
         self._vertices_target = self.mesh_target.vertices[self._vertices_index_target]
 
-        faces_source = self.mesh_source.faces[
+        faces_source = np.nonzero(
             np.any(np.isin(self.mesh_source.faces, self._vertices_index_source), axis=1)
-        ]
-        faces_target = self.mesh_target.faces[
+        )
+        faces_target = np.nonzero(
             np.any(np.isin(self.mesh_target.faces, self._vertices_index_target), axis=1)
-        ]
+        )
 
         area_source = self.mesh_source.area_faces[faces_source].sum()
         area_target = self.mesh_target.area_faces[faces_target].sum()
@@ -214,66 +217,66 @@ class MembraneContactSiteCalculator:
             trimesh.repair.fix_normals(mesh)
 
 
-def generate_distance_matrix(project) -> pd.DataFrame:
-    active_sources = list(project.sources.keys())
-    with disk_cache(
-        project, f"distance_matrix_{active_sources}_{project.compression_level}"
-    ) as cache:
-        if (
-            f"distance_matrix_{active_sources}_{project.compression_level}" not in cache
-            or not project.use_cache
-        ):
-            project.logger.info("Initilizing distance matrix")
+def generate_distance_matrix(
+    project: "organelle_morphology.Project",
+) -> pd.DataFrame:
+    active_sources = sorted(list(project.sources.keys()))
+    cs = project.cache_settings
+    cache = Cache(
+        cache_name=f"cache_{cs['project_name']}/distances_{active_sources}/{cs['level']}_{cs['clipping']}",
+        cache_root=cs["cache_root"],
+        disk=cs["disk"],
+    )
 
-            project.logger.info("Loading meshes")
+    if "distance_matrix" not in cache or not project.use_cache:
+        project.logger.info("Initilizing distance matrix")
 
-            project.calculate_meshes()
+        project.logger.info("Loading meshes")
 
-            meshes = []
-            organelles_ids = []
-            for organelle in project.organelles():
-                organelles_ids.append(organelle.id)
-                meshes.append(organelle.mesh)
+        project.calculate_meshes()
 
-            project.logger.info("Calculating distance matrix")
-            num_rows = len(meshes)
+        meshes = []
+        organelles_ids = project.organelle_ids
+        for organelle in project.organelles:
+            meshes.append(organelle.mesh.compute())
 
-            distance_matrix = np.zeros((num_rows, num_rows))
-            distance_df = pd.DataFrame(
-                distance_matrix,
-                index=organelles_ids,
-                columns=organelles_ids,
-            )
+        project.logger.info("Calculating distance matrix")
+        num_rows = len(meshes)
 
-            for i in tqdm(np.arange(num_rows)):
-                mesh_1 = meshes[i]
-                id_1 = organelles_ids[i]
+        distance_matrix = np.zeros((num_rows, num_rows))
+        distance_df = pd.DataFrame(
+            distance_matrix,
+            index=organelles_ids,
+            columns=organelles_ids,
+        )
 
-                for j in np.arange(i, num_rows):
-                    if i == j:
-                        continue
+        for i in tqdm(np.arange(num_rows)):
+            mesh_1 = meshes[i]
+            id_1 = organelles_ids[i]
 
-                    mesh_2 = meshes[j]
-                    id_2 = organelles_ids[j]
+            for j in np.arange(i, num_rows):
+                if i == j:
+                    continue
 
-                    mcs_calculator = MembraneContactSiteCalculator(project)
-                    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2)
-                    min_distance = mcs_calculator.min_distance
+                mesh_2 = meshes[j]
+                id_2 = organelles_ids[j]
 
-                    distance_df.loc[id_1, id_2] = min_distance
-                    distance_df.loc[id_2, id_1] = min_distance
+                mcs_calculator = MembraneContactSiteCalculator(project)
+                mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2)
+                min_distance = mcs_calculator.min_distance
 
-            cache[f"distance_matrix_{active_sources}_{project.compression_level}"] = (
-                distance_df
-            )
+                distance_df.loc[id_1, id_2] = min_distance
+                distance_df.loc[id_2, id_1] = min_distance
 
-        else:
-            project.logger.info("Retrieving distance matrix from cache")
+        cache["distance_matrix"] = distance_df
 
-        return cache[f"distance_matrix_{active_sources}_{project.compression_level}"]
+    else:
+        project.logger.info("Retrieving distance matrix from cache")
+
+    return cache["distance_matrix"]
 
 
-def _generate_mcs(project, mcs_label, max_distance, min_distance=0):
+def generate_mcs(project, mcs_label, max_distance, min_distance=0):
     """
     Generates the MCS (Membrane Contact Site) pairs for a given project.
 
@@ -328,11 +331,11 @@ def _generate_mcs(project, mcs_label, max_distance, min_distance=0):
 
     meshes = {}
 
-    for organelle in project.organelles(distance_matrix.index.tolist()):
-        meshes[organelle.id] = organelle.mesh
+    for organelle in project.get_organelles(distance_matrix.index.tolist()):
+        meshes[organelle.id] = organelle.mesh.compute()
 
     for org_1_label, org_2_labels in tqdm(pair_dict.items()):
-        org1 = project.organelles(org_1_label)[0]
+        org1 = project.get_organelles(org_1_label)[0]
         for org_2_label in org_2_labels:
             mcs_calculator = MembraneContactSiteCalculator(project)
             mcs_calculator.search_mcs(
@@ -344,7 +347,7 @@ def _generate_mcs(project, mcs_label, max_distance, min_distance=0):
             mcs_target = mcs_calculator.mcs_target
 
             # add mcs to organelle
-            org2 = project.organelles(org_2_label)[0]
+            org2 = project.get_organelles(org_2_label)[0]
 
             if org1.id == mcs_source["self_id"]:
                 org1.add_mcs(mcs_source)
@@ -355,7 +358,7 @@ def _generate_mcs(project, mcs_label, max_distance, min_distance=0):
 
     for i in rows:
         org_id = distance_matrix.index[i]
-        org = project.organelles(org_id)[0]
+        org = project.get_organelles(org_id)[0]
         org.get_mcs_dict_entry(mcs_label)
 
     project._mcs_labels[mcs_label] = {
