@@ -437,6 +437,12 @@ class DataSource:
     def data(self) -> Array:
         return self.get_data(None)
 
+    @property
+    def clipping_corners(self):
+        if self._clipped_low_corner is None or self._clipped_high_corner is None:
+            self.get_data()
+        return self._clipped_low_corner, self._clipped_high_corner
+
     def get_data(self, compression_level: Optional[str]) -> Array:
         """Get data of this source as array.
 
@@ -460,11 +466,13 @@ class DataSource:
         if self.project.clipping is not None:
             lower_corner, upper_corner = self.project.clipping
             # data_shape = data_at_level.shape
-            clipped_low_corner = np.floor(lower_corner * data.shape).astype(int)
-            clipped_high_corner = np.ceil(upper_corner * data.shape).astype(int)
+            self._clipped_low_corner = np.floor(lower_corner * data.shape).astype(int)
+            self._clipped_high_corner = np.ceil(upper_corner * data.shape).astype(int)
             cube_slice = tuple(
                 slice(clip_low, clip_high, 1)
-                for clip_low, clip_high in zip(clipped_low_corner, clipped_high_corner)
+                for clip_low, clip_high in zip(
+                    self._clipped_low_corner, self._clipped_high_corner
+                )
             )
             return data[cube_slice]
         return data
@@ -674,8 +682,10 @@ class DataSource:
             d_data = self.data.to_delayed()
         self._meshes_chunked = np.empty_like(d_data)
         ids_chunked = np.empty_like(d_data)
+        # cumsum of chunksizes over xyz, starting from lower clipping bound
         size_offset_cumsum = [
-            np.cumsum(np.array([0] + list(ch))) for ch in self.data.chunks
+            np.cumsum(np.array([self.clipping_corners[0][dim]] + list(ch)))
+            for dim, ch in enumerate(self.data.chunks)
         ]
 
         for index, d_block in np.ndenumerate(d_data):
@@ -753,6 +763,8 @@ class DataSource:
         self._storage = {}
         self._cache = None
         self._organelles = None
+        self._clipped_low_corner = None
+        self._clipped_high_corner = None
 
     def instantiate_organelles(self):
         if self._organelles is None:

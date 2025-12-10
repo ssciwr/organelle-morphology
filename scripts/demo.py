@@ -52,7 +52,7 @@ mmesh.show()
 # %% debug colors
 s = p.sources["mito_it00_b0_7_stitched"]
 p.clipping = [[0.6,0,0], [1,1,1]]
-s.calculate_mesh(debug_color=2)
+s.calculate_mesh(debug_color=1)
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 mmesh.show()
 
@@ -104,7 +104,7 @@ color_delayed_trimesh_rgba(o.mesh, o.curvature_map).compute().show()
 
 curv, meshes = s.get_curvature(label)
 curv, meshes = s.get_curvature(None)
-merge_meshes(meshes).compute().show()
+merge_meshes(meshes).show()
 
 
 # %% distances
@@ -135,6 +135,9 @@ p.search_mcs("my_search", 5)
 p.get_mcs_overview()
 p.get_mcs_properties()
 
+
+b = trimesh.primitives.Box(bounds=((2,2,2), (100,200,500))).as_outline()
+(mmesh+b).show()
 
 # %% ## Blender ##
 # uses mmesh

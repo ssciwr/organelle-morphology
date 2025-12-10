@@ -141,6 +141,7 @@ def color_delayed_trimesh_rgba(tmesh: Trimesh, values, log=True) -> Trimesh:
     else:
         norm = mpl.colors.Normalize(vmin=-5, vmax=5)
     colors = cm(norm(values))
+    tmesh.visual.face_colors = (0, 0, 0, 0)
     tmesh.visual.vertex_colors = colors
     return tmesh
 
@@ -222,6 +223,32 @@ def bounding_box_delayed(mesh: Trimesh):
     min = np.min(mesh.vertices, axis=0)
     max = np.max(mesh.vertices, axis=0)
     return min, max
+
+
+def box(min, max):
+    if isinstance(min, Delayed):
+        min.compute
+    if isinstance(max, Delayed):
+        max.compute
+
+    return trimesh.primitives.box(bounds=(min, max)).as_outline()
+
+
+def show(meshes):
+    scene = trimesh.Scene()
+    scene.camera.z_far = 100000
+    scene.add_geometry(trimesh.creation.axis(origin_size=10))
+
+    if not isinstance(meshes, (list, tuple)):
+        meshes = [meshes]
+
+    scene.camera_transform = scene.camera.look_at(meshes[0].vertices[:200])
+
+    for mesh in meshes:
+        scene.add_geometry(mesh)
+
+    scene.show()
+    return scene
 
 
 class FrequencyFilter(logging.Filter):

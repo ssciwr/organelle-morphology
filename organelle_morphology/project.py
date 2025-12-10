@@ -84,7 +84,7 @@ class Project:
         # The compression level at which we operate
         self.compression_level = compression_level
 
-        self.logger = get_logger(self.path.with_suffix(".log"))
+        self.logger = get_logger(self.path / "om2.log")
         self.set_loglevel(loglevel)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
@@ -257,6 +257,16 @@ class Project:
             )
 
     def show(
+        self,
+        ids: str = "*",
+        box: Optional[
+            tuple[tuple[float, float, float], tuple[float, float, float]]
+        ] = None,
+        clipping_box=True,
+    ):
+        pass
+
+    def show_plotly(
         self,
         ids: str = "*",
         show_curvature: bool = False,
