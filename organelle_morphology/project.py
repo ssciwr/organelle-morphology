@@ -4,7 +4,13 @@ from dask.delayed import Delayed
 from trimesh import Trimesh
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
-from organelle_morphology.util import Cache, clear_loggers, get_logger, merge_meshes
+from organelle_morphology.util import (
+    Cache,
+    clear_loggers,
+    get_logger,
+    merge_meshes,
+    show,
+)
 from organelle_morphology.distance_calculations import (
     generate_distance_matrix,
     generate_mcs,
@@ -263,7 +269,10 @@ class Project:
         ] = None,
         clipping_box=True,
     ):
-        pass
+        orgs = self.get_organelles(ids=ids)
+        mmesh = merge_meshes([o.mesh for o in orgs])
+
+        show(mmesh)
 
     def show_plotly(
         self,
@@ -962,6 +971,8 @@ class Project:
         return caches
 
     def clear_caches(self, clear_disk=False):
+        """Clear all caches related to this project, optionally also from disk"""
+
         for source in self.sources.values():
             source.clear_memory_cache()
             self.logger.debug("Cleared memory cache of all sources.")

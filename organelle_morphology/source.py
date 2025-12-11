@@ -542,7 +542,7 @@ class DataSource:
 
     @property
     def meshes(self) -> dict[int, Delayed]:
-        @delayed
+        @delayed(pure=False)
         def _get_from_cache(key, cache):
             verts, faces = cache[key]
             return Trimesh(verts, faces)
