@@ -223,7 +223,7 @@ def generate_distance_matrix(
     active_sources = sorted(list(project.sources.keys()))
     cs = project.cache_settings
     cache = Cache(
-        cache_name=f"cache_{cs['project_name']}/distances_{active_sources}/{cs['level']}_{cs['clipping']}",
+        cache_name=f"cache_{cs['project_name']}/distances_{active_sources}/{cs['level']}/{cs['clipping']}",
         cache_root=cs["cache_root"],
         disk=cs["disk"],
     )

@@ -237,7 +237,7 @@ def box(min, max):
 def show(meshes):
     scene = trimesh.Scene()
     scene.camera.z_far = 100000
-    scene.add_geometry(trimesh.creation.axis(origin_size=10))
+    # scene.add_geometry(trimesh.creation.axis(origin_size=10))
 
     if not isinstance(meshes, (list, tuple)):
         meshes = [meshes]

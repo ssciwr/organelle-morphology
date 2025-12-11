@@ -1,8 +1,6 @@
 from organelle_morphology.project import Project
 from .synthetic_data_generator import generate_synthetic_dataset
 
-from dask.distributed import LocalCluster
-
 import pytest
 import pathlib
 import numpy as np

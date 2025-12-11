@@ -19,7 +19,6 @@ import pandas as pd
 from collections import defaultdict
 import plotly.graph_objects as go
 
-
 clipping_type = tuple[tuple[float, float, float], tuple[float, float, float]]
 
 
@@ -938,7 +937,7 @@ class Project:
     def get_caches(self) -> list[Cache]:
         caches = []
         cs = self.cache_settings
-        cache_dir = cs["cache_root"] / f"cache_{cs['project_path'].name}"
+        cache_dir = cs["cache_root"] / f"cache_{cs['project_name']}"
         messages = ["*** List of Caches: ***"]
         messages.append(str(cache_dir))
         for source in filter(lambda f: f.is_dir(), (cache_dir).iterdir()):
@@ -947,12 +946,13 @@ class Project:
                 messages.append(f"│  ├─ /{level.name}")
                 for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
                     messages.append(f"│  │  ├─ /{clip_dir.name}")
+                    name = (
+                        f"cache_{cs['project_name']}/{source.name}/"
+                        f"{level.name}/{clip_dir.name}"
+                    )
                     caches.append(
                         Cache(
-                            project_path=cs["project_path"],
-                            source=source.name,
-                            level=level.name,
-                            clipping=clip_dir.name,
+                            cache_name=name,
                             disk=True,
                             cache_root=cs["cache_root"],
                         )

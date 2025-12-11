@@ -17,7 +17,7 @@ import tempfile
 
 from dask.base import compute
 
-from organelle_morphology.util import color_delayed_trimesh_rgba
+from organelle_morphology.util import color_delayed_trimesh_rgba, show
 
 viridis = mpl.colormaps.get("viridis")
 # %%
@@ -47,29 +47,29 @@ p.compression_level = "s3"
 print(len(s.labels))
 
 mmesh = merge_meshes(list(s.meshes.values()), color=1).compute()
-mmesh.show()
+show(mmesh)
 
 # %% debug colors
 s = p.sources["mito_it00_b0_7_stitched"]
 p.clipping = [[0.6,0,0], [1,1,1]]
-s.calculate_mesh(debug_color=1)
+s.calculate_mesh(debug_color=2)
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
-mmesh.show()
+show(mmesh)
 
 # %% weired cubes in the middle
 s = p.sources["mito_it00_b0_7_stitched"]
 p.clipping = [[0.3,0,0], [0.7,1,1]]
 p.compression_level = "s2" # also on other levels
-s.calculate_mesh(debug_color=1)
+s.calculate_mesh(debug_color=0)
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
-mmesh.show()
+show(mmesh)
 
 # %% high-res
 p.clipping = [[0.6,0.3,0.4], [0.8,0.8,1]]
 p.compression_level = "s1"
 print(len(s.labels))
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
-mmesh.show()
+show(mmesh)
 
 # %% Project API
 p.clipping = [[0.6,0,0], [1,1,1]]

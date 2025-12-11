@@ -41,6 +41,7 @@ def _block_mesher(
     space_offset: tuple[int, ...],
     reduction_factor=0,
     debug_color=0,
+    scaling_factors=[1, 1, 1],
 ):
     """Delayed function to calculate meshes from label data
 
@@ -187,7 +188,7 @@ def _block_mesher(
             )
             verts += space_offset
             for v in verts:
-                m += trimesh.primitives.Sphere(3, v, subdivisions=1)
+                m += trimesh.primitives.Sphere(3, v, subdivisions=1, mutable=True)
             if debug_color >= 2:
                 pl = sum(planes)
                 pl.vertices += space_offset
@@ -195,6 +196,9 @@ def _block_mesher(
             meshes[i] = m
         except KeyError:
             pass
+
+    for label in meshes:
+        meshes[label].vertices *= scaling_factors
 
     return meshes, list(meshes.keys())
 
@@ -439,9 +443,9 @@ class DataSource:
 
     @property
     def clipping_corners(self):
-        if self._clipped_low_corner is None or self._clipped_high_corner is None:
-            self.get_data()
-        return self._clipped_low_corner, self._clipped_high_corner
+        if self._clip_low_corner is None or self._clip_high_corner is None:
+            self.get_data(None)
+        return self._clip_low_corner, self._clip_high_corner
 
     def get_data(self, compression_level: Optional[str]) -> Array:
         """Get data of this source as array.
@@ -454,28 +458,33 @@ class DataSource:
             Dask array of the data. Respects the in the project set clipping.
         """
         if compression_level is None:
-            compression_level = self.project.compression_level
+            self._level = self.project.compression_level
 
         data_at_level: z5py.dataset.Dataset = getattr(
-            self.timepoint, compression_level
+            self.timepoint, str(self._level)
         ).data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
 
+        _idx = np.nonzero(np.array(self.metadata["levels"]) == self._level)[0][0]
+        self._scaling_factors = self.metadata["downsampling"][_idx]
+
+        cube_slice = (slice(None), slice(None), slice(None))
         if self.project.clipping is not None:
             lower_corner, upper_corner = self.project.clipping
-            # data_shape = data_at_level.shape
-            self._clipped_low_corner = np.floor(lower_corner * data.shape).astype(int)
-            self._clipped_high_corner = np.ceil(upper_corner * data.shape).astype(int)
+            self._clip_low_corner_data = np.floor(lower_corner * data.shape).astype(int)
+            self._clip_high_corner_data = np.ceil(upper_corner * data.shape).astype(int)
             cube_slice = tuple(
                 slice(clip_low, clip_high, 1)
                 for clip_low, clip_high in zip(
-                    self._clipped_low_corner, self._clipped_high_corner
+                    self._clip_low_corner_data, self._clip_high_corner_data
                 )
             )
-            return data[cube_slice]
-        return data
+            self._clip_low_corner = self._clip_low_corner_data * self._scaling_factors
+            self._clip_high_corner = self._clip_high_corner_data * self._scaling_factors
+
+        return data[cube_slice]
 
     @property
     def coarse_data(self) -> Array:
@@ -539,7 +548,9 @@ class DataSource:
             return Trimesh(verts, faces)
 
         @delayed
-        def _write_to_cache(key, mesh, cache):
+        def _write_to_cache(key, mesh, cs):
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             cache[key] = (mesh.vertices, mesh.faces)
 
         self.logger.debug("Requested meshes")
@@ -572,8 +583,12 @@ class DataSource:
                 self.cache["labels"] = list(self._meshes.keys())
                 # meshes_d = list(self._meshes.values())
                 delayed_saves = []
+
+                cs = self.project.cache_settings.copy()
+                cs["source"] = self.xml_path.stem
+
                 for label, mesh_d in self._meshes.items():
-                    delayed_saves.append(_write_to_cache(label, mesh_d, self.cache))
+                    delayed_saves.append(_write_to_cache(label, mesh_d, cs))
                 compute(*delayed_saves)
 
                 self.logger.debug("Meshes saved in cache")
@@ -682,9 +697,11 @@ class DataSource:
             d_data = self.data.to_delayed()
         self._meshes_chunked = np.empty_like(d_data)
         ids_chunked = np.empty_like(d_data)
+
+        assert self._clip_low_corner_data is not None
         # cumsum of chunksizes over xyz, starting from lower clipping bound
         size_offset_cumsum = [
-            np.cumsum(np.array([self.clipping_corners[0][dim]] + list(ch)))
+            np.cumsum(np.array([self._clip_low_corner_data[dim]] + list(ch)))
             for dim, ch in enumerate(self.data.chunks)
         ]
 
@@ -694,7 +711,11 @@ class DataSource:
                 for i, c in enumerate(index)
             )
             meshes_chunk, ids_chunk = _block_mesher(
-                d_block, space_offset, reduction_factor, debug_color
+                block=d_block,
+                space_offset=space_offset,
+                reduction_factor=reduction_factor,
+                debug_color=debug_color,
+                scaling_factors=self._scaling_factors,
             )
             self._meshes_chunked[index] = meshes_chunk
             ids_chunked[index] = ids_chunk
@@ -763,8 +784,12 @@ class DataSource:
         self._storage = {}
         self._cache = None
         self._organelles = None
-        self._clipped_low_corner = None
-        self._clipped_high_corner = None
+        self._clip_low_corner = None
+        self._clip_high_corner = None
+        self._clip_low_corner_data = None
+        self._clip_high_corner_data = None
+        self._scaling_factors = None
+        self._level = None
 
     def instantiate_organelles(self):
         if self._organelles is None:
