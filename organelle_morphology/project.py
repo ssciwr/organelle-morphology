@@ -1,12 +1,15 @@
 from typing import Optional
 
+from dask.base import compute
 from dask.delayed import Delayed
 from trimesh import Trimesh
+import trimesh
 from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
     clear_loggers,
+    corners_to_edges,
     get_logger,
     merge_meshes,
     show,
@@ -25,7 +28,10 @@ import pandas as pd
 from collections import defaultdict
 import plotly.graph_objects as go
 
-clipping_type = tuple[tuple[float, float, float], tuple[float, float, float]]
+
+clipping_type = (
+    tuple[tuple[float, float, float], tuple[float, float, float]] | list[list[float]]
+)
 
 
 class Project:
@@ -43,18 +49,16 @@ class Project:
         project JSON file. This is a lazy operation. No data except metadata
         is loaded until it is required.
 
-        :param project_path:
-            The location of the project.
+        Args:
+            project_path: The location of the project.
 
-        :param clipping:
-            If not None, the data is clipped with the given lower left and the given
-            upper right corner as the bounding box of the clipping. Coordinates are
-            expected to be in micrometer.
+            clipping: If not None, the data is clipped with the given lower
+                left and the given upper right corner as the bounding box of
+                the clipping. Coordinates are expected to be in micrometer.
 
-        :param compression_level:
-            The compression level at which we operate. This is used to determine
-            the resolution of the data that we work with. The default of 0
-            corresponds to the highest resolution.
+            compression_level: The compression level at which we operate.
+                This is used to determine the resolution of the data that we
+                work with. The default of 0 corresponds to the highest resolution.
         """
 
         self._project_path = Path(project_path)
@@ -136,24 +140,33 @@ class Project:
     def add_source(
         self,
         xml_path: Path | str,
-        organelle: Optional[str] = None,
+        organelle: str,
         background_label: int = 0,
     ) -> DataSource:
         """Connect a data source in the project with an organelle type
 
-        Args:
-            source_path: The path to the xml source to add.
-            organelle: The name of the organelle that is labelled in the data source.
-                Must be on the strings returned by organelle_morphology.organelle_types
-            background_label: The label in the data source that is used to encode the background.
-                Assumed to be 0.
+        Parameters
+        ----------
+        source_path
+            The path to the xml source to add.
+        organelle
+            The name of the organelle that is labelled in the data source.
+            Must be on the strings returned by organelle_morphology.organelle_types
+        background_label
+            The label in the data source that is used to encode the background.
+            Assumed to be 0.
 
-        Returns:
-            DataSource: Also accessable as `project[xml_name]`
+        Returns
+        -------
+        DataSource
+            Also accessable as `project[xml_name]`
 
-        Raises:
-            ValueError: Source already loaded
-            ValueError: Compression level of project not available
+        Raises
+        ------
+        ValueError
+            Source already loaded
+        ValueError
+            Compression level of project not available
         """
         xml_path = Path(xml_path)
         if xml_path.suffix != ".xml":
@@ -196,21 +209,7 @@ class Project:
         skip_existing=False,
         path_sample_dist: float = 0.1,
     ):
-        """Note that some meshes will be skipped if they are too small to be skeletonized.
-
-        :param ids: _description_, defaults to "*"
-        :type ids: str, optional
-        :param theta: _description_, defaults to 0.4
-        :type theta: float, optional
-        :param waves: _description_, defaults to 1
-        :type waves: int, optional
-        :param step_size: _description_, defaults to 2
-        :type step_size: int, optional
-        :param skip_existing: _description_, defaults to False
-        :type skip_existing: bool, optional
-        :param path_sample_dist: _description_, defaults to 0.1
-        :type path_sample_dist: float, optional
-        """
+        """Note that some meshes will be skipped if they are too small to be skeletonized."""
         orgs = self.get_organelles(ids=ids)
 
         start_logger_str = (
@@ -268,11 +267,62 @@ class Project:
             tuple[tuple[float, float, float], tuple[float, float, float]]
         ] = None,
         clipping_box=True,
+        domain_box=True,
     ):
         orgs = self.get_organelles(ids=ids)
-        mmesh = merge_meshes([o.mesh for o in orgs])
+        if len(orgs) == 0:
+            self.logger.warning(f"Selection {ids} does not match any organelles!")
+            return
+        source = orgs[0].source
 
-        show(mmesh)
+        o_types = {o.id.split("_")[0] for o in orgs}
+
+        if len(o_types) <= 1:
+            mmesh = merge_meshes([o.mesh for o in orgs], color=1)
+        else:
+            meshes = []
+            for i, ot in enumerate(o_types):
+                ot_meshes = [o.mesh for o in orgs if ot in o.id]
+                meshes.append(merge_meshes(ot_meshes, color=-(i + 1)))
+            mmesh = merge_meshes(meshes, color=0)
+        to_show = [mmesh.compute()]
+
+        if domain_box:
+            size = np.array(source.metadata["size"])
+            domain_box = trimesh.path.creation.box_outline(
+                extents=size,
+                transform=trimesh.transformations.translation_matrix(size / 2),
+            )
+            domain_box.colors = ((0, 200, 0, 255),)
+            to_show.append(domain_box)
+
+        if clipping_box:
+            if self.clipping is not None:
+                assert source._clip_low_corner_data is not None, (
+                    "source._clip_low_corner_data is missing"
+                )
+                edges = corners_to_edges(*source.clipping_corners)
+                trans = trimesh.transformations.translation_matrix(
+                    source.clipping_corners[0] + (edges / 2)
+                )
+
+                clip_box = trimesh.path.creation.box_outline(
+                    extents=edges, transform=trans
+                )
+                clip_box.colors = ((100, 0, 200, 255),)
+                to_show.append(clip_box)
+
+        if box:
+            edges = corners_to_edges(*box)
+            trans = trimesh.transformations.translation_matrix(
+                box[0] + (np.array(box) / 2)
+            )
+
+            box = trimesh.path.creation.box_outline(extents=edges, transform=trans)
+            box.colors = ((200, 50, 50, 255),)
+            to_show.append(box)
+
+        show(to_show)
 
     def show_plotly(
         self,

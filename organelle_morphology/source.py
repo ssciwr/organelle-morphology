@@ -384,7 +384,7 @@ class DataSource:
         self._metadata["data_root"] = self.xml_path / filename
         self._metadata["downsampling"] = self.timepoint.downsamplingFactors
         self._metadata["levels"] = self.timepoint.levels
-        self._metadata["size"] = tuple((int(i) for i in size.split(" ")))
+        self._metadata["size"] = tuple([int(i) for i in size.split(" ")][::-1])
         self._metadata["resolution"] = resolution
         self._metadata["name"] = name
         self._metadata["coarse_level"] = coarse_level
@@ -443,9 +443,30 @@ class DataSource:
 
     @property
     def clipping_corners(self):
-        if self._clip_low_corner is None or self._clip_high_corner is None:
-            self.get_data(None)
+        """Lower and upper clipping corner after scaling"""
+        if self.project.clipping is not None:
+            if self._clip_low_corner is None or self._clip_high_corner is None:
+                self.get_data(None)
         return self._clip_low_corner, self._clip_high_corner
+
+    @clipping_corners.setter
+    def clipping_corners(self, corners):
+        self._clip_low_corner, self._clip_high_corner = corners
+
+    @property
+    def clipping_corners_data(self):
+        """Lower and upper clipping corner matching the raw data"""
+        if self.project.clipping is not None:
+            if (
+                self._clip_low_corner_data is None
+                or self._clip_high_corner_data is None
+            ):
+                self.get_data(None)
+        return self._clip_low_corner_data, self._clip_high_corner_data
+
+    @clipping_corners_data.setter
+    def clipping_corners_data(self, corners):
+        self._clip_low_corner_data, self._clip_high_corner_data = corners
 
     def get_data(self, compression_level: Optional[str]) -> Array:
         """Get data of this source as array.
@@ -473,16 +494,16 @@ class DataSource:
         cube_slice = (slice(None), slice(None), slice(None))
         if self.project.clipping is not None:
             lower_corner, upper_corner = self.project.clipping
-            self._clip_low_corner_data = np.floor(lower_corner * data.shape).astype(int)
-            self._clip_high_corner_data = np.ceil(upper_corner * data.shape).astype(int)
+            c_low_d = np.floor(lower_corner * data.shape).astype(int)
+            c_high_d = np.ceil(upper_corner * data.shape).astype(int)
             cube_slice = tuple(
-                slice(clip_low, clip_high, 1)
-                for clip_low, clip_high in zip(
-                    self._clip_low_corner_data, self._clip_high_corner_data
-                )
+                slice(low, high, 1) for low, high in zip(c_low_d, c_high_d)
             )
-            self._clip_low_corner = self._clip_low_corner_data * self._scaling_factors
-            self._clip_high_corner = self._clip_high_corner_data * self._scaling_factors
+            self.clipping_corners_data = (c_low_d, c_high_d)
+            self.clipping_corners = (
+                c_low_d * self._scaling_factors,
+                c_high_d * self._scaling_factors,
+            )
 
         return data[cube_slice]
 
@@ -547,7 +568,7 @@ class DataSource:
             verts, faces = cache[key]
             return Trimesh(verts, faces)
 
-        @delayed
+        @delayed(pure=True)
         def _write_to_cache(key, mesh, cs):
             name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
@@ -572,6 +593,17 @@ class DataSource:
                 # keep meshes in distributed memory, gc previously computed meshes
                 self._storage["ref_meshes"] = persist(*self._meshes.values())
 
+                if self.project.clipping is not None:
+                    assert "clipping_data" in self.cache, (
+                        "clipping_data missing in cache!"
+                    )
+                    assert "clipping_scaled" in self.cache, (
+                        "clipping_scaled missing in cache!"
+                    )
+                    self.clipping_corners = self.cache["clipping_scaled"]
+                    self.clipping_corners_data = self.cache["clipping_data"]
+                    self._scaling_factors = self.cache["scaling"]
+
                 self._computed_compression = self.project.compression_level
                 self.logger.debug("Meshes loaded from cache")
 
@@ -581,12 +613,16 @@ class DataSource:
                 self.logger.debug("Saving meshes to cache..")
 
                 self.cache["labels"] = list(self._meshes.keys())
-                # meshes_d = list(self._meshes.values())
-                delayed_saves = []
+
+                if self.project.clipping is not None:
+                    self.cache["clipping_scaled"] = self.clipping_corners
+                    self.cache["clipping_data"] = self.clipping_corners_data
+                    self.cache["scaling"] = self._scaling_factors
 
                 cs = self.project.cache_settings.copy()
                 cs["source"] = self.xml_path.stem
 
+                delayed_saves = []
                 for label, mesh_d in self._meshes.items():
                     delayed_saves.append(_write_to_cache(label, mesh_d, cs))
                 compute(*delayed_saves)

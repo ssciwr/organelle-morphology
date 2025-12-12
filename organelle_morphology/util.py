@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Optional, Iterable
 import logging
 
+from dask.base import compute
 from dask.delayed import Delayed, delayed
 from trimesh import Trimesh
 import trimesh
@@ -203,51 +204,44 @@ def merge_meshes(meshes: Iterable[Delayed], color: Optional[int] = None) -> Dela
     return meshes[0]
 
 
+def corners_to_edges(lower, upper):
+    return np.array(upper) - np.array(lower)
+
+
 @delayed
 def bounding_box_delayed(mesh: Trimesh):
     """Calculate the corner with the smallest and the one
     with the biggest corrdinates.
 
-    Parameters
-    ----------
-    mesh
-        Trimesh
+    Args:
+        mesh: Trimesh
 
-    Returns
-    -------
-    min: np.ndarray
-        First corner
-    max: np.ndarray
-        Second corner
+    Returns:
+        min: np.ndarray, First corner
+        max: np.ndarray, Second corner
     """
     min = np.min(mesh.vertices, axis=0)
     max = np.max(mesh.vertices, axis=0)
     return min, max
 
 
-def box(min, max):
-    if isinstance(min, Delayed):
-        min.compute
-    if isinstance(max, Delayed):
-        max.compute
-
-    return trimesh.primitives.box(bounds=(min, max)).as_outline()
-
-
 def show(meshes):
+    """Set up a scene with proper camera settings and show it"""
     scene = trimesh.Scene()
     scene.camera.z_far = 100000
     # scene.add_geometry(trimesh.creation.axis(origin_size=10))
 
     if not isinstance(meshes, (list, tuple)):
         meshes = [meshes]
+    meshes = compute(*meshes, traverse=False)
 
     scene.camera_transform = scene.camera.look_at(meshes[0].vertices[:200])
 
     for mesh in meshes:
         scene.add_geometry(mesh)
 
-    scene.show()
+    # scale to make the view behave properly
+    scene.scaled(1 / scene.scale).show()
     return scene
 
 

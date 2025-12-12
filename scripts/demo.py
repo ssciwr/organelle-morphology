@@ -13,7 +13,6 @@ from organelle_morphology import Project, merge_meshes
 import matplotlib as mpl
 import numpy as np
 import matplotlib.pyplot as plt
-import tempfile
 
 from dask.base import compute
 
@@ -72,11 +71,14 @@ mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 show(mmesh)
 
 # %% Project API
-p.clipping = [[0.6,0,0], [1,1,1]]
+p.clipping = [[0.6,0.5,0], [1,1,1]]
 p.compression_level = "s3"
 
 mmesh = p.merged_meshes(color=1)
-mmesh.show()
+show(mmesh)
+
+# %%
+p.show()
 
 # $$$$$$$$$$$$$
 # %% Organelles
