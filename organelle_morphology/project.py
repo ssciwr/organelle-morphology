@@ -313,16 +313,16 @@ class Project:
                 to_show.append(clip_box)
 
         if box:
+            if np.all(np.array(box) <= 1.0):
+                box: np.ndarray = np.array(box) * source.metadata["size"]
             edges = corners_to_edges(*box)
-            trans = trimesh.transformations.translation_matrix(
-                box[0] + (np.array(box) / 2)
-            )
+            trans = trimesh.transformations.translation_matrix(box[0] + (edges / 2))
 
             box = trimesh.path.creation.box_outline(extents=edges, transform=trans)
             box.colors = ((200, 50, 50, 255),)
             to_show.append(box)
 
-        show(to_show)
+        return show(to_show)
 
     def show_plotly(
         self,

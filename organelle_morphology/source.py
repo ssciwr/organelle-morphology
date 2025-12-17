@@ -492,18 +492,20 @@ class DataSource:
         self._scaling_factors = self.metadata["downsampling"][_idx]
 
         cube_slice = (slice(None), slice(None), slice(None))
-        if self.project.clipping is not None:
+        if self.project.clipping is None:
+            lower_corner = np.zeros((3,))
+            upper_corner = np.ones((3,))
+        else:
             lower_corner, upper_corner = self.project.clipping
-            c_low_d = np.floor(lower_corner * data.shape).astype(int)
-            c_high_d = np.ceil(upper_corner * data.shape).astype(int)
-            cube_slice = tuple(
-                slice(low, high, 1) for low, high in zip(c_low_d, c_high_d)
-            )
-            self.clipping_corners_data = (c_low_d, c_high_d)
-            self.clipping_corners = (
-                c_low_d * self._scaling_factors,
-                c_high_d * self._scaling_factors,
-            )
+
+        c_low_d = np.floor(lower_corner * data.shape).astype(int)
+        c_high_d = np.ceil(upper_corner * data.shape).astype(int)
+        cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
+        self.clipping_corners_data = (c_low_d, c_high_d)
+        self.clipping_corners = (
+            c_low_d * self._scaling_factors,
+            c_high_d * self._scaling_factors,
+        )
 
         return data[cube_slice]
 
