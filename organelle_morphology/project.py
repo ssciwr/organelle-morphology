@@ -263,6 +263,7 @@ class Project:
     def show(
         self,
         ids: str = "*",
+        ids_highlight: Optional[str] = None,
         box: Optional[
             tuple[tuple[float, float, float], tuple[float, float, float]]
         ] = None,
@@ -277,14 +278,24 @@ class Project:
 
         o_types = {o.id.split("_")[0] for o in orgs}
 
-        if len(o_types) <= 1:
-            mmesh = merge_meshes([o.mesh for o in orgs], color=1)
-        else:
-            meshes = []
-            for i, ot in enumerate(o_types):
-                ot_meshes = [o.mesh for o in orgs if ot in o.id]
-                meshes.append(merge_meshes(ot_meshes, color=-(i + 1)))
-            mmesh = merge_meshes(meshes, color=0)
+        if ids_highlight is not None:
+            orgs_highlight = self.get_organelles(ids_highlight)
+            to_merge = []
+            if len(orgs_highlight) > 0:
+                to_merge.append(
+                    merge_meshes([o.mesh for o in orgs_highlight], color=-2)
+                )
+            mmesh = merge_meshes(to_merge + [o.mesh for o in orgs], color=0)
+
+        else:  # No highlight
+            if len(o_types) <= 1:
+                mmesh = merge_meshes([o.mesh for o in orgs], color=1)
+            else:
+                meshes = []
+                for i, ot in enumerate(o_types):
+                    ot_meshes = [o.mesh for o in orgs if ot in o.id]
+                    meshes.append(merge_meshes(ot_meshes, color=-(i + 1)))
+                mmesh = merge_meshes(meshes, color=0)
         to_show = [mmesh.compute()]
 
         if domain_box:
@@ -318,9 +329,11 @@ class Project:
             edges = corners_to_edges(*box)
             trans = trimesh.transformations.translation_matrix(box[0] + (edges / 2))
 
-            box = trimesh.path.creation.box_outline(extents=edges, transform=trans)
-            box.colors = ((200, 50, 50, 255),)
-            to_show.append(box)
+            box_outline = trimesh.path.creation.box_outline(
+                extents=edges, transform=trans
+            )
+            box_outline.colors = ((200, 50, 50, 255),)
+            to_show.append(box_outline)
 
         return show(to_show)
 

@@ -253,8 +253,8 @@ class DataSource:
         self.background_label = background_label
         self.logger = self.project.logger
 
-        if not organelle_registry.get(self.org_name):
-            raise ValueError(f"Unknown organelle class {self.org_name}")
+        # if not organelle_registry.get(self.org_name):
+        #     raise ValueError(f"Unknown organelle class {self.org_name}")
 
         self._metadata = None
 
@@ -468,12 +468,17 @@ class DataSource:
     def clipping_corners_data(self, corners):
         self._clip_low_corner_data, self._clip_high_corner_data = corners
 
-    def get_data(self, compression_level: Optional[str]) -> Array:
+    def get_data(self, compression_level: Optional[str], clipping=None) -> Array:
         """Get data of this source as array.
+
+        Sets self.clipping_corners and self.clipping_corners_data, if
+        project clipping is not overwritten
 
         Args:
             compression_level: Override the compression level specified in
-            the project. Default: None, get level from project.
+                the project. Default: None, get level from project.
+            clipping: Override the clipping specified in the project.
+                Default: None, get clipping from project
 
         Returns:
             Dask array of the data. Respects the in the project set clipping.
@@ -489,23 +494,29 @@ class DataSource:
         data = da.from_array(data_at_level, chunks="auto")
 
         _idx = np.nonzero(np.array(self.metadata["levels"]) == self._level)[0][0]
-        self._scaling_factors = self.metadata["downsampling"][_idx]
 
         cube_slice = (slice(None), slice(None), slice(None))
-        if self.project.clipping is None:
+
+        if clipping is not None:
+            lower_corner = np.array(clipping[0])
+            upper_corner = np.array(clipping[1])
+        elif self.project.clipping is not None:
+            lower_corner, upper_corner = self.project.clipping
+        else:
             lower_corner = np.zeros((3,))
             upper_corner = np.ones((3,))
-        else:
-            lower_corner, upper_corner = self.project.clipping
 
         c_low_d = np.floor(lower_corner * data.shape).astype(int)
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
-        self.clipping_corners_data = (c_low_d, c_high_d)
-        self.clipping_corners = (
-            c_low_d * self._scaling_factors,
-            c_high_d * self._scaling_factors,
-        )
+
+        if clipping is None:
+            self._scaling_factors = self.metadata["downsampling"][_idx]
+            self.clipping_corners_data = (c_low_d, c_high_d)
+            self.clipping_corners = (
+                c_low_d * self._scaling_factors,
+                c_high_d * self._scaling_factors,
+            )
 
         return data[cube_slice]
 
@@ -835,7 +846,7 @@ class DataSource:
             self.logger.debug(f"Initializing Organelles {self.org_name}")
 
             # Iterate available organelle classes and construct organelles
-            if not (orgclass := organelle_registry.get(self.org_name)):
+            if not (orgclass := organelle_registry[self.org_name]):
                 raise ValueError(f"Unknown organelle class {self.org_name}")
             for organelle in orgclass.construct(self, self.labels):
                 self._organelles[organelle.id] = organelle

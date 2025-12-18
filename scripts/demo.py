@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from dask.base import compute
-
+import organelle_morphology as om
 from organelle_morphology.util import color_delayed_trimesh_rgba, show
 
 viridis = mpl.colormaps.get("viridis")

@@ -8,6 +8,9 @@ with app.setup:
     import marimo as mo
     import organelle_morphology as om
     from pathlib import Path
+    import numpy as np
+    from organelle_morphology.util import bounding_box_delayed
+    from dask.base import compute
 
 
 @app.cell
@@ -83,6 +86,12 @@ def _(project):
 
 
 @app.cell
+def _():
+    om.organelle.organelle_registry
+    return
+
+
+@app.cell
 def _(get_source_header, run_add_source):
     run_add_source
     get_source_header()
@@ -91,7 +100,7 @@ def _(get_source_header, run_add_source):
 
 @app.cell
 def _(project, run_add_source):
-    mo.stop(len(project.sources)<1, "Add a source first!")
+    mo.stop(len(project.sources) < 1, "Add a source first!")
     run_add_source
 
     cl_switch = mo.ui.switch(value=False, label="Clipping")
@@ -110,51 +119,65 @@ def _(project, run_add_source):
         s = list(project.sources.values())[0]
         return s.metadata["levels"]
 
-    level_ui = mo.ui.radio(label="Compression level", options=_get_levels(),inline=True,value=_get_levels()[0])
+    level_ui = mo.ui.radio(
+        label="Compression level",
+        options=_get_levels(),
+        inline=True,
+        value=_get_levels()[0],
+    )
 
     def _update_clip_level(_):
-        clipping = [[
-            cl_d["low_x"].value,
-            cl_d["low_y"].value,
-            cl_d["low_z"].value,
-            ],[
-            cl_d["high_x"].value,
-            cl_d["high_y"].value,
-            cl_d["high_z"].value,
-        ]]
+        clipping = [
+            [
+                cl_d["low_x"].value,
+                cl_d["low_y"].value,
+                cl_d["low_z"].value,
+            ],
+            [
+                cl_d["high_x"].value,
+                cl_d["high_y"].value,
+                cl_d["high_z"].value,
+            ],
+        ]
         clipping = clipping if cl_switch.value else None
         project.clipping = clipping
         project.compression_level = level_ui.value
 
-    change_settings_button = mo.ui.button(label="Update project settings", on_click=_update_clip_level)
+    change_settings_button = mo.ui.button(
+        label="Update project settings", on_click=_update_clip_level
+    )
 
-    mo.vstack([
-        mo.md("<h3>Change compression and clipping</h3>"),
-        cl_switch,
-        cl_d,
-        level_ui,
-        change_settings_button,
-    ])
+    mo.vstack(
+        [
+            mo.md("<h3>Change compression and clipping</h3>"),
+            cl_switch,
+            cl_d,
+            level_ui,
+            change_settings_button,
+        ]
+    )
     return (change_settings_button,)
 
 
 @app.cell
 def _(change_settings_button, project):
     change_settings_button
-    mo.md(f"<h3>Current settings</h3>Compression level: <b>{project.compression_level}</b><br>Clipping: <b>{project.clipping}</b>")
+    mo.md(
+        f"<h3>Current settings</h3>Compression level: <b>{project.compression_level}</b><br>Clipping: <b>{project.clipping}</b>"
+    )
     return
 
 
 @app.cell
 def _():
-    run_progress = mo.ui.run_button(label="Refresh Progress View")
+    run_progress = mo.ui.button(label="Refresh Progress View", value=0,on_click=lambda v: v+1)
     run_progress
     return (run_progress,)
 
 
 @app.cell
 def _(run_progress):
-    run_progress
+    mo.stop(run_progress.value == 0, "Please refresh once the project is created")
     url = "http://localhost:8787/individual-progress"
     mo.iframe(
         f'<iframe src="{url}" width="100%" height="600" frameborder="0"></iframe>',
@@ -165,57 +188,98 @@ def _(run_progress):
 
 
 @app.cell
-def _(project):
-    def clear_caches(_):
-        project.clear_caches(clear_disk_check.value)
-
-    # Does not work, as capturing is broken
-    def cache_info(_):
-        with mo.redirect_stderr():
-            project.get_caches()
-
-    clear_disk_check = mo.ui.checkbox(value=False, label="Also clear disk cache")
-    clear_disk_button = mo.ui.button(on_click=clear_caches, label="Clear Cache",kind="warn")
-    cache_info_button = mo.ui.run_button(label="Cache Information")
-
+def _():
     run_show_mesh = mo.ui.run_button(label="Show Mesh")
 
-    box_dict = mo.ui.dictionary({
-        "draw box": mo.ui.checkbox(value=False),
-        "lower_x": mo.ui.number(value=0.0, start=0.0, stop=1.0),
-        "lower_y": mo.ui.number(value=0.0, start=0.0, stop=1.0),
-        "lower_z": mo.ui.number(value=0.0, start=0.0, stop=1.0),
-        "upper_x": mo.ui.number(value=1.0, start=0.0, stop=1.0),
-        "upper_y": mo.ui.number(value=1.0, start=0.0, stop=1.0),
-        "upper_z": mo.ui.number(value=1.0, start=0.0, stop=1.0),
-    }, label="Box settings")
+    mesh_id_filter = mo.ui.text(value="*", label="Organelle id filter")
+    highlight_filter = mo.ui.text(value="", label="Highligh ids")
 
-    mo.output.append(mo.vstack([
-        mo.md("## Controlls"),
-        run_show_mesh,
-        box_dict,
-        cache_info_button,
-        mo.hstack([
-            clear_disk_button, 
-            clear_disk_check,
-        ],justify="start"),
-    ]))
-    None
-    return box_dict, cache_info_button, run_show_mesh
+    box_dict = mo.ui.dictionary(
+        {
+            "draw box": mo.ui.checkbox(value=False),
+            "lower_x": mo.ui.number(value=0.0, start=0.0, stop=1.0),
+            "lower_y": mo.ui.number(value=0.0, start=0.0, stop=1.0),
+            "lower_z": mo.ui.number(value=0.0, start=0.0, stop=1.0),
+            "upper_x": mo.ui.number(value=1.0, start=0.0, stop=1.0),
+            "upper_y": mo.ui.number(value=1.0, start=0.0, stop=1.0),
+            "upper_z": mo.ui.number(value=1.0, start=0.0, stop=1.0),
+        },
+        label="Box settings",
+    )
+
+    mo.vstack(
+        [
+            mo.md("## Show Mesh"),
+            mesh_id_filter,
+            highlight_filter,
+            box_dict,
+            run_show_mesh,
+        ]
+    )
+    return box_dict, highlight_filter, mesh_id_filter, run_show_mesh
 
 
 @app.cell
-def show_mesh(box_dict, project, run_show_mesh):
+def _(highlight_filter):
+    highlight_filter.value
+    return
+
+
+@app.cell
+def show_mesh(
+    box_dict,
+    highlight_filter,
+    mesh_id_filter,
+    project,
+    run_show_mesh,
+):
     mo.stop(not run_show_mesh.value, "Mesh will be displayed here")
     box = None
     if box_dict["draw box"].value:
         box = (
-            (box_dict["lower_x"].value, box_dict["lower_y"].value, box_dict["lower_z"].value),
-            (box_dict["upper_x"].value, box_dict["upper_y"].value, box_dict["upper_z"].value),
+            (
+                box_dict["lower_x"].value,
+                box_dict["lower_y"].value,
+                box_dict["lower_z"].value,
+            ),
+            (
+                box_dict["upper_x"].value,
+                box_dict["upper_y"].value,
+                box_dict["upper_z"].value,
+            ),
         )
-    
-    project.show(box=box).show()
+    highlight = highlight_filter.value if highlight_filter.value else None
+    print(mesh_id_filter.value, highlight_filter.value)
+    scene = project.show(box=box, ids=mesh_id_filter.value, ids_highlight=highlight)
+    scene.show()
     return
+
+
+@app.cell
+def _(project):
+    def clear_caches(_):
+        project.clear_caches(clear_disk_check.value)
+
+    clear_disk_check = mo.ui.checkbox(value=False, label="Also clear disk cache")
+    clear_disk_button = mo.ui.button(
+        on_click=clear_caches, label="Clear Cache", kind="warn"
+    )
+    cache_info_button = mo.ui.run_button(label="Cache Information")
+
+    mo.vstack(
+        [
+            mo.md("## Cache"),
+            cache_info_button,
+            mo.hstack(
+                [
+                    clear_disk_button,
+                    clear_disk_check,
+                ],
+                justify="start",
+            ),
+        ]
+    )
+    return (cache_info_button,)
 
 
 @app.cell
@@ -227,14 +291,52 @@ def _(cache_info_button, project):
 
 
 @app.cell
-def _():
+def _(box_dict, mesh_id_filter, project):
+    def ids_in_box(_):
+        orgs = project.get_organelles(ids=mesh_id_filter.value)
+        _scaling = np.array(list(project.sources.values())[0].metadata["size"])
+        _box = (
+            np.array(
+                (
+                    box_dict["lower_x"].value,
+                    box_dict["lower_y"].value,
+                    box_dict["lower_z"].value,
+                )
+            )
+            * _scaling,
+            np.array(
+                (
+                    box_dict["upper_x"].value,
+                    box_dict["upper_y"].value,
+                    box_dict["upper_z"].value,
+                )
+            )
+            * _scaling,
+        )
+        result = []
+        bbs = [(o, bounding_box_delayed(o.mesh)) for o in orgs]
+        bbs = compute(*bbs)
+        for o, bb in bbs:
+            if np.all(bb[0] >= _box[0]) and np.all(bb[1] <= _box[1]):
+                result.append(o.id)
+
+        mo.output.append(result)
+        return result
+
+    box_dict  # control flow
+    mesh_id_filter  # control flow
+    mo.ui.button(on_click=ids_in_box, label="Get IDs of organelles in box", value=None)
+    return
+
+
+@app.cell
+def _(project):
+    len(project.get_organelles(ids="er*"))
     return
 
 
 @app.cell
 def _():
-
-
     return
 
 

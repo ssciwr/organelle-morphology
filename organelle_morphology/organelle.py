@@ -1,5 +1,6 @@
 from typing import Optional
 
+from dask.delayed import Delayed
 import numpy as np
 import plotly.graph_objects as go
 import skeletor as sk
@@ -9,10 +10,6 @@ from collections import defaultdict
 
 import organelle_morphology
 from organelle_morphology.util import bounding_box_delayed
-
-# The dictionary of registered organelle subclasses, mapping names
-# to classes
-organelle_registry: dict[str, type["Organelle"]] = {}
 
 
 def organelle_types() -> list[str]:
@@ -25,6 +22,8 @@ def organelle_types() -> list[str]:
 
 
 class Organelle:
+    _name = "organelle_name"
+
     def __init__(self, source: "organelle_morphology.DataSource", label: int):
         """The organelle base class
 
@@ -48,14 +47,6 @@ class Organelle:
         self._mcs_dict = defaultdict(dict)
 
         self.logger = self.source.project.logger
-
-    def __init_subclass__(cls, name: Optional[str] = None):
-        """Register a given subclass in the global dictionary 'organelles'"""
-        if name is not None:
-            organelle_registry[name] = cls
-            cls._name = name
-        else:
-            cls._name = "organelle"
 
     @classmethod
     def construct(cls, source, labels: list[int]):
@@ -400,9 +391,7 @@ class Organelle:
         return self._organelle_id
 
     @property
-    def bounding_box(
-        self,
-    ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    def bounding_box(self) -> Delayed:
         return bounding_box_delayed(self.mesh).compute()
 
     @property
@@ -538,9 +527,25 @@ class Organelle:
         return da.where(source_ds == self.label, source_ds, 0)
 
 
-class Mitochondrium(Organelle, name="mito"):
-    pass
+class Mitochondrium(Organelle):
+    _name = "mito"
 
 
-class EndoplasmicReticulum(Organelle, name="er"):
-    pass
+class EndoplasmicReticulum(Organelle):
+    _name = "er"
+
+
+class AutoFillDict(dict):
+    """Dictionary that populates itself"""
+
+    def __missing__(self, key: str):
+        new = type(key.capitalize(), (Organelle,), {"_name": key})
+        self[key] = new
+        return new
+
+
+# The dictionary of registered organelle subclasses, mapping names
+# to classes
+organelle_registry: dict[str, "Organelle"] = AutoFillDict()
+organelle_registry["mito"] = Mitochondrium
+organelle_registry["er"] = EndoplasmicReticulum
