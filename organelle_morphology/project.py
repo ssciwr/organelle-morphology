@@ -113,6 +113,9 @@ class Project:
         self.cluster = client.cluster if client else LocalCluster()
         self.client = client if client else Client(self.cluster)
 
+    def recreate_client(self):
+        self.client = Client(self.cluster)
+
     def __str__(self):
         return f"Project at {self.path}"
 
@@ -206,30 +209,35 @@ class Project:
         theta: float = 0.4,
         waves: int = 1,
         step_size: int = 2,
-        skip_existing=False,
         path_sample_dist: float = 0.1,
+        recompute=False,
     ):
         """Note that some meshes will be skipped if they are too small to be skeletonized."""
         orgs = self.get_organelles(ids=ids)
 
-        start_logger_str = (
+        self.logger.info(
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
         )
-        if skip_existing:
-            start_logger_str += "Skipping existing skeletons."
-        self.logger.info(start_logger_str)
 
-        for org in orgs:
-            if skip_existing and org.skeleton is not None:
-                continue
-
-            org._generate_skeleton(
-                skeletonization_type="wavefront",
-                theta=theta,
-                waves=waves,
-                step_size=step_size,
-                path_sample_dist=path_sample_dist,
+        org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
+        for o in orgs:
+            org_per_source[o.source].append(o)
+        calculated_orgs = []
+        for s, o_s in org_per_source.items():
+            labels = [o.label for o in o_s]
+            calculated_orgs.extend(
+                s.generate_skeletons(
+                    labels=labels,
+                    skeletonization_type="wavefront",
+                    theta=theta,
+                    waves=waves,
+                    step_size=step_size,
+                    path_sample_dist=path_sample_dist,
+                    recompute=recompute,
+                )
             )
+        self.logger.info("Skeletonization done!")
+        return calculated_orgs
 
     def skeletonize_vertex_clusters(
         self,
@@ -237,28 +245,34 @@ class Project:
         theta: float = 0.4,
         epsilon: float = 0.1,
         sampling_dist: float = 0.1,
-        skip_existing=False,
         path_sample_dist: float = 0.1,
+        recompute: bool = False,
     ):
         orgs = self.get_organelles(ids=ids)
 
-        start_logger_str = (
+        self.logger.info(
             f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
         )
-        if skip_existing:
-            start_logger_str += "Skipping existing skeletons."
-        self.logger.info(start_logger_str)
 
-        for org in orgs:
-            if skip_existing and org.skeleton is not None:
-                continue
-            org._generate_skeleton(
-                skeletonization_type="vertex_clusters",
-                theta=theta,
-                epsilon=epsilon,
-                sampling_dist=sampling_dist,
-                path_sample_dist=path_sample_dist,
+        org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
+        for o in orgs:
+            org_per_source[o.source].append(o)
+        calculated_orgs = []
+        for s, o_s in org_per_source.items():
+            labels = [o.label for o in o_s]
+            calculated_orgs.extend(
+                s.generate_skeletons(
+                    labels=labels,
+                    skeletonization_type="vertex_clusters",
+                    theta=theta,
+                    epsilon=epsilon,
+                    sampling_dist=sampling_dist,
+                    path_sample_dist=path_sample_dist,
+                    recompute=recompute,
+                )
             )
+        self.logger.info("Skeletonization done!")
+        return calculated_orgs
 
     def show(
         self,
@@ -269,6 +283,8 @@ class Project:
         ] = None,
         clipping_box=True,
         domain_box=True,
+        curvature=False,
+        skeleton=False,
     ):
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
@@ -278,25 +294,53 @@ class Project:
 
         o_types = {o.id.split("_")[0] for o in orgs}
 
-        if ids_highlight is not None:
-            orgs_highlight = self.get_organelles(ids_highlight)
-            to_merge = []
-            if len(orgs_highlight) > 0:
-                to_merge.append(
-                    merge_meshes([o.mesh for o in orgs_highlight], color=-2)
-                )
-            mmesh = merge_meshes(to_merge + [o.mesh for o in orgs], color=0)
+        transp = False
+        if skeleton:
+            transp = True
 
-        else:  # No highlight
-            if len(o_types) <= 1:
-                mmesh = merge_meshes([o.mesh for o in orgs], color=1)
-            else:
-                meshes = []
-                for i, ot in enumerate(o_types):
-                    ot_meshes = [o.mesh for o in orgs if ot in o.id]
-                    meshes.append(merge_meshes(ot_meshes, color=-(i + 1)))
-                mmesh = merge_meshes(meshes, color=0)
-        to_show = [mmesh.compute()]
+        to_show = []
+        if curvature:
+            org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
+            for o in orgs:
+                org_per_source[o.source].append(o)
+            meshes = []
+            for s, o_s in org_per_source.items():
+                labels = [o.label for o in o_s]
+                meshes.append(
+                    merge_meshes(
+                        s.get_curvature(labels, color=True)[1], color=0, transp=transp
+                    )
+                )
+            to_show.extend(compute(*meshes))
+        else:
+            if ids_highlight is not None:
+                orgs_highlight = self.get_organelles(ids_highlight)
+                to_merge = []
+                if len(orgs_highlight) > 0:
+                    to_merge.append(
+                        merge_meshes(
+                            [o.mesh for o in orgs_highlight], color=-2, transp=transp
+                        )
+                    )
+                mmesh = merge_meshes(to_merge + [o.mesh for o in orgs], color=0)
+
+            else:  # No highlight
+                if len(o_types) <= 1:
+                    mmesh = merge_meshes([o.mesh for o in orgs], color=1, transp=transp)
+                else:
+                    meshes = []
+                    for i, ot in enumerate(o_types):
+                        ot_meshes = [o.mesh for o in orgs if ot in o.id]
+                        meshes.append(
+                            merge_meshes(ot_meshes, color=-(i + 1), transp=transp)
+                        )
+                    mmesh = merge_meshes(meshes, color=0)
+            to_show = [mmesh.compute()]
+
+        if skeleton:
+            for o in orgs:
+                if o.skeleton is not None:
+                    to_show.append(o.skeleton.skeleton)
 
         if domain_box:
             size = np.array(source.metadata["size"])
@@ -324,10 +368,11 @@ class Project:
                 to_show.append(clip_box)
 
         if box:
-            if np.all(np.array(box) <= 1.0):
-                box: np.ndarray = np.array(box) * source.metadata["size"]
-            edges = corners_to_edges(*box)
-            trans = trimesh.transformations.translation_matrix(box[0] + (edges / 2))
+            npbox = np.array(box)
+            if np.all(npbox <= 1.0):
+                npbox = npbox * source.metadata["size"]
+            edges = corners_to_edges(*npbox)
+            trans = trimesh.transformations.translation_matrix(npbox[0] + (edges / 2))
 
             box_outline = trimesh.path.creation.box_outline(
                 extents=edges, transform=trans
@@ -768,9 +813,10 @@ class Project:
         for org in self.organelles:
             if org.skeleton is not None:
                 skeleton_data[org.id] = org.skeleton_info
-        return pd.DataFrame(skeleton_data).T.sort_values(
-            by="num_nodes", ascending=False
-        )
+        df = pd.DataFrame(skeleton_data).T
+        if len(df) > 0:
+            return df.sort_values(by="num_nodes", ascending=False)
+        return pd.DataFrame()
 
     @property
     def curvature_map(self):

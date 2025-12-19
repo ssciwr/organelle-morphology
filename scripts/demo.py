@@ -79,8 +79,9 @@ show(mmesh)
 
 # %%
 p.show()
-
+p.show(curvature=True)
 p.show(box=((0.6,0.4,0.3),(0.9,0.8,0.6)))
+p.show(skeleton=True)
 
 # $$$$$$$$$$$$$
 # %% Organelles
@@ -92,15 +93,17 @@ id_ = f"mito_{label}"
 o = s.get_organelles(ids=id_)[0]
 
 # %%
-# p.skeletonize_vertex_clusters(id_)
-p.skeletonize_wavefront(id_)
-o.skeleton.show()
+orgs = p.skeletonize_wavefront("mito_*")
+orgs = p.skeletonize_vertex_clusters("mito_101800051", recompute=True)
+o = orgs[0]
+o.skeleton.skeleton.show()
+p.show(skeleton=True)
 
+# %%
 p.skeleton_info
 o.mesh_properties
 o.geometric_data
 
-merge_meshes(o.mesh, values=o.curvature_map).show()
 
 # %% Curvature
 o.curvature_map

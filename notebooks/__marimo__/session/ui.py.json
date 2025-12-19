@@ -1,22 +1,9 @@
 {
   "version": "1",
   "metadata": {
-    "marimo_version": "0.18.3"
+    "marimo_version": "0.18.4"
   },
   "cells": [
-    {
-      "id": "setup",
-      "code_hash": "b9dddeff7d7a468c6347e68668fe2d73",
-      "outputs": [
-        {
-          "type": "data",
-          "data": {
-            "text/plain": ""
-          }
-        }
-      ],
-      "console": []
-    },
     {
       "id": "Hbol",
       "code_hash": "94fee7d7916b720cb831374eaf5620cf",
@@ -31,101 +18,105 @@
       "console": []
     },
     {
+      "id": "setup",
+      "code_hash": "c35e17b84ec8d8772d6ef3f4fd5aedec",
+      "outputs": [],
+      "console": []
+    },
+    {
       "id": "MJUe",
-      "code_hash": "ff3965abf1184e38cae43b91430396d1",
-      "outputs": [
-        {
-          "type": "data",
-          "data": {
-            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><span class=\"markdown prose dark:prose-invert contents\"><h3 id=\"loadcreate-a-project\">Load/Create a Project</h3></span><marimo-ui-element object-id='MJUe-0' random-id='3be989b0-d871-5eb1-c019-922ee46026b3'><marimo-file-browser data-initial-value='[]' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Project directory&lt;/span&gt;&lt;/span&gt;&quot;' data-initial-path='&quot;/home/kai/projects/organelle-morphology/repo&quot;' data-selection-mode='&quot;directory&quot;' data-filetypes='[]' data-multiple='false' data-restrict-navigation='false'></marimo-file-browser></marimo-ui-element><marimo-ui-element object-id='MJUe-1' random-id='1ceb3025-1c11-01ae-51e9-f43610464b21'><marimo-switch data-initial-value='false' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Clipping&lt;/span&gt;&lt;/span&gt;&quot;' data-disabled='false'></marimo-switch></marimo-ui-element><marimo-ui-element object-id='MJUe-14' random-id='9ae82588-a56e-e060-9e52-ff402abec43a'><marimo-dict data-initial-value='{&quot;low_x&quot;:0.0,&quot;low_y&quot;:0.0,&quot;low_z&quot;:0.0,&quot;high_x&quot;:1.0,&quot;high_y&quot;:1.0,&quot;high_z&quot;:1.0}' data-label='null' data-element-ids='{&quot;MJUe-8&quot;:&quot;low_x&quot;,&quot;MJUe-9&quot;:&quot;low_y&quot;,&quot;MJUe-10&quot;:&quot;low_z&quot;,&quot;MJUe-11&quot;:&quot;high_x&quot;,&quot;MJUe-12&quot;:&quot;high_y&quot;,&quot;MJUe-13&quot;:&quot;high_z&quot;}'><span class=\"markdown prose dark:prose-invert contents\"><span class=\"paragraph\">Lower corner: <marimo-ui-element object-id='MJUe-8' random-id='c6c62867-1c40-2c99-f796-09c3b40e1488'><marimo-number data-initial-value='0.0' data-label='null' data-start='0.0' data-stop='1.0' data-debounce='false' data-full-width='false' data-disabled='false'></marimo-number></marimo-ui-element> <marimo-ui-element object-id='MJUe-9' random-id='caae3d97-aa2f-36c5-4422-e1d73b42b838'><marimo-number data-initial-value='0.0' data-label='null' data-start='0.0' data-stop='1.0' data-debounce='false' data-full-width='false' data-disabled='false'></marimo-number></marimo-ui-element> <marimo-ui-element object-id='MJUe-10' random-id='f46911ab-76cd-a0b4-ddaf-40ac9b912696'><marimo-number data-initial-value='0.0' data-label='null' data-start='0.0' data-stop='1.0' data-debounce='false' data-full-width='false' data-disabled='false'></marimo-number></marimo-ui-element> <br>Higher corner: <marimo-ui-element object-id='MJUe-11' random-id='761c9442-4b93-c020-5ef0-c8a81331171c'><marimo-number data-initial-value='1.0' data-label='null' data-start='0.0' data-stop='1.0' data-debounce='false' data-full-width='false' data-disabled='false'></marimo-number></marimo-ui-element> <marimo-ui-element object-id='MJUe-12' random-id='c554842f-a276-1970-b648-1f0d3dc35824'><marimo-number data-initial-value='1.0' data-label='null' data-start='0.0' data-stop='1.0' data-debounce='false' data-full-width='false' data-disabled='false'></marimo-number></marimo-ui-element> <marimo-ui-element object-id='MJUe-13' random-id='80056d8c-13f0-3708-7083-435e5725d252'><marimo-number data-initial-value='1.0' data-label='null' data-start='0.0' data-stop='1.0' data-debounce='false' data-full-width='false' data-disabled='false'></marimo-number></marimo-ui-element></span></span></marimo-dict></marimo-ui-element><marimo-ui-element object-id='MJUe-15' random-id='ffb83f02-a864-bdc1-a287-2acea4d2bdf0'><marimo-button data-initial-value='0' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Load Project&lt;/span&gt;&lt;/span&gt;&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element></div>"
-          }
-        }
-      ],
+      "code_hash": "67667a2754549afdececada298ac8abc",
+      "outputs": [],
       "console": []
     },
     {
       "id": "vblA",
-      "code_hash": "c00c9ae263631a47b033209daab85c6b",
-      "outputs": [
-        {
-          "type": "data",
-          "data": {
-            "text/html": "<pre class='text-xs'>&#x27;Load a project first&#x27;</pre>"
-          }
-        }
-      ],
+      "code_hash": "6c49075fbd28b41cfa4b25ff2ed76851",
+      "outputs": [],
       "console": []
     },
     {
       "id": "bkHC",
       "code_hash": "e76386e645b018c0a1c90606e7c97454",
-      "outputs": [
-        {
-          "type": "error",
-          "ename": "ancestor-stopped",
-          "evalue": "This cell wasn't run because an ancestor was stopped with `mo.stop`: ",
-          "traceback": []
-        }
-      ],
+      "outputs": [],
       "console": []
     },
     {
       "id": "lEQa",
-      "code_hash": "db504fc461b51ce5bb113d553a20bfc7",
-      "outputs": [
-        {
-          "type": "error",
-          "ename": "ancestor-stopped",
-          "evalue": "This cell wasn't run because an ancestor was stopped with `mo.stop`: ",
-          "traceback": []
-        }
-      ],
+      "code_hash": "dddbeb375d5022a2d876012cf27091f5",
+      "outputs": [],
       "console": []
     },
     {
       "id": "PKri",
-      "code_hash": "3ecae7c286fd54fae0b40553f70828d2",
-      "outputs": [
-        {
-          "type": "error",
-          "ename": "ancestor-stopped",
-          "evalue": "This cell wasn't run because an ancestor was stopped with `mo.stop`: ",
-          "traceback": []
-        }
-      ],
+      "code_hash": "db504fc461b51ce5bb113d553a20bfc7",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Xref",
+      "code_hash": "485208f0618cdbd16fe13510a124f3e9",
+      "outputs": [],
       "console": []
     },
     {
       "id": "SFPL",
-      "code_hash": "b2015e522a418c3350d3af1da8790aeb",
-      "outputs": [
-        {
-          "type": "error",
-          "ename": "exception",
-          "evalue": "name 'dask' is not defined",
-          "traceback": []
-        }
-      ],
-      "console": [
-        {
-          "type": "stream",
-          "name": "stderr",
-          "text": "<span class=\"codehilite\"><div class=\"highlight\"><pre><span></span><span class=\"gt\">Traceback (most recent call last):</span>\n  File <span class=\"nb\">&quot;/tmp/marimo_108277/__marimo__cell_SFPL_.py&quot;</span>, line <span class=\"m\">1</span>, in <span class=\"n\">&lt;module&gt;</span>\n<span class=\"w\">    </span><span class=\"n\">dask</span>\n<span class=\"gr\">NameError</span>: <span class=\"n\">name &#39;dask&#39; is not defined</span>\n</pre></div>\n</span>",
-          "mimetype": "application/vnd.marimo+traceback"
-        }
-      ]
+      "code_hash": "2ee122a9e297394fb3a7c26cb939cc73",
+      "outputs": [],
+      "console": []
     },
     {
-      "id": "Xref",
-      "code_hash": null,
-      "outputs": [
-        {
-          "type": "data",
-          "data": {
-            "text/plain": ""
-          }
-        }
-      ],
+      "id": "BYtC",
+      "code_hash": "995ebbcabbe3c8d32b4bfeb2aa3af75d",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "ee2254e1ac5c959b0c135d866e1f9ff1",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "4ef5f6d77734d4085ab0a4a02f78e826",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "emfo",
+      "code_hash": "8f331107f48f95d6dc1032d8b7d4a8db",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "Hstk",
+      "code_hash": "f732b7feafc6f8b4ede664588b70b258",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "nWHF",
+      "code_hash": "df5d2f7d41381ffcb3f5961bb2870e3f",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "iLit",
+      "code_hash": "dd5a8c9b661a3f552d470c6f71d2835b",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "ZHCJ",
+      "code_hash": "8b960e46c5fc32c484ebca10c302c8cd",
+      "outputs": [],
+      "console": []
+    },
+    {
+      "id": "ROlb",
+      "code_hash": "d814b7fb7b88ed2b4b28e27f513e46a9",
+      "outputs": [],
       "console": []
     }
   ]

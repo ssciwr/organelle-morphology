@@ -4,19 +4,20 @@ channels:
 dependencies:
   - cachetools
   - dask
-  - nbval
+  - marimo
   - numpy
-  - python-elf
+  - nbval
   - pip
   - plotly
   - pytest
   - pytest-cov
   - pytest-mock
-  - scikit-image
-  - scipy
-  - z5py
   - pre-commit
+  - python-elf
   - rich
+  - scipy
+  - scikit-image
+  - z5py
   - pip:
       - python-fcl
       - setuptools==65.7.0

@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional, Iterable
 import logging
+import networkx
 
 from dask.base import compute
 from dask.delayed import Delayed, delayed
@@ -148,16 +149,19 @@ def color_delayed_trimesh_rgba(tmesh: Trimesh, values, log=True) -> Trimesh:
 
 
 @delayed
-def color_delayed_trimesh(tmesh: Trimesh, color: int) -> Trimesh:
+def color_delayed_trimesh(tmesh: Trimesh, color: int, transp: bool) -> Trimesh:
     if color:
         if color == 1:
-            tmesh.visual.vertex_colors = trimesh.visual.random_color()
+            tmesh.visual.face_colors = trimesh.visual.random_color()
         elif color == 2:
             viridis = mpl.colormaps.get("viridis")
             tmesh.visual.face_colors = viridis.resampled(len(tmesh.faces)).colors
         elif color < 0:
             cm = mpl.colormaps.get("tab20")
             tmesh.visual.face_colors = cm.colors[-color % 20]
+
+    if transp:
+        tmesh.visual.face_colors[:, 3] = 100
 
     return tmesh
 
@@ -177,8 +181,74 @@ def merge_delayed_trimeshes(tmeshes: list[Trimesh]):
     return tmesh
 
 
-def merge_meshes(meshes: Iterable[Delayed], color: Optional[int] = None) -> Delayed:
-    """Merges delayed meshes into one concrete new Mesh object
+def sample_skeleton(skeleton, path_sample_dist: float = 0.1):
+    # the sample points are points along the skeleton arms
+    # and the reference points are the vertices of the skeleton from which
+    # these samples have been generated. we need these to later calculate
+    # the normal vector for the plane which will intersect our mesh
+    sampled_path = []
+    reference_point = []
+    for edge in skeleton.edges:
+        edge_len = np.linalg.norm(
+            np.array(skeleton.vertices[edge[0]]) - np.array(skeleton.vertices[edge[1]])
+        )
+
+        if edge_len > path_sample_dist:
+            p1 = np.array(skeleton.vertices[edge[0]])
+            p2 = np.array(skeleton.vertices[edge[1]])
+
+            # find number of points to add between the two vertices
+            n_points = np.ceil(edge_len / path_sample_dist).astype(int)
+            factors = np.linspace(0, 1, n_points)
+
+            # Compute the interpolated points
+            interpolated_points = (1 - factors[:, np.newaxis]) * p1 + factors[
+                :, np.newaxis
+            ] * p2
+            sampled_path.extend(interpolated_points)
+            reference_point.append(p1)
+
+    if len(sampled_path) == 0:
+        sampled_path.append(np.array(skeleton.vertices[0]))
+        reference_point.append(np.array(skeleton.vertices[0]))
+
+    sampled_path = np.asarray(sampled_path)
+    reference_point = np.asarray(reference_point)
+    _sampled_skeleton = sampled_path, reference_point
+    return _sampled_skeleton
+
+
+def get_skeleton_info(skeleton):
+    skeleton_info = {}
+    graph = skeleton.get_graph()
+    if len(graph.nodes) == 0:
+        return 0
+
+    skeleton_info["num_nodes"] = len(graph.nodes)
+    skeleton_info["num_branch_points"] = len(
+        [node for node, degree in graph.degree() if degree > 2]
+    )
+    skeleton_info["end_points"] = len(
+        [node for node, degree in graph.degree() if degree == 1]
+    )
+    skeleton_info["total_length"] = sum(
+        d["weight"] for u, v, d in graph.edges(data=True)
+    )
+    skeleton_info["longest_path"] = networkx.dag_longest_path_length(graph)
+
+    lengths = [d["weight"] for u, v, d in graph.edges(data=True)]
+    skeleton_info["mean_length"] = np.mean(lengths)
+    skeleton_info["std_length"] = np.std(lengths)
+
+    skeleton_info["mean_radius"] = np.mean(skeleton.radius[0])
+    skeleton_info["std_radius"] = np.std(skeleton.radius[0])
+    return skeleton_info
+
+
+def merge_meshes(
+    meshes: Iterable[Delayed], color: Optional[int] = None, transp=False
+) -> Delayed:
+    """Merges delayed meshes into one delayed Mesh object
 
     Needs overlapping meshes, otherwise the intersections will not be
     connected.
@@ -187,8 +257,8 @@ def merge_meshes(meshes: Iterable[Delayed], color: Optional[int] = None) -> Dela
     meshes = list(meshes)
     if color is None:
         color = 0
-    if color:
-        meshes = [color_delayed_trimesh(m, color) for m in meshes]
+    if color or transp:
+        meshes = [color_delayed_trimesh(m, color, transp) for m in meshes]
 
     while (length := len(meshes)) > 1:
         merged = []

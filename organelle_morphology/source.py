@@ -14,6 +14,7 @@ from dask.array.core import Array
 from dask.delayed import Delayed, delayed
 
 from zmesh import Mesher
+import skeletor as sk
 
 import fnmatch
 import numpy as np
@@ -27,8 +28,10 @@ import warnings
 from organelle_morphology.util import (
     Cache,
     color_delayed_trimesh_rgba,
+    get_skeleton_info,
     merge_meshes,
     mesure_gaussian_curvature_delayed,
+    sample_skeleton,
 )
 
 
@@ -940,3 +943,165 @@ class DataSource:
             result.extend(filtered_ids)
 
         return result
+
+    def generate_skeletons(
+        self,
+        labels: Optional[int | list[int]],
+        skeletonization_type: str = "wavefront",
+        theta: float = 0.4,
+        waves: int = 1,
+        step_size: int = 2,
+        epsilon: float = 0.1,
+        sampling_dist: float = 0.1,
+        path_sample_dist: float = 0.1,
+        recompute: bool = False,
+    ):
+        """
+        Generates a skeleton for the organelle.
+        The skeleton is generated and cleaned using the skeletor library.
+
+        The last generated skeleton will be kept in memory and can be accessed
+        using the skeleton or sampled_skeleton property.
+
+        Args:
+            skeletonization_type: The type of skeletonization to use. Can be either
+                "wavefront" or "vertex_clusters".
+
+            waves: The number of waves to use for the wavefront skeletonization.
+                The higher the number of waves, the more branches are removed.
+            step_size: The step size for the wavefront skeletonization. The higher
+                the step size, the less vertices are used for the skeleton.
+            theta: The threshold for the clean_up function. The higher the threshold,
+                the more branches are removed.
+            epsilon: The epsilon value for the contract function. The higher the epsilon,
+                the more the mesh is contracted.
+            sampling_dist: The sampling distance for the skeletonize function.
+                The higher the sampling distance, the less vertices are used
+                for the skeleton.
+            path_sample_dist: The distance between the sample points on the skeleton
+                arms. The higher the distance, the less sample points are used.
+        Returns:
+            List of organelles which have a skeleton.
+
+        """
+
+        @delayed
+        def _delayed_skeletonize(
+            mesh,
+            label,
+            skeletonization_type,
+            theta,
+            waves,
+            step_size,
+            epsilon,
+            sampling_dist,
+            path_sample_dist,
+        ):
+            result = [None, ""]
+            try:
+                fixed_mesh = sk.pre.fix_mesh(mesh)
+            except IndexError as e:
+                result[1] += (
+                    f"Could not fix mesh in skeleton generation for {label} with error {e}"
+                )
+                fixed_mesh = mesh
+
+            if len(fixed_mesh.vertices) < 10:
+                result[1] += f"Not enough vertices for skeleton! {label}"
+                return result
+
+            try:
+                if skeletonization_type == "wavefront":
+                    skel = sk.skeletonize.by_wavefront(
+                        fixed_mesh, waves=waves, progress=False, step_size=step_size
+                    )
+                elif skeletonization_type == "vertex_clusters":
+                    try:
+                        cont = sk.pre.contract(
+                            fixed_mesh, epsilon=epsilon, progress=False
+                        )
+                    except IndexError:
+                        result[1] += (
+                            f"couldn't contract mesh using normal mesh for {label}"
+                        )
+
+                        cont = fixed_mesh
+                    skel = sk.skeletonize.by_vertex_clusters(
+                        cont, sampling_dist=sampling_dist, progress=False
+                    )
+                    skel.mesh = fixed_mesh
+                else:
+                    result[1] += f"Unknown skeletonize_type: {skeletonization_type}"
+                    return result
+
+                sk.post.clean_up(skel, inplace=True, theta=theta)
+                sk.post.radii(skel, method="knn")
+
+                # if no skeleton can be created just skip this
+                if len(skel.vertices) <= 1:
+                    result[1] += f"No vertices for {label}"
+                    return result
+
+                sampled_skeleton = sample_skeleton(
+                    skel, path_sample_dist=path_sample_dist
+                )
+
+                # reset skeleton info for new calculation
+                skeleton_info = get_skeleton_info(skel)
+                result[1] += f"Generated skeleton for {label}"
+                result[0] = (skel, skeleton_info, sampled_skeleton, label)
+
+            except Exception as e:
+                result[1] += f"Could not generate skeleton for {label} with error {e}"
+
+            return result
+
+        if skeletonization_type not in ["wavefront", "vertex_clusters"]:
+            raise ValueError(
+                "Skeletonization type must be either 'wavefront' or 'vertex_clusters'."
+            )
+
+        if labels is None:
+            labels = self.labels
+        if not isinstance(labels, (list, tuple)):
+            labels = [labels]
+
+        organelles_labeled = {o.label: o for o in self.organelles}
+        tasks = []
+        for label in labels:
+            o = organelles_labeled[label]
+            if o.skeleton is not None and not recompute:
+                tasks.append(
+                    ((o.skeleton, o.skeleton_info, o.sampled_skeleton, label), "")
+                )
+                continue
+
+            dmesh = self.meshes[label]
+            tasks.append(
+                _delayed_skeletonize(
+                    dmesh,
+                    label,
+                    skeletonization_type,
+                    theta,
+                    waves,
+                    step_size,
+                    epsilon,
+                    sampling_dist,
+                    path_sample_dist,
+                )
+            )
+
+        results = compute(*tasks)
+
+        orgs = []
+        for result in results:
+            if result[0] is None:
+                self.logger.debug(result[1])
+                continue
+
+            skel, skeleton_info, sampled_skeleton, label = result[0]
+            organelles_labeled[label].skeleton = skel
+            organelles_labeled[label].skeleton_info = skeleton_info
+            organelles_labeled[label].sampled_skeleton = sampled_skeleton
+            orgs.append(organelles_labeled[label])
+        return orgs

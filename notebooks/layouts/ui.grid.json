@@ -4,7 +4,7 @@
     "columns": 24,
     "rowHeight": 20,
     "maxWidth": 1400,
-    "bordered": true,
+    "bordered": false,
     "cells": [
       {
         "position": null
@@ -33,7 +33,7 @@
           6,
           6,
           6,
-          27
+          25
         ]
       },
       {
@@ -42,9 +42,9 @@
       {
         "position": [
           6,
-          33,
+          31,
           6,
-          7
+          9
         ]
       },
       {
@@ -66,7 +66,7 @@
       {
         "position": [
           20,
-          3,
+          5,
           4,
           2
         ]
@@ -74,34 +74,56 @@
       {
         "position": [
           18,
-          5,
+          7,
           6,
           33
         ]
       },
       {
         "position": [
-          18,
+          0,
+          38,
+          5,
+          29
+        ]
+      },
+      {
+        "position": [
+          5,
           40,
-          6,
-          26
+          19,
+          29
+        ]
+      },
+      {
+        "position": [
+          0,
+          89,
+          9,
+          20
+        ]
+      },
+      {
+        "position": [
+          0,
+          109,
+          9,
+          4
         ]
       },
       {
         "position": null
       },
       {
-        "position": [
-          0,
-          40,
-          18,
-          31
-        ]
+        "position": null
+      },
+      {
+        "position": null
       },
       {
         "position": [
-          18,
-          73,
+          16,
+          69,
           6,
           9
         ]
@@ -109,7 +131,7 @@
       {
         "position": [
           16,
-          82,
+          78,
           8,
           23
         ]
@@ -117,18 +139,25 @@
       {
         "position": [
           0,
-          71,
-          7,
-          19
-        ]
+          69,
+          9,
+          20
+        ],
+        "scrollable": true
       },
       {
         "position": [
           10,
-          95,
+          131,
           6,
           37
         ]
+      },
+      {
+        "position": null
+      },
+      {
+        "position": null
       },
       {
         "position": null

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.3"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium", layout_file="layouts/ui.grid.json")
 
 with app.setup:
@@ -11,6 +11,7 @@ with app.setup:
     import numpy as np
     from organelle_morphology.util import bounding_box_delayed
     from dask.base import compute
+    import pandas as pd
 
 
 @app.cell
@@ -170,7 +171,9 @@ def _(change_settings_button, project):
 
 @app.cell
 def _():
-    run_progress = mo.ui.button(label="Refresh Progress View", value=0,on_click=lambda v: v+1)
+    run_progress = mo.ui.button(
+        label="Refresh Progress View", value=0, on_click=lambda v: v + 1
+    )
     run_progress
     return (run_progress,)
 
@@ -207,31 +210,39 @@ def _():
         label="Box settings",
     )
 
+    curvature_check = mo.ui.checkbox(label="Curvature", value=False)
+    skeleton_check = mo.ui.checkbox(label="Skeleton", value=False)
+
     mo.vstack(
         [
             mo.md("## Show Mesh"),
             mesh_id_filter,
             highlight_filter,
+            skeleton_check,
+            curvature_check,
             box_dict,
             run_show_mesh,
         ]
     )
-    return box_dict, highlight_filter, mesh_id_filter, run_show_mesh
-
-
-@app.cell
-def _(highlight_filter):
-    highlight_filter.value
-    return
+    return (
+        box_dict,
+        curvature_check,
+        highlight_filter,
+        mesh_id_filter,
+        run_show_mesh,
+        skeleton_check,
+    )
 
 
 @app.cell
 def show_mesh(
     box_dict,
+    curvature_check,
     highlight_filter,
     mesh_id_filter,
     project,
     run_show_mesh,
+    skeleton_check,
 ):
     mo.stop(not run_show_mesh.value, "Mesh will be displayed here")
     box = None
@@ -250,8 +261,81 @@ def show_mesh(
         )
     highlight = highlight_filter.value if highlight_filter.value else None
     print(mesh_id_filter.value, highlight_filter.value)
-    scene = project.show(box=box, ids=mesh_id_filter.value, ids_highlight=highlight)
+    scene = project.show(
+        box=box,
+        ids=mesh_id_filter.value,
+        ids_highlight=highlight,
+        curvature=curvature_check.value,
+        skeleton=skeleton_check.value,
+    )
     scene.show()
+    return
+
+
+@app.cell
+def _():
+    skel_dict = mo.ui.dictionary(
+        {
+            "theta": mo.ui.number(value=0.4),
+            "waves": mo.ui.number(value=1, step=1, label="(Wavefront only)"),
+            "epsilon": mo.ui.number(value=0.1, label="(Vertex cluster only)"),
+            "path_sample_dist": mo.ui.number(value=0.1),
+        }
+    )
+    run_skeleton_button = mo.ui.run_button()
+    skel_form = mo.md(r"""
+    ## Skeletonize
+
+    Method: {method}  
+    id filter: {ids}  
+    Recompute: {recompute}  
+    Settings: {settings}  
+
+    """).batch(
+        method=mo.ui.radio(
+            options=["wavefront", "vertex cluster"], inline=True, value="wavefront"
+        ),
+        ids=mo.ui.text(value="*"),
+        recompute=mo.ui.checkbox(value=False),
+        settings=skel_dict,
+    )
+
+
+
+    mo.vstack([skel_form, run_skeleton_button])
+    return run_skeleton_button, skel_form
+
+
+@app.cell
+def _(project, run_skeleton_button, skel_form):
+    mo.stop(not run_skeleton_button.value, "Output of Skeletonization")
+    form = skel_form.value
+
+    with mo.redirect_stderr():
+        settings = dict(form["settings"])
+        settings["ids"] = form["ids"]
+        settings["recompute"] = form["recompute"]
+        if form["method"] == "wavefront":
+            settings.pop("epsilon")
+            out = project.skeletonize_wavefront(**settings)
+        elif form["method"] == "vertex cluster":
+            settings.pop("waves")
+            out = project.skeletonize_vertex_clusters(**settings)
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
     return
 
 
@@ -320,7 +404,15 @@ def _(box_dict, mesh_id_filter, project):
             if np.all(bb[0] >= _box[0]) and np.all(bb[1] <= _box[1]):
                 result.append(o.id)
 
-        mo.output.append(result)
+        if len(result) > 50:
+            first = [n.split("_")[0] for n in result]
+            orgs, counts = np.unique(first, return_counts=True)
+            orgs = " ".join([o + "_\*" for o in orgs])
+            result = mo.md(f"Organelles: {orgs}<br>Counts: {counts}")
+        else:
+            result = pd.DataFrame(data=result)
+
+        mo.output.replace(result)
         return result
 
     box_dict  # control flow
@@ -330,8 +422,17 @@ def _(box_dict, mesh_id_filter, project):
 
 
 @app.cell
-def _(project):
-    len(project.get_organelles(ids="er*"))
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
     return
 
 
