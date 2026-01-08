@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.18.3"
 app = marimo.App(width="medium", layout_file="layouts/ui.grid.json")
 
 with app.setup:
@@ -12,6 +12,7 @@ with app.setup:
     from organelle_morphology.util import bounding_box_delayed
     from dask.base import compute
     import pandas as pd
+    from collections import defaultdict
 
 
 @app.cell
@@ -212,6 +213,7 @@ def _():
 
     curvature_check = mo.ui.checkbox(label="Curvature", value=False)
     skeleton_check = mo.ui.checkbox(label="Skeleton", value=False)
+    popout_viewer_check = mo.ui.checkbox(label="High-quality viewer", value=False)
 
     mo.vstack(
         [
@@ -221,7 +223,13 @@ def _():
             skeleton_check,
             curvature_check,
             box_dict,
-            run_show_mesh,
+            mo.hstack(
+                [
+                    run_show_mesh,
+                    popout_viewer_check,
+                ],
+                justify="start",
+            ),
         ]
     )
     return (
@@ -229,6 +237,7 @@ def _():
         curvature_check,
         highlight_filter,
         mesh_id_filter,
+        popout_viewer_check,
         run_show_mesh,
         skeleton_check,
     )
@@ -240,11 +249,13 @@ def show_mesh(
     curvature_check,
     highlight_filter,
     mesh_id_filter,
+    popout_viewer_check,
     project,
     run_show_mesh,
     skeleton_check,
 ):
     mo.stop(not run_show_mesh.value, "Mesh will be displayed here")
+
     box = None
     if box_dict["draw box"].value:
         box = (
@@ -268,7 +279,10 @@ def show_mesh(
         curvature=curvature_check.value,
         skeleton=skeleton_check.value,
     )
-    scene.show()
+    viewer = "marimo"
+    if popout_viewer_check.value:
+        viewer = "gl"
+    scene.show(viewer=viewer)
     return
 
 
@@ -299,8 +313,6 @@ def _():
         recompute=mo.ui.checkbox(value=False),
         settings=skel_dict,
     )
-
-
 
     mo.vstack([skel_form, run_skeleton_button])
     return run_skeleton_button, skel_form
@@ -404,15 +416,12 @@ def _(box_dict, mesh_id_filter, project):
             if np.all(bb[0] >= _box[0]) and np.all(bb[1] <= _box[1]):
                 result.append(o.id)
 
-        if len(result) > 50:
-            first = [n.split("_")[0] for n in result]
-            orgs, counts = np.unique(first, return_counts=True)
-            orgs = " ".join([o + "_\*" for o in orgs])
-            result = mo.md(f"Organelles: {orgs}<br>Counts: {counts}")
-        else:
-            result = pd.DataFrame(data=result)
+        first = [n.split("_")[0] for n in result]
+        orgs, counts = np.unique(first, return_counts=True)
+        orgs = " , ".join([o + "_\*" for o in orgs])
+        output = mo.md(f"Organelles: {orgs}<br>Counts: {counts}"), pd.DataFrame(result)
 
-        mo.output.replace(result)
+        mo.output.replace(output)
         return result
 
     box_dict  # control flow

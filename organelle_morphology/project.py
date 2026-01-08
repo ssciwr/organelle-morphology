@@ -308,7 +308,9 @@ class Project:
                 labels = [o.label for o in o_s]
                 meshes.append(
                     merge_meshes(
-                        s.get_curvature(labels, color=True)[1], color=0, transp=transp
+                        s.get_curvature(labels, color=True)[1],
+                        color=0,
+                        transp=transp,
                     )
                 )
             to_show.extend(compute(*meshes))
@@ -316,13 +318,28 @@ class Project:
             if ids_highlight is not None:
                 orgs_highlight = self.get_organelles(ids_highlight)
                 to_merge = []
-                if len(orgs_highlight) > 0:
+                # apply highlight coloring
+                to_merge.append(
+                    merge_meshes(
+                        [o.mesh for o in orgs_highlight],
+                        color=-2,
+                        transp=transp,
+                    )
+                )
+                # color all other organelles
+                to_merge_2 = []
+                for org in orgs:
+                    if org not in orgs_highlight:
+                        to_merge_2.append(org)
+                if len(to_merge_2):
                     to_merge.append(
                         merge_meshes(
-                            [o.mesh for o in orgs_highlight], color=-2, transp=transp
+                            [o.mesh for o in to_merge_2],
+                            color=-1,
+                            transp=transp,
                         )
                     )
-                mmesh = merge_meshes(to_merge + [o.mesh for o in orgs], color=0)
+                mmesh = merge_meshes(to_merge, color=0)
 
             else:  # No highlight
                 if len(o_types) <= 1:

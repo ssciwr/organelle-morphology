@@ -255,6 +255,8 @@ def merge_meshes(
     """
 
     meshes = list(meshes)
+    if len(meshes) == 0:
+        return delayed(Trimesh())
     if color is None:
         color = 0
     if color or transp:
@@ -305,7 +307,8 @@ def show(meshes):
         meshes = [meshes]
     meshes = compute(*meshes, traverse=False)
 
-    scene.camera_transform = scene.camera.look_at(meshes[0].vertices[:200])
+    if len(meshes[0].vertices) > 0:
+        scene.camera_transform = scene.camera.look_at(meshes[0].vertices[:200])
 
     for mesh in meshes:
         scene.add_geometry(mesh)
