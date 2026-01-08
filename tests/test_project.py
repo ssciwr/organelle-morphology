@@ -1,3 +1,5 @@
+from trimesh import Trimesh
+from trimesh.path import Path3D
 from organelle_morphology.project import Project
 from .synthetic_data_generator import generate_synthetic_dataset
 
@@ -117,18 +119,120 @@ def test_add_source_wrong_source(synthetic_data, client):
 
 
 def test_skeletonize_wavefront(mocker, project_with_sources):
-    mock_get_orgs = mocker.patch.object(project_with_sources, "get_organelles")
-    mock_orgs = [mocker.Mock()]
-    mock_get_orgs.return_value = mock_orgs
+    mock_gen_skel = mocker.patch.object(
+        project_with_sources.sources["synth_data"], "generate_skeletons"
+    )
+    mock_gen_skel.return_value = [None]
+
     project_with_sources.skeletonize_wavefront()
-    mock_get_orgs.assert_called_with(ids="*")
-    mock_orgs[0]._generate_skeleton.assert_called_once()
+    mock_gen_skel.assert_called_once()
 
 
 def test_skeletonize_vertex_clusters(mocker, project_with_sources):
-    mock_get_orgs = mocker.patch.object(project_with_sources, "get_organelles")
-    mock_orgs = [mocker.Mock()]
-    mock_get_orgs.return_value = mock_orgs
-    project_with_sources.skeletonize_wavefront()
-    mock_get_orgs.assert_called_with(ids="*")
-    mock_orgs[0]._generate_skeleton.assert_called_once()
+    mock_gen_skel = mocker.patch.object(
+        project_with_sources.sources["synth_data"], "generate_skeletons"
+    )
+    mock_gen_skel.return_value = [None]
+
+    project_with_sources.skeletonize_vertex_clusters()
+    mock_gen_skel.assert_called_once()
+
+
+def test_show_plain(project_with_sources, mocker):
+    p: Project = project_with_sources
+
+    mock_util_show = mocker.patch("organelle_morphology.project.show")
+
+    p.show()
+    mock_util_show.assert_called_once()
+    to_show = mock_util_show.call_args[0][0]
+    assert len(to_show) == 2
+    assert isinstance(to_show[0], Trimesh)
+    assert isinstance(to_show[1], Path3D)
+    assert len(np.unique(to_show[0].visual.vertex_colors, axis=0)) == 29
+
+
+def test_show_skeleton(project_with_sources, mocker):
+    p: Project = project_with_sources
+
+    mock_util_show = mocker.patch("organelle_morphology.project.show")
+
+    p.show(skeleton=True)
+    mock_util_show.assert_called_once()
+    to_show = mock_util_show.call_args[0][0]
+    assert len(to_show) == 2
+    assert isinstance(to_show[0], Trimesh)
+    assert isinstance(to_show[1], Path3D)
+    assert np.all(to_show[0].visual.vertex_colors[:, -1] == 100)
+
+
+def test_show_curvature(project_with_sources, mocker):
+    p: Project = project_with_sources
+    s = project_with_sources.sources["synth_data"]
+
+    mock_util_show = mocker.patch("organelle_morphology.project.show")
+    mock_curvature = mocker.spy(s, "get_curvature")
+
+    p.show(curvature=True)
+    mock_util_show.assert_called_once()
+    to_show = mock_util_show.call_args[0][0]
+    assert len(to_show) == 2
+    assert isinstance(to_show[0], Trimesh)
+    assert isinstance(to_show[1], Path3D)
+    assert len(np.unique(to_show[0].visual.vertex_colors, axis=0)) > 20
+    mock_curvature.assert_called_once()
+
+
+def test_show_highlight(project_with_sources, mocker):
+    p: Project = project_with_sources
+
+    mock_util_show = mocker.patch("organelle_morphology.project.show")
+    p.show(ids_highlight="Nothing")
+
+    to_show = mock_util_show.call_args[0][0]
+    colors = np.unique(to_show[0].visual.vertex_colors, axis=0)
+    assert len(colors) == 1
+
+    p.show(ids_highlight="mito*")
+    to_show = mock_util_show.call_args[0][0]
+    colors2 = np.unique(to_show[0].visual.vertex_colors, axis=0)
+    assert len(colors2) == 1
+    assert np.any(colors[0] != colors2[0])
+
+
+def test_show_domain_box_off(project_with_sources, mocker):
+    p: Project = project_with_sources
+
+    mock_util_show = mocker.patch("organelle_morphology.project.show")
+    p.show(domain_box=False)
+
+    to_show = mock_util_show.call_args[0][0]
+    assert len(to_show) == 1
+    assert isinstance(to_show[0], Trimesh)
+
+
+def test_show_box(project_with_sources, mocker):
+    p: Project = project_with_sources
+
+    mock_util_show = mocker.patch("organelle_morphology.project.show")
+    p.show(box=((0, 0, 0), (0.5, 0.5, 0.5)))
+
+    to_show = mock_util_show.call_args[0][0]
+    assert len(to_show) == 3
+    assert isinstance(to_show[0], Trimesh)
+    assert isinstance(to_show[1], Path3D)
+    assert isinstance(to_show[2], Path3D)
+
+
+def test_show_clipping_box(project_with_sources, mocker):
+    p: Project = project_with_sources
+
+    mock_util_show = mocker.patch("organelle_morphology.project.show")
+    p.clipping = ((0, 0, 0), (0.5, 0.5, 0.5))
+    p.show()
+
+    to_show = mock_util_show.call_args[0][0]
+    assert len(to_show) == 3
+    assert isinstance(to_show[0], Trimesh)
+    assert isinstance(to_show[1], Path3D)
+    assert isinstance(to_show[2], Path3D)

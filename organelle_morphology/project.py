@@ -286,6 +286,7 @@ class Project:
         curvature=False,
         skeleton=False,
     ):
+        #TODO: mcs visualization
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
             self.logger.warning(f"Selection {ids} does not match any organelles!")
