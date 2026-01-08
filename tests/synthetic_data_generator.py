@@ -76,7 +76,7 @@ def generate_synthetic_dataset(
         json.dump(timepoint0_dict, f)
 
     # create xml file
-    xml_str = _create_xml_file(voxel_array.shape, resolution)
+    xml_str = _create_xml_file(voxel_array.shape[::-1], resolution)
 
     with open(cebra_dir / "synth_data.xml", "wb") as f:
         f.write(xml_str.encode())
