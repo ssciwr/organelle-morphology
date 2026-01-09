@@ -286,7 +286,7 @@ class Project:
         curvature=False,
         skeleton=False,
     ):
-        #TODO: mcs visualization
+        # TODO: mcs visualization
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
             self.logger.warning(f"Selection {ids} does not match any organelles!")
@@ -574,11 +574,9 @@ class Project:
         self, mcs_label, max_distance, min_distance=0, override_mcs_label=False
     ):
         """
-        This function is used to search for MC within a project.
+        This function is used to search for membrane contact sites within a project.
         Pairs will only be selected when their minimum mesh distance is between
         the requested min and max distance.
-
-
 
         Args:
             project (Project): The project object containing the distance matrix and organelles.
@@ -1075,24 +1073,33 @@ class Project:
         cs = self.cache_settings
         cache_dir = cs["cache_root"] / f"cache_{cs['project_name']}"
         messages = ["*** List of Caches: ***"]
-        messages.append(str(cache_dir))
-        for source in filter(lambda f: f.is_dir(), (cache_dir).iterdir()):
-            messages.append(f"├─ /{source.name}")
-            for level in filter(lambda f: f.is_dir(), source.iterdir()):
-                messages.append(f"│  ├─ /{level.name}")
-                for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
-                    messages.append(f"│  │  ├─ /{clip_dir.name}")
-                    name = (
-                        f"cache_{cs['project_name']}/{source.name}/"
-                        f"{level.name}/{clip_dir.name}"
-                    )
-                    caches.append(
-                        Cache(
-                            cache_name=name,
-                            disk=True,
-                            cache_root=cs["cache_root"],
+        if cache_dir.exists():
+            messages.append(str(cache_dir))
+            for source in filter(lambda f: f.is_dir(), (cache_dir).iterdir()):
+                messages.append(f"├─ /{source.name}")
+                for level in filter(lambda f: f.is_dir(), source.iterdir()):
+                    messages.append(f"│  ├─ /{level.name}")
+                    for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
+                        messages.append(f"│  │  ├─ /{clip_dir.name}")
+                        name = (
+                            f"cache_{cs['project_name']}/{source.name}/"
+                            f"{level.name}/{clip_dir.name}"
                         )
-                    )
+                        caches.append(
+                            Cache(
+                                cache_name=name,
+                                disk=True,
+                                cache_root=cs["cache_root"],
+                            )
+                        )
+        else:
+            messages.append(" No caches on disk!")
+
+        cache_names = [c.cache_name for c in caches]
+        for s in self.sources.values():
+            if s.cache.cache_name not in cache_names:
+                caches.append(s.cache)
+
         self.logger.info("\n".join(messages))
         self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
         return caches

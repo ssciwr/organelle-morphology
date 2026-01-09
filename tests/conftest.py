@@ -130,7 +130,7 @@ def client():
 
 @pytest.fixture(scope="session")
 def project_path(synthetic_data):
-    """A fixture return a path that conains a valid project"""
+    """Returns a path that conains a valid project"""
     return synthetic_data[0]
 
 

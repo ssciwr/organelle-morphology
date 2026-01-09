@@ -72,6 +72,15 @@ class Cache:
         disk=True,
         cache_root: Optional[Path] = None,
     ):
+        """Cache supporting memory and disk storages
+
+        Args:
+            cache_name: Unique identifier for this cache. Must consist of four
+                levels like cache_project_name/type/compression_level/clipping
+            disk: Whether disk storage for this cache is used
+            cache_root: Where the cache is saved on disk if disk storage
+                is enabled. The default, None, uses the xdg_cache_home.
+        """
         self.cache_name = cache_name
         self.stores: list = [{}]
         self.disk = disk
