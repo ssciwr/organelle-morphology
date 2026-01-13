@@ -405,11 +405,15 @@ class DataSource:
     @property
     def basic_geometric_properties(self):
         """get basic properties from scikit-image"""
-        comp_level = self.project.compression_level
 
         self.logger.debug("get basic properties from scikit-image")
-        if comp_level not in self._basic_geometric_properties:
-            geometric_properties = regionprops(self.data, spacing=self.resolution)
+
+        if "basic_geo_props" not in self.cache:
+            geometric_properties = regionprops(
+                self.data, spacing=self.resolution, cache=False
+            )
+            breakpoint()
+            geometric_properties = compute(geometric_properties)[0]
 
             # filter region props for useful properties
             # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
@@ -422,7 +426,7 @@ class DataSource:
                 "voxel_solidity": "solidity",  # ratio of pixels in the convex hull to those in the region
             }
 
-            self._basic_geometric_properties[comp_level] = {
+            self.cache["basic_geo_props"] = {
                 f"{self.org_name}_{str(region['label']).zfill(4)}": {
                     prop_name: region[prop]
                     for prop_name, prop in filtered_region_props.items()
@@ -430,7 +434,7 @@ class DataSource:
                 for region in geometric_properties
             }
 
-        return self._basic_geometric_properties[comp_level]
+        return self.cache["basic_geo_props"]
 
     @property
     def curvature_map(self):
@@ -696,12 +700,6 @@ class DataSource:
             return result[::2], result[1::2]
         return result
 
-    @property
-    def ids_to_chunks(self) -> dict:
-        if self._ids_to_chunks == {}:
-            self.calculate_mesh()
-        return self._ids_to_chunks
-
     def calculate_mesh(
         self,
         reduction_factor=0,
@@ -714,8 +712,6 @@ class DataSource:
         Meshes crossing chunks are merged.
         Populates following fields:
          * self._meshes
-         * self._meshes_chunked
-         * self._ids_to_chunks
 
         Respects the set compression and clipping of the project.
         Computation is done in parallel using the dask client of the project.
@@ -747,7 +743,7 @@ class DataSource:
             ).to_delayed()
         else:
             d_data = self.data.to_delayed()
-        self._meshes_chunked = np.empty_like(d_data)
+        _meshes_chunked = np.empty_like(d_data)
         ids_chunked = np.empty_like(d_data)
 
         assert self._clip_low_corner_data is not None
@@ -769,7 +765,7 @@ class DataSource:
                 debug_color=debug_color,
                 scaling_factors=self._scaling_factors,
             )
-            self._meshes_chunked[index] = meshes_chunk
+            _meshes_chunked[index] = meshes_chunk
             ids_chunked[index] = ids_chunk
 
         # flatten the ids and delayed meshes
@@ -777,7 +773,7 @@ class DataSource:
         indices = []
         d_meshes = []
         for index, ids_chunk in np.ndenumerate(ids_chunked):
-            mesh = self._meshes_chunked[index]
+            mesh = _meshes_chunked[index]
             d_ids.append(ids_chunk)
             indices.append(index)
             d_meshes.append(mesh)
@@ -785,12 +781,12 @@ class DataSource:
         # calculate meshes and keep references to make mesh persistend on workers
         self._storage["ref_meshes"] = persist(*(d_meshes + d_ids))
 
-        self._ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
-        assert self._ids_to_chunks is not None  # for linter
+        _ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
+        assert _ids_to_chunks is not None  # for linter
 
         # get some statistics
-        all_chunks = list(self._ids_to_chunks.values())
-        all_ids = np.array(list(self._ids_to_chunks.keys()))
+        all_chunks = list(_ids_to_chunks.values())
+        all_ids = np.array(list(_ids_to_chunks.keys()))
         id_amounts = [len(idxs) for idxs in all_chunks]
         amounts, inverse, freqs = np.unique(
             id_amounts, return_counts=True, return_inverse=True
@@ -802,8 +798,8 @@ class DataSource:
         self._meshes = {}
         duplicate_ids = all_ids[np.nonzero(inverse != 0)]
         for ind in duplicate_ids:
-            chunk_idxs = self._ids_to_chunks[ind]
-            meshes = [self._meshes_chunked[idx][ind] for idx in chunk_idxs]
+            chunk_idxs = _ids_to_chunks[ind]
+            meshes = [_meshes_chunked[idx][ind] for idx in chunk_idxs]
             merged_mesh = merge_meshes(meshes, color=0)
             if simplify:
                 merged_mesh = simplify_mesh(merged_mesh, simplify)
@@ -811,7 +807,7 @@ class DataSource:
 
         unique_ids = all_ids[np.nonzero(inverse == 0)]
         for ind in unique_ids:
-            mesh = self._meshes_chunked[self._ids_to_chunks[ind][0]][ind]
+            mesh = _meshes_chunked[_ids_to_chunks[ind][0]][ind]
             if simplify:
                 mesh = simplify_mesh(mesh, simplify)
             self._meshes[ind] = mesh
@@ -827,12 +823,9 @@ class DataSource:
         """
         self.logger.debug(f"Resetting source {self.org_name}: {self.xml_path.name}")
         self._basic_geometric_properties = {}
-        self._mesh_properties = {}
         self._meshes = None
         self._computed_compression = None
         self._curvature_map = {}
-        self._meshes_chunked = None
-        self._ids_to_chunks = None
         self._storage = {}
         self._cache = None
         self._organelles = None

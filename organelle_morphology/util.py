@@ -19,10 +19,11 @@ CACHE_DIR = xdg.xdg_cache_home() / "organelle_morphology"
 
 
 class Disk_Store:
-    def __init__(self, cache_name: str, cache_root: Path):
+    def __init__(self, cache_name: str, cache_root: Path, mem_cache: dict):
         self.cache_root = cache_root
         self.cache_name = cache_name
         self.path: Path = cache_root / cache_name
+        self.mem_cache = mem_cache
         if not self.path.exists():
             self.path.mkdir(parents=True)
 
@@ -34,6 +35,7 @@ class Disk_Store:
         if (self.path / str(key)).exists():
             with open(self.path / str(key), "rb") as f:
                 value = pickle.load(f)
+            self.mem_cache[key] = value
             return value
         else:
             raise KeyError(f"Key: {key} not found in {self.path}!")
@@ -86,7 +88,9 @@ class Cache:
         self.disk = disk
         self.cache_root = cache_root if cache_root else CACHE_DIR
         if disk:
-            self.stores.append(Disk_Store(self.cache_name, self.cache_root))
+            self.stores.append(
+                Disk_Store(self.cache_name, self.cache_root, self.stores[0])
+            )
 
     def __setitem__(self, key, value):
         for store in self.stores:
@@ -121,7 +125,9 @@ class Cache:
         Does nothing if it was not saved to disk.
         """
         if not self.disk:
-            self.stores.append(Disk_Store(self.cache_name, self.cache_root))
+            self.stores.append(
+                Disk_Store(self.cache_name, self.cache_root, self.stores[0])
+            )
         ds: Disk_Store = self.stores.pop(-1)
         ds.clear()
         self.disk = False

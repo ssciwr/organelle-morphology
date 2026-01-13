@@ -286,7 +286,7 @@ def test_curvature_map(project_with_sources, mocker):
 
 def test_clipping(project):
     assert project.clipping is None
-    project._clippig = ((0.0, 0.0, 0.0), (0.5, 0.5, 0.5))
+    project._clipping = ((0.0, 0.0, 0.0), (0.5, 0.5, 0.5))
     assert project.clipping == ((0.0, 0.0, 0.0), (0.5, 0.5, 0.5))
 
 
@@ -394,9 +394,9 @@ def test_clear_caches(project_with_sources, mocker):
     p.clear_caches()
     mock_source_reset.assert_called_once()
     assert s._cache is None
-    # disk cache still there:
+    # disk cache still there, populates mem cache
     assert s_cache["test"] == "test_content"
 
     p.clear_caches(clear_disk=True)
-    assert "test" not in s_cache
+    assert "test" in s_cache
     assert "test" not in s.cache

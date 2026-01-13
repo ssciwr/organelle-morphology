@@ -703,32 +703,14 @@ class Project:
         "flatness_ratio": how cubic the mesh is (0-1)
 
         """
-
-        # Trigger the calculation of all meshes in a parallel pool
-
         properties = {}
-        sources = list(self.sources.keys())
-        cache_str = f"geometric_properties_{self.compression_level}_{sources}"
-        with disk_cache(self, cache_str) as cache:
-            if cache_str not in cache or not self.use_cache:
-                self.calculate_meshes()
-
-                for organelle in self.organelles:
-                    properties[organelle.id] = (
-                        organelle.geometric_data | organelle.mesh_properties
-                    )
-
-                cache[cache_str] = properties
-
-            properties = cache[cache_str]
-
-        # hide blacklisted organelles
+        for organelle in self.get_organelles():
+            # TODO: geometric data is expensive, and not parallel, necessary?
+            properties[organelle.id] = (
+                organelle.mesh_properties | organelle.geometric_data
+            )
 
         df = pd.DataFrame(properties).T
-
-        valid_organelles = self.organelle_ids
-        df = df.loc[valid_organelles]
-
         return df
 
     def get_mcs_properties(self, ids="*", mcs_filter=None):
@@ -847,40 +829,22 @@ class Project:
     def distance_matrix(self):
         """
         Returns the distance matrix of all organeles in the project in micro meters.
-
-        :return: _description_
-        :rtype: _type_
         """
 
         return generate_distance_matrix(self)
 
-    def _add_permanent_whitelist(self, ids):
-        """Add organelles to the permanent filter list
-
-        :param ids: The organelle ids to be added to the permanent filter list
-        :type ids: list
-        """
-        self.permanent_whitelist.extend(ids)
-
-    def _add_permanend_blacklist(self, ids):
-        """Add organelles to the permanent blacklist filter.
-        For the time beeing only complete ids are supported.
-
-        :param ids: The organelle ids to be added to the permanent filter list
-        :type ids: list
-        """
-        self.permanent_blacklist.extend(ids)
+    def clear_blacklist(self):
+        self.permanent_blacklist = []
 
     def filter_organelles_by_size(self, organelle_type, cutoff):
         """Take the largest entries of the specified organelle type
         until their combined volume reaches the cutoff value.
+        Adds the remaining organelles to the permanent_blacklist.
 
-        :param organelle_type: The desired organelle type to perform the filter on.
-            E.G "mito" or "er".
-        :type organelle_type: str
-        :param cutoff: The cutoff value between 0 and 1.
-        :type cutoff: float
-
+        Args:
+            organelle_type: The desired organelle type to perform the filter on.
+                e.g "mito" or "er".
+            cutoff: The cutoff value between 0 and 1.
         """
         geo_props = self.geometric_properties
         self.logger.info(
@@ -902,9 +866,9 @@ class Project:
 
         # now invert the filter to find the blacklisted organelles
 
-        self._add_permanend_blacklist(
-            df_sorted.index.difference(df_filtered.index).tolist()
-        )
+        self.permanent_blacklist = df_sorted.index.difference(
+            df_filtered.index
+        ).tolist()
 
     @property
     def clipping(
@@ -964,10 +928,11 @@ class Project:
 
         This requires previous adding of data sources using add_source.
         The ids parameter is used to filter based on organelle ids.
+        Filtering using the permanent_blacklist and permanent_whitelist is respected.
 
-        :param ids:
-            The filtering expression for organelle ids to return. The default
-            of "*" returns all organelles. (What other syntax would we allow? fnmatch?)
+        Args:
+            ids: The glob-style filtering expression for organelle ids to return.
+                The default of "*" returns all organelles.
         """
 
         result = []
@@ -998,9 +963,9 @@ class Project:
         This requires previous adding of data sources using add_source.
         The ids parameter is used to filter based on organelle ids.
 
-        :param ids:
-            The filtering expression for organelle ids to return. The default
-            of "*" returns all organelles. (What other syntax would we allow? fnmatch?)
+        Args:
+            ids The glob-style filtering expression for organelle ids to return.
+            The default of "*" returns all organelles.
         """
 
         result = []
@@ -1029,8 +994,7 @@ class Project:
 
         Set the compression level and clipping in the project.
 
-        Parameters
-        ----------
+        Args:
         ids
             Glob style filter for the organelles.
             The default "*" returns all organelles in the project.
@@ -1109,7 +1073,7 @@ class Project:
 
         for source in self.sources.values():
             source.clear_memory_cache()
-            self.logger.debug("Cleared memory cache of all sources.")
+        self.logger.debug("Cleared memory cache of all sources.")
 
         if clear_disk:
             # iterate over what is on disk rather than the currently loaded sources
