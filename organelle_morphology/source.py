@@ -412,7 +412,6 @@ class DataSource:
             geometric_properties = regionprops(
                 self.data, spacing=self.resolution, cache=False
             )
-            breakpoint()
             geometric_properties = compute(geometric_properties)[0]
 
             # filter region props for useful properties
@@ -588,7 +587,7 @@ class DataSource:
             verts, faces = cache[key]
             return Trimesh(verts, faces)
 
-        @delayed(pure=True)
+        @delayed(pure=False)
         def _write_to_cache(key, mesh, cs):
             name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])

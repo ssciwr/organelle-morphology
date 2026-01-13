@@ -41,7 +41,7 @@ c = p.get_caches()
 
 # %% change compression
 p.clipping = None
-p.clipping = [[0.6,0.5,0.3], [0.9,1,0.8]]
+p.clipping = [[0.6,0.5,0.3], [0.8,1,0.8]]
 p.compression_level = "s3"
 print(len(s.labels))
 

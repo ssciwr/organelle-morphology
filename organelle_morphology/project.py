@@ -716,16 +716,13 @@ class Project:
     def get_mcs_properties(self, ids="*", mcs_filter=None):
         """The properties of the MCS between organelles
 
+        Args:
+            ids: Glob-style filter pattern for organelles, defaults to "*"
 
-        :param ids: Filter id, defaults to "*"
-        :type ids: str, optional
-        :return: _description_
-        :rtype: _type_
-
-        :param mcs_filter: Filter the MCS properties by the given mcs_filter, defaults to None
-        :type mcs_filter: str|list, optional
-
-
+            mcs_filter: Filter the MCS properties by the given mcs_filter,
+                defaults to None
+        Returns:
+            pd.DataFrame
         """
 
         orgs = self.get_organelles(ids=ids)
@@ -1061,8 +1058,9 @@ class Project:
 
         cache_names = [c.cache_name for c in caches]
         for s in self.sources.values():
-            if s.cache.cache_name not in cache_names:
-                caches.append(s.cache)
+            if s._cache is not None:
+                if s._cache.cache_name not in cache_names:
+                    caches.append(s.cache)
 
         self.logger.info("\n".join(messages))
         self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
