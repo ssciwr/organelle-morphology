@@ -1,14 +1,22 @@
 repos:
+  # Make sure that Jupyter notebooks under version control
+  # have their outputs stripped before committing
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.6.1
+    hooks:
+      - id: nbstripout
+        files: ".ipynb"
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.13.2
+    rev: v0.14.11
     hooks:
       # Run the linter.
       - id: ruff-check
-        args: [--fix]
+        types_or: [python, pyi]
       # Run the formatter.
       - id: ruff-format
-
+        types_or: [python, pyi]
   # Add some general purpose useful hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
@@ -23,14 +31,6 @@ repos:
       - id: check-toml
       # Unify file endings
       - id: end-of-file-fixer
-
-  # Make sure that Jupyter notebooks under version control
-  # have their outputs stripped before committing
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.6.1
-    hooks:
-      - id: nbstripout
-        files: ".ipynb"
 
   # GitHub Actions Workflow linter
   - repo: https://github.com/rhysd/actionlint
