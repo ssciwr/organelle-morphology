@@ -62,18 +62,22 @@ class Project:
         """
 
         self._project_path = Path(project_path)
+        self._cache = None
+
+        self.logger = get_logger(self.path / "om2.log")
+        self.set_loglevel(loglevel)
+        self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         if not self.path.exists():
             self.path.mkdir()
+
+        # The dictionary of data sources that we have added
+        self.sources: dict[str, DataSource] = {}
 
         self._clipping = None
         if clipping is not None:
             self.clipping = clipping
 
-        # The dictionary of data sources that we have added
-        self.sources: dict[str, DataSource] = {}
-
-        self._cache = None
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
 
@@ -93,10 +97,6 @@ class Project:
 
         # The compression level at which we operate
         self.compression_level = compression_level
-
-        self.logger = get_logger(self.path / "om2.log")
-        self.set_loglevel(loglevel)
-        self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         # callables will be updated on demand
         self._cache_settings = {
