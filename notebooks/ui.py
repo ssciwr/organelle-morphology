@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.3"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium", layout_file="layouts/ui.grid.json")
 
 with app.setup:
@@ -212,8 +212,11 @@ def _():
     )
 
     curvature_check = mo.ui.checkbox(label="Curvature", value=False)
+    log_check = mo.ui.checkbox(label="log scale", value=True)
     skeleton_check = mo.ui.checkbox(label="Skeleton", value=False)
     popout_viewer_check = mo.ui.checkbox(label="High-quality viewer", value=False)
+
+    curv_radius_slider = mo.ui.slider(label="radius", value=4.0, start=0.0, stop=15, step=0.1)
 
     mo.vstack(
         [
@@ -221,7 +224,11 @@ def _():
             mesh_id_filter,
             highlight_filter,
             skeleton_check,
-            curvature_check,
+            mo.hstack([
+                curvature_check,
+                log_check,
+                curv_radius_slider,
+            ], justify="start"),
             box_dict,
             mo.hstack(
                 [
@@ -234,8 +241,10 @@ def _():
     )
     return (
         box_dict,
+        curv_radius_slider,
         curvature_check,
         highlight_filter,
+        log_check,
         mesh_id_filter,
         popout_viewer_check,
         run_show_mesh,
@@ -246,8 +255,10 @@ def _():
 @app.cell
 def show_mesh(
     box_dict,
+    curv_radius_slider,
     curvature_check,
     highlight_filter,
+    log_check,
     mesh_id_filter,
     popout_viewer_check,
     project,
@@ -272,12 +283,17 @@ def show_mesh(
         )
     highlight = highlight_filter.value if highlight_filter.value else None
     print(mesh_id_filter.value, highlight_filter.value)
+
+    for source in project.sources.values():
+        source.curvature_radius = curv_radius_slider.value
+
     scene = project.show(
         box=box,
         ids=mesh_id_filter.value,
         ids_highlight=highlight,
         curvature=curvature_check.value,
         skeleton=skeleton_check.value,
+        curv_log=log_check.value,
     )
     viewer = "marimo"
     if popout_viewer_check.value:

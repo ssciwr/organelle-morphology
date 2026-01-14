@@ -138,9 +138,9 @@ class Cache:
 
 
 @delayed
-def mesure_gaussian_curvature_delayed(tmesh: Trimesh):
+def mesure_gaussian_curvature_delayed(tmesh: Trimesh, radius: float):
     # morph radius can be 0 if vertices are used as sample points.
-    morph_radius = 0.0
+    morph_radius = radius
     curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
         tmesh, tmesh.vertices, radius=morph_radius
     )
@@ -153,10 +153,10 @@ def color_delayed_trimesh_rgba(tmesh: Trimesh, values, log=True) -> Trimesh:
     cm.set_extremes(under=(1, 0, 1, 1), over=(0, 1, 0, 1))
     if log:
         norm = mpl.colors.SymLogNorm(
-            linthresh=0.01, linscale=0.01, base=10, vmin=-5, vmax=5
+            linthresh=0.01, linscale=0.01, base=10, vmin=-8, vmax=8
         )
     else:
-        norm = mpl.colors.Normalize(vmin=-5, vmax=5)
+        norm = mpl.colors.Normalize(vmin=-8, vmax=8)
     colors = cm(norm(values))
     tmesh.visual.face_colors = (0, 0, 0, 0)
     tmesh.visual.vertex_colors = colors

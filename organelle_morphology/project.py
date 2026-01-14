@@ -110,7 +110,7 @@ class Project:
         self.use_cache = True
         self.debug = False
 
-        self.cluster = client.cluster if client else LocalCluster()
+        self.cluster = client.cluster if client else LocalCluster(n_workers=4)
         self.client = client if client else Client(self.cluster)
 
     def recreate_client(self):
@@ -285,6 +285,7 @@ class Project:
         domain_box=True,
         curvature=False,
         skeleton=False,
+        curv_log=True,
     ):
         # TODO: mcs visualization
         orgs = self.get_organelles(ids=ids)
@@ -309,7 +310,7 @@ class Project:
                 labels = [o.label for o in o_s]
                 meshes.append(
                     merge_meshes(
-                        s.get_curvature(labels, color=True)[1],
+                        s.get_curvature(labels, color=True, log=curv_log)[1],
                         color=0,
                         transp=transp,
                     )
@@ -704,6 +705,9 @@ class Project:
 
         """
         properties = {}
+        for source in self.sources.values():
+            source.basic_geometric_properties
+
         for organelle in self.get_organelles():
             # TODO: geometric data is expensive, and not parallel, necessary?
             properties[organelle.id] = (

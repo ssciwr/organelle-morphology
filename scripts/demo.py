@@ -64,7 +64,7 @@ mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 show(mmesh)
 
 # %% high-res
-p.clipping = [[0.6,0.3,0.4], [0.8,0.8,1]]
+p.clipping = [[0.67,0.45,0.5], [0.73,0.8,0.6]]
 p.compression_level = "s1"
 print(len(s.labels))
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()

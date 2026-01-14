@@ -448,6 +448,19 @@ class DataSource:
         return self.get_data(None)
 
     @property
+    def curvature_radius(self) -> float:
+        return self._curv_radius
+
+    @curvature_radius.setter
+    def curvature_radius(self, radius):
+        """Set the radius for curvature calculations.
+        Resets the cached curvature.
+        """
+        if radius != self._curv_radius:
+            self._curv_radius = radius
+            self._curvature_map = {}
+
+    @property
     def clipping_corners(self):
         """Lower and upper clipping corner after scaling"""
         if self.project.clipping is not None:
@@ -686,7 +699,9 @@ class DataSource:
                 curvature = self._curvature_map[label]
                 tasks.append(curvature)
             else:
-                curvature = mesure_gaussian_curvature_delayed(dmesh)
+                curvature = mesure_gaussian_curvature_delayed(
+                    dmesh, radius=self._curv_radius
+                )
                 tasks.append(curvature)
             if color:
                 tasks.append(color_delayed_trimesh_rgba(dmesh, curvature, log=log))
@@ -834,6 +849,7 @@ class DataSource:
         self._clip_high_corner_data = None
         self._scaling_factors = None
         self._level = None
+        self._curv_radius = 4.0
 
     def instantiate_organelles(self):
         if self._organelles is None:
