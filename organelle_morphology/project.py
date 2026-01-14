@@ -73,6 +73,7 @@ class Project:
         # The dictionary of data sources that we have added
         self.sources: dict[str, DataSource] = {}
 
+        self._cache = None
         self._basic_geometric_properties = {}
         self._mesh_properties = {}
 
@@ -139,6 +140,24 @@ class Project:
                 v = v()
             d[k] = v
         return d
+
+    @property
+    def cache(self):
+        """Get the cache for this project.
+
+        Unique for sum of sources, compression level and clipping setting.
+        Returns the same cache object on consecutive calls.
+        On clipping or level change, this cache must be invalidated by calling
+        `project.clear_caches()`
+        """
+
+        if self._cache is None:
+            cs = self.cache_settings
+            active_sources = sorted(list(self.sources.keys()))
+            name = f"cache_{cs['project_name']}/proj_{active_sources}/{cs['level']}/{cs['clipping']}"
+            cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
+            self._cache = cache
+        return self._cache
 
     def add_source(
         self,
@@ -673,8 +692,7 @@ class Project:
                     f"Levels in source: {s.metadata['levels']}"
                 )
         if getattr(self, "_compression_level", None) != level:
-            for source in self.sources.values():
-                source.clear_memory_cache()
+            self.clear_caches()
 
         self._compression_level = level
 
@@ -897,9 +915,7 @@ class Project:
                 "coordinates of corner one must be smaller than of corner two"
             )
         if not np.all(np.array(clipping) == getattr(self, "clipping", None)):
-            if getattr(self, "sources", False):
-                for source in self.sources.values():
-                    source.clear_memory_cache()
+            self.clear_caches()
 
         if clipping is None:
             self._clipping = None
@@ -1075,6 +1091,7 @@ class Project:
 
         for source in self.sources.values():
             source.clear_memory_cache()
+        self._cache = None
         self.logger.debug("Cleared memory cache of all sources.")
 
         if clear_disk:

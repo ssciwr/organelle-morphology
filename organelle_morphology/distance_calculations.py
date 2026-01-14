@@ -220,13 +220,7 @@ class MembraneContactSiteCalculator:
 def generate_distance_matrix(
     project: "organelle_morphology.Project",
 ) -> pd.DataFrame:
-    active_sources = sorted(list(project.sources.keys()))
-    cs = project.cache_settings
-    cache = Cache(
-        cache_name=f"cache_{cs['project_name']}/distances_{active_sources}/{cs['level']}/{cs['clipping']}",
-        cache_root=cs["cache_root"],
-        disk=cs["disk"],
-    )
+    cache = project.cache
 
     if "distance_matrix" not in cache or not project.use_cache:
         project.logger.info("Initilizing distance matrix")
