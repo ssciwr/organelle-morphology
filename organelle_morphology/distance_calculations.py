@@ -1,3 +1,4 @@
+from dask import delayed
 import trimesh
 
 import numpy as np
@@ -6,13 +7,13 @@ import pandas as pd
 from tqdm import tqdm
 
 import organelle_morphology
+from organelle_morphology.util import Cache
+from dask.delayed import delayed
+from dask.base import compute
 
 
 class MembraneContactSiteCalculator:
-    def __init__(self, project: "organelle_morphology.Project"):
-        self.use_cache = project.use_cache
-        self.project = project
-
+    def __init__(self):
         self.distances = []
         self.index_source = []
         self.index_target = []
@@ -34,7 +35,7 @@ class MembraneContactSiteCalculator:
         self._vertices_index_source = None
         self._vertices_index_target = None
 
-    def search_mcs(self, id_1, id_2, mesh_1=None, mesh_2=None):
+    def search_mcs(self, id_1, id_2, mesh_1, mesh_2):
         """
         first search the entire membrane surface that is facing the other organelle
         we do this by first performing a kd-tree search to find the nearest vertices.
@@ -47,16 +48,10 @@ class MembraneContactSiteCalculator:
             id_1 (int): The ID of the first organelle.
             id_2 (int): The ID of the second organelle.
             mesh_1 (Mesh, optional): The mesh of the first organelle.
-            If not provided, it will be retrieved from the project.
             mesh_2 (Mesh, optional): The mesh of the second organelle.
             If not provided, it will be retrieved from the project.
 
         """
-        if mesh_1 is None:
-            mesh_1 = self.project.get_organelles(id_1)[0].mesh.compute()
-        if mesh_2 is None:
-            mesh_2 = self.project.get_organelles(id_2)[0].mesh.compute()
-
         self._repair_meshes(mesh_1, mesh_2)
 
         if len(mesh_1.vertices) < len(mesh_2.vertices):
@@ -231,7 +226,7 @@ def generate_distance_matrix(
         meshes = []
         organelles_ids = project.organelle_ids
         for organelle in project.organelles:
-            meshes.append(organelle.mesh.compute())
+            meshes.append(organelle.mesh)
 
         project.logger.info("Calculating distance matrix")
         num_rows = len(meshes)
@@ -243,23 +238,36 @@ def generate_distance_matrix(
             columns=organelles_ids,
         )
 
-        for i in tqdm(np.arange(num_rows)):
+        @delayed
+        def get_min_dist_delayed(i, meshes, organelles_ids):
+            num_rows = len(meshes)
             mesh_1 = meshes[i]
             id_1 = organelles_ids[i]
-
+            label_1 = id_1.split("_")[-1]
+            results = {}
             for j in np.arange(i, num_rows):
-                if i == j:
+                id_2 = organelles_ids[j]
+                label_2 = id_2.split("_")[-1]
+                if label_1 <= label_2:
                     continue
 
                 mesh_2 = meshes[j]
-                id_2 = organelles_ids[j]
-
-                mcs_calculator = MembraneContactSiteCalculator(project)
+                mcs_calculator = MembraneContactSiteCalculator()
                 mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2)
-                min_distance = mcs_calculator.min_distance
+                results[id_2] = mcs_calculator.min_distance
 
-                distance_df.loc[id_1, id_2] = min_distance
-                distance_df.loc[id_2, id_1] = min_distance
+            return results
+
+        tasks = {}
+        for i in tqdm(list(range(num_rows))):
+            id_1 = organelles_ids[i]
+            tasks[id_1] = get_min_dist_delayed(i, meshes, organelles_ids)
+
+        tasks = compute(tasks)[0]
+        for id_1, inner in tasks.items():
+            for id_2, min_dist in inner.items():
+                distance_df.loc[id_1, id_2] = min_dist
+                distance_df.loc[id_2, id_1] = min_dist
 
         cache["distance_matrix"] = distance_df
 
@@ -330,7 +338,7 @@ def generate_mcs(project, mcs_label, max_distance, min_distance=0):
     for org_1_label, org_2_labels in tqdm(pair_dict.items()):
         org1 = project.get_organelles(org_1_label)[0]
         for org_2_label in org_2_labels:
-            mcs_calculator = MembraneContactSiteCalculator(project)
+            mcs_calculator = MembraneContactSiteCalculator()
             mcs_calculator.search_mcs(
                 org_1_label, org_2_label, meshes[org_1_label], meshes[org_2_label]
             )

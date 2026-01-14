@@ -5,6 +5,7 @@
 from collections import defaultdict
 from pathlib import Path
 
+from dask.delayed import delayed
 from tqdm import tqdm
 import trimesh
 from trimesh import Trimesh
@@ -193,3 +194,11 @@ np.unique(mmesh.unique_faces(),return_counts=True)
 mmesh.update_faces(mmesh.unique_faces())
 
 # %%
+import dask.dataframe as dd
+import pandas as pd
+
+t = delayed(lambda: 5)
+dm = np.zeros((5,5))
+df = pd.DataFrame(dm)
+
+df.loc[:] = delayed(lambda: 5)
