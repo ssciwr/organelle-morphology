@@ -2,7 +2,6 @@ name: morph
 channels:
   - conda-forge
 dependencies:
-  - cachetools
   - dask
   - marimo
   - numpy
@@ -18,10 +17,10 @@ dependencies:
   - scipy
   - scikit-image
   - z5py
+  - zmesh
   - pip:
       - python-fcl
       - setuptools==65.7.0
-      - shelved_cache
       - trimesh[easy,recommend]
       - xdg
       - skeletor
