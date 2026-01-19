@@ -1,5 +1,3 @@
-import pytest
-
 import numpy as np
 
 from organelle_morphology.organelle import Mitochondrium

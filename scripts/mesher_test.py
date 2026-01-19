@@ -64,9 +64,9 @@ colors = np.zeros(x.shape + (3,))
 for i, p in enumerate(points):
     cube = cubify(p,x,y,z)
     n_cube = np.zeros_like(cube,dtype=float)
-    n_cube[cube] = i + 1 
+    n_cube[cube] = i + 1
     cubes.append(n_cube)
-    colors[cube] = cm.colors[i%10] 
+    colors[cube] = cm.colors[i%10]
 
 voxelarray = reduce(np.add, cubes)
 
@@ -125,5 +125,3 @@ for i in range(len(points)):
 
 
 # %%
-
-

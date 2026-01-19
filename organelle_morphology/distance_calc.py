@@ -1,5 +1,5 @@
 from itertools import combinations
-from dask.delayed import delayed, Delayed
+from dask.delayed import delayed
 import numpy as np
 import trimesh
 from dask.base import compute

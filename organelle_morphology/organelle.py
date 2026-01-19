@@ -1,5 +1,3 @@
-from typing import Optional
-
 from dask.delayed import Delayed
 import numpy as np
 import plotly.graph_objects as go

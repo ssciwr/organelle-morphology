@@ -7,12 +7,10 @@ with app.setup:
     # Initialization code that runs before all other cells
     import marimo as mo
     import organelle_morphology as om
-    from pathlib import Path
     import numpy as np
     from organelle_morphology.util import bounding_box_delayed
     from dask.base import compute
     import pandas as pd
-    from collections import defaultdict
 
 
 @app.cell
@@ -216,7 +214,9 @@ def _():
     skeleton_check = mo.ui.checkbox(label="Skeleton", value=False)
     popout_viewer_check = mo.ui.checkbox(label="High-quality viewer", value=False)
 
-    curv_radius_slider = mo.ui.slider(label="radius", value=4.0, start=0.0, stop=15, step=0.1)
+    curv_radius_slider = mo.ui.slider(
+        label="radius", value=4.0, start=0.0, stop=15, step=0.1
+    )
 
     mo.vstack(
         [
@@ -224,11 +224,14 @@ def _():
             mesh_id_filter,
             highlight_filter,
             skeleton_check,
-            mo.hstack([
-                curvature_check,
-                log_check,
-                curv_radius_slider,
-            ], justify="start"),
+            mo.hstack(
+                [
+                    curvature_check,
+                    log_check,
+                    curv_radius_slider,
+                ],
+                justify="start",
+            ),
             box_dict,
             mo.hstack(
                 [
@@ -316,10 +319,10 @@ def _():
     skel_form = mo.md(r"""
     ## Skeletonize
 
-    Method: {method}  
-    id filter: {ids}  
-    Recompute: {recompute}  
-    Settings: {settings}  
+    Method: {method}
+    id filter: {ids}
+    Recompute: {recompute}
+    Settings: {settings}
 
     """).batch(
         method=mo.ui.radio(
@@ -345,10 +348,10 @@ def _(project, run_skeleton_button, skel_form):
         settings["recompute"] = form["recompute"]
         if form["method"] == "wavefront":
             settings.pop("epsilon")
-            out = project.skeletonize_wavefront(**settings)
+            project.skeletonize_wavefront(**settings)
         elif form["method"] == "vertex cluster":
             settings.pop("waves")
-            out = project.skeletonize_vertex_clusters(**settings)
+            project.skeletonize_vertex_clusters(**settings)
     return
 
 

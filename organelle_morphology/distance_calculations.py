@@ -6,7 +6,6 @@ import pandas as pd
 from tqdm import tqdm
 
 import organelle_morphology
-from organelle_morphology.util import Cache
 
 
 class MembraneContactSiteCalculator:
