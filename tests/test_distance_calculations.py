@@ -113,3 +113,4 @@ def test_generate_mcs(project_with_sources):
     p = project_with_sources
 
     generate_mcs(p, 90)
+    # FIXME: implement test
