@@ -700,7 +700,7 @@ class Project:
         """Trigger the calculation of meshes for all organelles"""
 
         for source in self.sources.values():
-            source.calculate_mesh()
+            source.meshes
 
     @property
     def geometric_properties(self):
