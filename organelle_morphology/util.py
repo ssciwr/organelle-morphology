@@ -329,7 +329,8 @@ def show(meshes):
         scene.add_geometry(mesh)
 
     # scale to make the view behave properly
-    scene.scaled(1 / scene.scale).show()
+    scene = scene.scaled(1 / scene.scale)
+    scene.show()
     return scene
 
 

@@ -1,7 +1,11 @@
 import marimo
 
-__generated_with = "0.18.4"
-app = marimo.App(width="medium", layout_file="layouts/ui.grid.json")
+__generated_with = "0.19.4"
+app = marimo.App(
+    width="medium",
+    app_title="Organelle Morphology",
+    layout_file="layouts/ui.grid.json",
+)
 
 with app.setup:
     # Initialization code that runs before all other cells
@@ -55,10 +59,10 @@ def _(path_ui, run_project):
 def _(project):
     # add sources
     def load_sources(button_value):
-        for entry in source_path_ui.value:
-            project.add_source(
-                xml_path=entry.path, organelle=new_organelle_name_ui.value
-            )
+        entry = source_path_ui.value[0]
+        print("entry:", entry, project)
+        project.add_source(xml_path=entry.path, organelle=new_organelle_name_ui.value)
+        return
 
     def get_source_header():
         sources = "<br>".join([s.xml_path.name for s in project.sources.values()])
@@ -83,12 +87,6 @@ def _(project):
         ]
     )
     return get_source_header, run_add_source
-
-
-@app.cell
-def _():
-    om.organelle.organelle_registry
-    return
 
 
 @app.cell
@@ -192,7 +190,6 @@ def _(run_progress):
 @app.cell
 def _():
     run_show_mesh = mo.ui.run_button(label="Show Mesh")
-
     mesh_id_filter = mo.ui.text(value="*", label="Organelle id filter")
     highlight_filter = mo.ui.text(value="", label="Highligh ids")
 
@@ -209,14 +206,14 @@ def _():
         label="Box settings",
     )
 
+    skeleton_check = mo.ui.checkbox(label="Skeleton", value=False)
     curvature_check = mo.ui.checkbox(label="Curvature", value=False)
     log_check = mo.ui.checkbox(label="log scale", value=True)
-    skeleton_check = mo.ui.checkbox(label="Skeleton", value=False)
-    popout_viewer_check = mo.ui.checkbox(label="High-quality viewer", value=False)
-
     curv_radius_slider = mo.ui.slider(
         label="radius", value=4.0, start=0.0, stop=15, step=0.1
     )
+    color_indiv_check = mo.ui.checkbox(label="Color individual organelles", value=False)
+    popout_viewer_check = mo.ui.checkbox(label="High-quality viewer", value=False)
 
     mo.vstack(
         [
@@ -232,6 +229,7 @@ def _():
                 ],
                 justify="start",
             ),
+            color_indiv_check,
             box_dict,
             mo.hstack(
                 [
@@ -244,6 +242,7 @@ def _():
     )
     return (
         box_dict,
+        color_indiv_check,
         curv_radius_slider,
         curvature_check,
         highlight_filter,
@@ -258,6 +257,7 @@ def _():
 @app.cell
 def show_mesh(
     box_dict,
+    color_indiv_check,
     curv_radius_slider,
     curvature_check,
     highlight_filter,
@@ -297,6 +297,7 @@ def show_mesh(
         curvature=curvature_check.value,
         skeleton=skeleton_check.value,
         curv_log=log_check.value,
+        color_instances=color_indiv_check.value,
     )
     viewer = "marimo"
     if popout_viewer_check.value:
@@ -437,7 +438,7 @@ def _(box_dict, mesh_id_filter, project):
 
         first = [n.split("_")[0] for n in result]
         orgs, counts = np.unique(first, return_counts=True)
-        orgs = " , ".join([o + "_\*" for o in orgs])
+        orgs = " , ".join([o + r"_\*" for o in orgs])
         output = mo.md(f"Organelles: {orgs}<br>Counts: {counts}"), pd.DataFrame(result)
 
         mo.output.replace(output)
@@ -451,11 +452,56 @@ def _(box_dict, mesh_id_filter, project):
 
 @app.cell
 def _():
+    of_ids_source = mo.ui.text(label="Labels 1", value="*")
+    of_ids_target = mo.ui.text(label="Labels 2", value="*")
+    of_filter_dist = mo.ui.number(label="Filter distance [um]", value=1)
+    of_attribute = mo.ui.dropdown(
+        label="Return type", options=["labels", "contacts", "objects"], value="labels"
+    )
+    of_run_button = mo.ui.run_button(label="Run filter")
+
+    mo.vstack(
+        [
+            mo.md("Filter Organelles"),
+            of_ids_source,
+            of_ids_target,
+            of_filter_dist,
+            of_attribute,
+            of_run_button,
+        ]
+    )
+    return (
+        of_attribute,
+        of_filter_dist,
+        of_ids_source,
+        of_ids_target,
+        of_run_button,
+    )
+
+
+@app.cell
+def _(
+    of_attribute,
+    of_filter_dist,
+    of_ids_source,
+    of_ids_target,
+    of_run_button,
+    project,
+):
+    mo.stop(not of_run_button.value, "Organelle filter results")
+
+    project.distance_filtering(
+        of_ids_source.value,
+        of_ids_target.value,
+        of_filter_dist.value,
+        of_attribute.value,
+    )
     return
 
 
 @app.cell
-def _():
+def _(project):
+    project.distance_matrix
     return
 
 

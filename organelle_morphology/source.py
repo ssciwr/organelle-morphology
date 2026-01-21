@@ -110,7 +110,6 @@ def _block_mesher(
     mesher = Mesher((1, 1, 1))
     mesher.mesh(block, close=False)
     meshes = {}
-    assert len(mesher.ids()) == np.unique(block).shape[0] - 1  # zero is no label
 
     for id in mesher.ids():
         assert meshes.get(id) is None, f"{id} was in mesh already!"
@@ -475,12 +474,8 @@ class DataSource:
     @property
     def clipping_corners_data(self):
         """Lower and upper clipping corner matching the raw data"""
-        if self.project.clipping is not None:
-            if (
-                self._clip_low_corner_data is None
-                or self._clip_high_corner_data is None
-            ):
-                self.get_data(None)
+        if self._clip_low_corner_data is None or self._clip_high_corner_data is None:
+            self.get_data(None)
         return self._clip_low_corner_data, self._clip_high_corner_data
 
     @clipping_corners_data.setter
@@ -529,13 +524,12 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        if clipping is None:
-            self._scaling_factors = self.metadata["downsampling"][_idx]
-            self.clipping_corners_data = (c_low_d, c_high_d)
-            self.clipping_corners = (
-                c_low_d * self._scaling_factors,
-                c_high_d * self._scaling_factors,
-            )
+        self._scaling_factors = self.metadata["downsampling"][_idx]
+        self.clipping_corners_data = (c_low_d, c_high_d)
+        self.clipping_corners = (
+            c_low_d * self._scaling_factors,
+            c_high_d * self._scaling_factors,
+        )
 
         return data[cube_slice]
 

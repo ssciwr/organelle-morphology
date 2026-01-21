@@ -202,3 +202,27 @@ dm = np.zeros((5,5))
 df = pd.DataFrame(dm)
 
 df.loc[:] = delayed(lambda: 5)
+
+# %% DEBUG clipping face
+project_path = Path.cwd() / ".." / "example_analysis"
+p = Project(project_path, compression_level="s2", loglevel="DEBUG", clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)))
+p.add_source("../data/mitosis_dT/cell_it02_b0_7_stitched.xml", "cell")
+s = p.sources["cell_it02_b0_7_stitched"]
+
+p.clipping = [[0.5]*3, [0.6]*3]
+
+import dask
+dask.config.set(scheduler='synchronous')
+
+# %%
+import numpy as np
+from zmesh import Mesher
+from trimesh import Trimesh
+
+block = np.zeros((10, 10, 10),dtype=int)
+block[1:, 1:, 1:] = 9
+mesher = Mesher((1, 1, 1))
+mesher.mesh(block, close=False)
+zmesh = mesher.get(9)
+tmesh = Trimesh(zmesh.vertices, zmesh.faces, process=False)
+tmesh.show()

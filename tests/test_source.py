@@ -1,7 +1,8 @@
 import pytest
 from organelle_morphology import source
 import numpy as np
-from dask import compute
+from dask.base import compute
+import dask.array as da
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
@@ -160,3 +161,19 @@ def test_curvature(project_with_sources):
 
     res = s.get_curvature(labels=s.labels[0], color=False)
     assert len(res) == 1
+
+
+def test_calculate_mesh(project_with_sources, mocker):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+
+    data = np.arange(125).reshape((5, 5, 5))
+    data = da.from_array(data)
+
+    mock_data = mocker.patch(
+        "organelle_morphology.source.DataSource.data", new_callable=mocker.PropertyMock
+    )
+    mock_data.return_value = data
+
+    s.calculate_mesh()
+    breakpoint()

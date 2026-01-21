@@ -190,6 +190,7 @@ class Project:
         ValueError
             Compression level of project not available
         """
+        self.logger.info(f"Project: {self}")
         xml_path = Path(xml_path)
         if xml_path.suffix != ".xml":
             xml_path = xml_path.with_suffix(".xml")
@@ -305,6 +306,7 @@ class Project:
         curvature=False,
         skeleton=False,
         curv_log=True,
+        color_instances=False,
     ):
         # TODO: mcs visualization
         orgs = self.get_organelles(ids=ids)
@@ -361,6 +363,9 @@ class Project:
                         )
                     )
                 mmesh = merge_meshes(to_merge, color=0)
+
+            elif color_instances:
+                mmesh = merge_meshes([o.mesh for o in orgs], color=1)
 
             else:  # No highlight
                 if len(o_types) <= 1:
@@ -481,27 +486,25 @@ class Project:
         return fig
 
     def distance_filtering(
-        self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="names"
+        self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="labels"
     ):
         """Filter the organelles based on the distance between two filtered organelle lists.
               These can be from one or more types depending on the given filter.
 
-        :param ids_source: Filter string for the source ids, defaults to "*"
-        :type ids_source: str, optional
-        :param ids_target: filter string for the target ids, defaults to "*"
-        :type ids_target: str, optional
-        :param filter_distance: The distance in micro meter used for filtering, defaults to 0.01
-        :type filter_distance: float, optional
-        :param attribute: Show names, number of contacts (contacts) or return the organelle objects ("objects"), defaults to "names"
-        :type attribute: str, optional
-
-        :return: Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
-        :rtype: dict
+        Args:
+            ids_source: Filter string for the source ids, defaults to "*"
+            ids_target: filter string for the target ids, defaults to "*"
+            filter_distance: The distance in micro meter used for filtering,
+                defaults to 0.01
+            attribute: Show names, number of contacts (contacts) or return
+                the organelle objects ("objects"), defaults to "names"
+        Returns:
+            Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
         """
 
-        if attribute not in ["names", "contacts", "objects"]:
+        if attribute not in ["labels", "contacts", "objects"]:
             raise ValueError(
-                f"Attribute must be one of 'names', 'contacts' or 'objects' but is {attribute}"
+                f"Attribute must be one of 'labels', 'contacts' or 'objects' but is {attribute}"
             )
 
         orgs_1 = self.get_organelle_ids(ids=ids_source)
