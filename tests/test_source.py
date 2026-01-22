@@ -163,17 +163,35 @@ def test_curvature(project_with_sources):
     assert len(res) == 1
 
 
-def test_calculate_mesh(project_with_sources, mocker):
+@pytest.mark.parametrize("chunksize", range(0, 7))
+def test_calculate_mesh(project_with_sources, mocker, chunksize):
     p = project_with_sources
     s = list(p.sources.values())[0]
+    if chunksize == 0:
+        chunksize = -1
 
-    data = np.arange(125).reshape((5, 5, 5))
-    data = da.from_array(data)
-
-    mock_data = mocker.patch(
-        "organelle_morphology.source.DataSource.data", new_callable=mocker.PropertyMock
-    )
+    data = np.arange(343).reshape((7, 7, 7))
+    data = da.from_array(data, chunks=chunksize)
+    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
     mock_data.return_value = data
 
     s.calculate_mesh()
-    breakpoint()
+    assert len(list(s._meshes.keys())) == 342
+
+
+@pytest.mark.parametrize("chunksize", range(0, 7))
+def test_calculate_mesh_clipped(project_with_sources, mocker, chunksize):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+    if chunksize == 0:
+        chunksize = -1
+
+    p.clipping = ((0.3, 0.3, 0.3), (1, 1, 1))
+
+    data = np.arange(1000).reshape((10, 10, 10))
+    data = da.from_array(data, chunks=chunksize)
+    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+    mock_data.return_value = data
+
+    s.calculate_mesh()
+    assert len(list(s._meshes.keys())) == 343
