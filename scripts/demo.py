@@ -56,6 +56,13 @@ s.calculate_mesh(debug_color=2)
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 show(mmesh)
 
+# %% debug colors -- correct merging
+s = p.sources["mito_it00_b0_7_stitched"]
+p.clipping = [[0.6,0,0], [1,1,1]]
+s.calculate_mesh(debug_color=0)
+mmesh = merge_meshes(list(s.meshes.values()), color=2).compute()
+show(mmesh)
+
 # %% weired cubes in the middle
 s = p.sources["mito_it00_b0_7_stitched"]
 p.clipping = [[0.3,0,0], [0.7,1,1]]
