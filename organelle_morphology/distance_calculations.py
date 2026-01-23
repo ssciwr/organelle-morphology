@@ -219,8 +219,14 @@ def generate_distance_matrix(
     project: "organelle_morphology.Project",
 ) -> pd.DataFrame:
     cache = project.cache
+    max_dist = project.max_distance
+    max_cached = 0
+    if "max_distance_computed" in cache:
+        max_cached = cache["max_distance_computed"]
 
-    if "distance_matrix" not in cache or not project.use_cache:
+    if (
+        "distance_matrix" not in cache or not project.use_cache
+    ) and max_dist > max_cached:
         project.logger.info("Initilizing distance matrix")
 
         project.logger.info("Loading meshes")
@@ -241,17 +247,18 @@ def generate_distance_matrix(
             index=organelles_ids,
             columns=organelles_ids,
         )
+        # TODO:implement max distance threshold
 
         tasks = []
         for i in range(num_rows):
             id_1 = organelles_ids[i]
             mesh_1 = meshes[i]
-            for j in range(i, num_rows):
+            for j in range(i + 1, num_rows):
                 id_2 = organelles_ids[j]
                 mesh_2 = meshes[j]
                 tasks.append((id_1, id_2, mesh_1, mesh_2))
 
-        with multiprocessing.Pool(8) as pool:
+        with multiprocessing.Pool(4) as pool:
             results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
             pool.close()
             pool.join()
@@ -261,6 +268,7 @@ def generate_distance_matrix(
             distance_df.loc[res[0][::-1]] = res[1]
 
         cache["distance_matrix"] = distance_df
+        cache["max_distance_computed"] = max_dist
 
     else:
         project.logger.info("Retrieving distance matrix from cache")
@@ -268,7 +276,7 @@ def generate_distance_matrix(
     return cache["distance_matrix"]
 
 
-def generate_mcs(project, max_distance, min_distance=0):
+def generate_mcs(project, max_distance, min_distance=0, override=False):
     """
     Generates the MCS (Membrane Contact Site) pairs for a given project.
 
@@ -281,6 +289,10 @@ def generate_mcs(project, max_distance, min_distance=0):
     Returns:
         None
     """
+    mcs_label = f"{min_distance}-{max_distance}"
+
+    if project._mcs_labels.get(mcs_label) and not override:
+        return project._mcs_labels[mcs_label]
 
     distance_matrix = project.distance_matrix
 
@@ -310,7 +322,6 @@ def generate_mcs(project, max_distance, min_distance=0):
                 meshes[label] = project.get_organelles(label)[0].mesh
     meshes = compute(meshes)[0]
 
-    mcs_label = None
     for org_1_label, org_2_label in tqdm(pairs):
         org1 = project.get_organelles(org_1_label)[0]
         org2 = project.get_organelles(org_2_label)[0]
@@ -322,7 +333,6 @@ def generate_mcs(project, max_distance, min_distance=0):
 
         mcs_source = mcs_calculator.mcs_source
         mcs_target = mcs_calculator.mcs_target
-        mcs_label = mcs_source["mcs_label"]
 
         # add mcs to organelle
         if org1.id == mcs_source["self_id"]:
@@ -331,9 +341,6 @@ def generate_mcs(project, max_distance, min_distance=0):
         else:
             org1.add_mcs(mcs_target)
             org2.add_mcs(mcs_source)
-
-    if not mcs_label:
-        return
 
     for i in rows:
         org_id = distance_matrix.index[i]

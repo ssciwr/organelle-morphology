@@ -112,6 +112,12 @@ p.skeleton_info
 o.mesh_properties
 o.geometric_data
 
+# %% mcs
+p.clipping = [[0.6,0.6,0.4], [1,1,1]]
+p.compression_level = "s2"
+
+
+
 
 # %% Curvature
 o.curvature_map

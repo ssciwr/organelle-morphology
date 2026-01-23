@@ -212,8 +212,9 @@ def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
     mock_data.return_value = data
 
     # for debugging:
-    # import dask
-    # dask.config.set(scheduler="synchronous")
+    import dask
+
+    dask.config.set(scheduler="synchronous")
     s.calculate_mesh(debug_color=0)
 
     mesh = list(s._meshes.values())[0].compute()

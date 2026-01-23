@@ -117,7 +117,7 @@ def _block_mesher(
             id,
             normals=False,
             reduction_factor=reduction_factor,
-            voxel_centered=True,
+            voxel_centered=False,
             max_error=None,  # None: max 1 voxel, otherwise unit of data
         )
         mesh = Trimesh(mesh.vertices, mesh.faces, process=False)

@@ -98,6 +98,9 @@ class Project:
         # The compression level at which we operate
         self.compression_level = compression_level
 
+        # Max distance for distance calculations
+        self._max_compute_distance = 10
+
         # callables will be updated on demand
         self._cache_settings = {
             "project_name": lambda: self.path.name,
@@ -551,6 +554,14 @@ class Project:
 
         return output_filtered_dict
 
+    @property
+    def max_distance(self):
+        return self._max_compute_distance
+
+    @max_distance.setter
+    def max_distance(self, max_distance):
+        self._max_compute_distance = max_distance
+
     def distance_analysis(self, ids_source="*", ids_target="*", attribute="dist"):
         """get more information about the distance between two filtered organelle lists.
            These can be from one or more types depending on the given filter.
@@ -593,9 +604,7 @@ class Project:
 
             return df_mean
 
-    def search_mcs(
-        self, mcs_label, max_distance, min_distance=0, override_mcs_label=False
-    ):
+    def search_mcs(self, max_distance, min_distance=0, override_mcs_label=False):
         """
         This function is used to search for membrane contact sites within a project.
         Pairs will only be selected when their minimum mesh distance is between
@@ -611,10 +620,9 @@ class Project:
             None
         """
 
-        if mcs_label in self._mcs_labels and not override_mcs_label:
-            raise ValueError(f"MCS label {mcs_label} already exists in the project")
-
-        generate_mcs(self, mcs_label, max_distance, min_distance)
+        if max_distance > self.max_distance:
+            self.max_distance = max_distance
+        generate_mcs(self, max_distance, min_distance)
 
     @property
     def mcs_labels(self):
