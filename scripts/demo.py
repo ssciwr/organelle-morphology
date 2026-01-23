@@ -220,7 +220,7 @@ from zmesh import Mesher
 from trimesh import Trimesh
 
 block = np.zeros((10, 10, 10),dtype=int)
-block[1:, 1:, 1:] = 9
+block[:9, :9, :9] = 9
 mesher = Mesher((1, 1, 1))
 mesher.mesh(block, close=False)
 zmesh = mesher.get(9)

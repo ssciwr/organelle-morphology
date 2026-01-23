@@ -117,7 +117,7 @@ def _block_mesher(
             id,
             normals=False,
             reduction_factor=reduction_factor,
-            voxel_centered=False,
+            voxel_centered=True,
             max_error=None,  # None: max 1 voxel, otherwise unit of data
         )
         mesh = Trimesh(mesh.vertices, mesh.faces, process=False)
@@ -795,7 +795,7 @@ class DataSource:
         # get some statistics
         all_chunks = list(_ids_to_chunks.values())
         all_ids = np.array(list(_ids_to_chunks.keys()))
-        id_amounts = [len(idxs) for idxs in all_chunks]
+        id_amounts = np.array([len(idxs) for idxs in all_chunks])
         amounts, inverse, freqs = np.unique(
             id_amounts, return_counts=True, return_inverse=True
         )
@@ -804,7 +804,7 @@ class DataSource:
 
         # Cleanup: Merge meshes crossing chunks
         self._meshes = {}
-        duplicate_ids = all_ids[np.nonzero(inverse != 0)]
+        duplicate_ids = all_ids[np.nonzero(id_amounts > 1)]
         for ind in duplicate_ids:
             chunk_idxs = _ids_to_chunks[ind]
             meshes = [_meshes_chunked[idx][ind] for idx in chunk_idxs]
@@ -813,7 +813,7 @@ class DataSource:
                 merged_mesh = simplify_mesh(merged_mesh, simplify)
             self._meshes[ind] = merged_mesh
 
-        unique_ids = all_ids[np.nonzero(inverse == 0)]
+        unique_ids = all_ids[np.nonzero(id_amounts == 1)]
         for ind in unique_ids:
             mesh = _meshes_chunked[_ids_to_chunks[ind][0]][ind]
             if simplify:

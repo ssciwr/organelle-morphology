@@ -195,3 +195,26 @@ def test_calculate_mesh_clipped(project_with_sources, mocker, chunksize):
 
     s.calculate_mesh()
     assert len(list(s._meshes.keys())) == 343
+
+
+@pytest.mark.parametrize("rep", range(10))
+def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+
+    o1 = np.random.randint(4) + 1
+    o2 = np.random.randint(4) + 1
+    o3 = np.random.randint(4) + 1
+    data = np.zeros((1000,), dtype=int).reshape((10, 10, 10))
+    data[o1 : o1 + 4, o2 : o1 + 4, o3 : o1 + 4] = 1
+    data = da.from_array(data, chunks=5)
+    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+    mock_data.return_value = data
+
+    import dask
+
+    dask.config.set(scheduler="synchronous")
+    s.calculate_mesh(debug_color=0)
+
+    assert list(s._meshes.values())[0].compute().is_watertight
+    assert len(list(s._meshes.keys())) == 1
