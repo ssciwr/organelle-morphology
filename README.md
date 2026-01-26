@@ -6,3 +6,15 @@
 [![codecov](https://codecov.io/gh/ssciwr/organelle-morphology/branch/main/graph/badge.svg)](https://codecov.io/gh/ssciwr/organelle-morphology)
 
 **This project is currently under construction**
+
+To start the user interface under Linux:
+```bash
+   git clone [https://github.com/ssciwr/organelle-morphology.git](https://github.com/ssciwr/organelle-morphology.git)
+   cd organelle-morphology
+   conda env create -f environment-dev.yml
+   conda activate morph
+   pip install -e .
+   cd notebooks
+   marimo run ui.py --host 0.0.0.0 --no-token
+```
+Navigate to http://localhost:2718
