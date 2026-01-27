@@ -393,7 +393,16 @@ class DataSource:
 
     @property
     def metadata(self) -> dict:
-        """Return the metadata of this source. Loads the metadata, if necessary"""
+        """Return the metadata of this source. Loads the metadata, if necessary
+
+        coarse_level: coarsest level available
+        data_root: path to n5 data directory
+        downsampling: list of factors by which the resolution can be decreased
+        levels: names of downsampling levels, aligned with downsampling list
+        name: name
+        resolution: size of one voxel at highest resolution
+        size: number of voxels at highest resolution
+        """
 
         if self._metadata is None:
             self.load_metadata()
@@ -497,17 +506,16 @@ class DataSource:
         Returns:
             Dask array of the data. Respects the in the project set clipping.
         """
-        if compression_level is None:
-            self._level = self.project.compression_level
+        level = compression_level
+        if level is None:
+            level = self.project.compression_level
 
-        data_at_level: z5py.dataset.Dataset = getattr(
-            self.timepoint, str(self._level)
-        ).data
+        data_at_level: z5py.dataset.Dataset = getattr(self.timepoint, str(level)).data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
 
-        _idx = np.nonzero(np.array(self.metadata["levels"]) == self._level)[0][0]
+        _idx = np.nonzero(np.array(self.metadata["levels"]) == level)[0][0]
 
         cube_slice = (slice(None), slice(None), slice(None))
 
@@ -524,7 +532,8 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        self._scaling_factors = self.metadata["downsampling"][_idx]
+        # self._scaling_factors = self.metadata["downsampling"][_idx]
+        self._scaling_factors = self.resolution
         self.clipping_corners_data = (c_low_d, c_high_d)
         self.clipping_corners = (
             c_low_d * self._scaling_factors,
@@ -842,7 +851,6 @@ class DataSource:
         self._clip_low_corner_data = None
         self._clip_high_corner_data = None
         self._scaling_factors = None
-        self._level = None
         self._curv_radius = 4.0
 
     def instantiate_organelles(self):
