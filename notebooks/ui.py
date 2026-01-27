@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.4"
+__generated_with = "0.19.4"
 app = marimo.App(width="medium", layout_file="layouts/ui.grid.json")
 
 with app.setup:
@@ -451,11 +451,39 @@ def _(box_dict, mesh_id_filter, project):
 
 @app.cell
 def _():
-    return
+    calc_stats_btn = mo.ui.run_button(label="Calculate Statistics") # Define the button
+
+    # Define the visual layout
+    display = mo.vstack([
+        mo.md("## Statistics"),
+        mo.md("Click to calculate geometry properties."),
+        calc_stats_btn
+    ])
+    display # display the layout by referencing it
+    return (calc_stats_btn,)
 
 
 @app.cell
-def _():
+def _(calc_stats_btn, mesh_id_filter, project):
+    # this cell is not rendered until all dependencies are met
+    import traceback
+    output = mo.md("Click on \"Calculate Statistics\" to compute geometry properties.")
+    if calc_stats_btn.value:
+        try:
+            if project is None: raise NameError("Project is None") # (happens automatically, just stated here for clarity)
+            from organelle_morphology.statistics import Statistics
+            stats = Statistics(project)
+            df = stats.get_dataframe(ids=mesh_id_filter.value)
+            # Create a table widget
+            output = mo.vstack([
+                mo.md(f"### Statistics ({len(df)} items)"), 
+                mo.ui.table(df, selection=None, page_size=10)
+            ])
+        except NameError:
+            output = mo.md("## No Project was loaded.\n ## Please load a project first.")
+        except Exception:
+            output = mo.md(f"## Unable to calculate statistics\n\n```\n{traceback.format_exc()}\n```")
+    output # display the widget (polymorphic: displays Markdown or Table)
     return
 
 
