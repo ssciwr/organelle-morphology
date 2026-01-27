@@ -1,4 +1,3 @@
-import multiprocessing
 from typing import Optional
 import trimesh
 
@@ -9,6 +8,8 @@ from tqdm import tqdm
 
 import organelle_morphology
 from dask.base import compute
+
+from organelle_morphology.util import bounding_box_delayed
 
 
 def get_min_dist(args):
@@ -232,16 +233,20 @@ def generate_distance_matrix(
         project.logger.info("Loading meshes")
         project.calculate_meshes()
 
-        meshes = []
+        organelles = project.organelles
         organelles_ids = project.organelle_ids
-        for organelle in project.organelles:
+        meshes = []
+        bounding_boxes = []
+        for organelle in organelles:
             meshes.append(organelle.mesh)
-        meshes = compute(meshes)[0]
+            bounding_boxes.append(bounding_box_delayed(organelle.mesh))
+        breakpoint()
+        meshes, bounding_boxes = compute(meshes, bounding_boxes)
 
         project.logger.info("Calculating distance matrix")
         num_rows = len(meshes)
 
-        distance_matrix = np.zeros((num_rows, num_rows))
+        distance_matrix = np.ones((num_rows, num_rows)) * -1
         distance_df = pd.DataFrame(
             distance_matrix,
             index=organelles_ids,
@@ -252,20 +257,39 @@ def generate_distance_matrix(
         tasks = []
         for i in range(num_rows):
             id_1 = organelles_ids[i]
+            o_1 = organelles[i]
             mesh_1 = meshes[i]
             for j in range(i + 1, num_rows):
                 id_2 = organelles_ids[j]
+                o_2 = organelles[j]
                 mesh_2 = meshes[j]
+
                 tasks.append((id_1, id_2, mesh_1, mesh_2))
 
-        with multiprocessing.Pool(4) as pool:
-            results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
-            pool.close()
-            pool.join()
+        # with multiprocessing.Pool(4) as pool:
+        #     results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
+        #     pool.close()
+        #     pool.join()
+        import cProfile
+        import pstats
+        import io
 
-        for res in tqdm(results, "gathering results"):
+        profiler = cProfile.Profile()
+        profiler.enable()
+
+        results = map(get_min_dist, tasks)
+
+        for res in tqdm(results, "gathering results", total=len(tasks)):
             distance_df.loc[res[0]] = res[1]
             distance_df.loc[res[0][::-1]] = res[1]
+
+        profiler.disable()
+        s = io.StringIO()
+        stats = pstats.Stats(profiler, stream=s).sort_stats("cumulative")
+        stats.print_stats(20)  # Print top 20 functions
+        stats = pstats.Stats(profiler, stream=s).sort_stats("tottime")
+        stats.print_stats(30)  # Print top 20 functions
+        print(s.getvalue())
 
         cache["distance_matrix"] = distance_df
         cache["max_distance_computed"] = max_dist

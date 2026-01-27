@@ -622,7 +622,7 @@ class Project:
 
         if max_distance > self.max_distance:
             self.max_distance = max_distance
-        generate_mcs(self, max_distance, min_distance)
+        generate_mcs(self, max_distance, min_distance, override=override_mcs_label)
 
     @property
     def mcs_labels(self):
