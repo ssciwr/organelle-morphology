@@ -115,8 +115,8 @@ o.geometric_data
 # %% mcs
 p.clipping = [[0.5,0.5,0.4], [0.6,0.6,1]]
 p.compression_level = "s2"
-p.max_distance = 100
-p.search_mcs(100)
+p.max_distance = 0.1
+p.search_mcs(0.1)
 
 
 

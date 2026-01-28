@@ -5,6 +5,7 @@ from organelle_morphology.distance_calculations import (
     get_min_dist,
 )
 from pandas import DataFrame
+import pytest
 import numpy as np
 import trimesh
 
@@ -19,11 +20,16 @@ def test_distance_matrix(project_with_sources):
     assert all(df >= 0.0)
 
 
-def test_distance_matrix_cached(project):
-    dummy = "DUMMY"
-    project.cache["distance_matrix"] = dummy
+def test_distance_matrix_no_source(project):
+    with pytest.raises(ValueError):
+        generate_distance_matrix(project)
 
-    assert generate_distance_matrix(project) is dummy
+
+def test_distance_matrix_cached(project_with_sources):
+    dummy = "DUMMY"
+    project_with_sources.cache["distance_matrix"] = dummy
+
+    assert generate_distance_matrix(project_with_sources) is dummy
 
 
 def test_get_min_dist():

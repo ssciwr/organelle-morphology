@@ -469,11 +469,10 @@ class DataSource:
             self._curvature_map = {}
 
     @property
-    def clipping_corners(self):
-        """Lower and upper clipping corner after scaling"""
-        if self.project.clipping is not None:
-            if self._clip_low_corner is None or self._clip_high_corner is None:
-                self.get_data(None)
+    def clipping_corners(self) -> tuple[np.ndarray, np.ndarray]:
+        """Lower and upper clipping corner in units of the resolution"""
+        if self._clip_low_corner is None or self._clip_high_corner is None:
+            self.get_data(None)
         return self._clip_low_corner, self._clip_high_corner
 
     @clipping_corners.setter

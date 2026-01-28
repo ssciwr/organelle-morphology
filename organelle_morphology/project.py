@@ -389,7 +389,7 @@ class Project:
                     to_show.append(o.skeleton.skeleton)
 
         if domain_box:
-            size = np.array(source.metadata["size"])
+            size = np.array(source.metadata["size"]) * source.data_resolution
             domain_box = trimesh.path.creation.box_outline(
                 extents=size,
                 transform=trimesh.transformations.translation_matrix(size / 2),
@@ -939,6 +939,12 @@ class Project:
         if len(_clipping) != 2 or len(_clipping[0]) != 3 or len(_clipping[1]) != 3:
             raise ValueError("Clipping must be a tuple of two tuples of length 3")
         self._clipping = _clipping
+
+    @property
+    def clipping_corners(self):
+        if len(self.sources) == 0:
+            raise ValueError("No sources loaded! Can't compute clipping corners")
+        return list(self.sources.values())[0].clipping_corners
 
     @property
     def organelles(self):

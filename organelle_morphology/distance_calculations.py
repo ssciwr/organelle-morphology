@@ -8,8 +8,9 @@ from tqdm import tqdm
 
 import organelle_morphology
 from dask.base import compute
+import multiprocessing
 
-from organelle_morphology.util import bounding_box_delayed
+from organelle_morphology.util import bounding_box_delayed, boxes_overlap
 
 
 def get_min_dist(args):
@@ -17,6 +18,15 @@ def get_min_dist(args):
     mcs_calculator = MembraneContactSiteCalculator()
     mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2)
     return (id_1, id_2), mcs_calculator.min_distance
+
+
+def _check_overlap(args):
+    box, bounding_boxes = args
+    is_in = np.empty((len(bounding_boxes),), dtype=bool)
+    for i, org_bb in enumerate(bounding_boxes):
+        is_in[i] = boxes_overlap(box, org_bb)
+
+    return is_in
 
 
 class MembraneContactSiteCalculator:
@@ -218,10 +228,16 @@ class MembraneContactSiteCalculator:
 
 def generate_distance_matrix(
     project: "organelle_morphology.Project",
+    domain_decomposition=True,
 ) -> pd.DataFrame:
     cache = project.cache
     max_dist = project.max_distance
     max_cached = 0
+    if sources := list(project.sources.values()):
+        source = sources[0]
+    else:
+        raise ValueError("No sources loaded! Can't calculate distances.")
+
     if "max_distance_computed" in cache:
         max_cached = cache["max_distance_computed"]
 
@@ -240,7 +256,6 @@ def generate_distance_matrix(
         for organelle in organelles:
             meshes.append(organelle.mesh)
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
-        breakpoint()
         meshes, bounding_boxes = compute(meshes, bounding_boxes)
 
         project.logger.info("Calculating distance matrix")
@@ -252,44 +267,74 @@ def generate_distance_matrix(
             index=organelles_ids,
             columns=organelles_ids,
         )
-        # TODO:implement max distance threshold
+
+        breakpoint()
+        if domain_decomposition:
+            # domain decomposition into chunks of
+            # size = size of clipped data in units of the resolution
+            size = np.array(source.resolution) * source.data.shape
+            cube_size = max_dist * 10
+            stride = max_dist * 9
+            clp_of = source.clipping_corners[0]
+
+            # TODO: maybe an upper limit on the number of boxes would be good
+            xs = np.linspace(
+                clp_of[0], size[0], max(int(size[0] // cube_size), 1), endpoint=False
+            )
+            ys = np.linspace(
+                clp_of[1], size[1], max(int(size[1] // cube_size), 1), endpoint=False
+            )
+            zs = np.linspace(
+                clp_of[2], size[2], max(int(size[2] // cube_size), 1), endpoint=False
+            )
+
+            xg, yg, zg = np.meshgrid(xs, ys, zs)
+            xg, yg, zg = list(map(lambda a: a.flatten(), (xg, yg, zg)))
+
+            project.logger.debug(f"Cube size: {cube_size}")
+            project.logger.debug(f"n cubes: {len(xg)}")
+            project.logger.debug(f"n organelles: {len(organelles)}")
+
+            tasks = []
+            for x, y, z in zip(xg, yg, zg):
+                start = np.array((x, y, z))
+                end = start + stride
+                box = (start, end)
+                tasks.append((box, bounding_boxes))
+            with multiprocessing.Pool(4) as pool:
+                masks = pool.imap_unordered(_check_overlap, tasks, chunksize=100)
+                pool.close()
+                pool.join()
+        else:
+            # no domain decomposition -> all to all
+            masks = [np.ones((num_rows,))]
 
         tasks = []
-        for i in range(num_rows):
-            id_1 = organelles_ids[i]
-            o_1 = organelles[i]
-            mesh_1 = meshes[i]
-            for j in range(i + 1, num_rows):
-                id_2 = organelles_ids[j]
-                o_2 = organelles[j]
-                mesh_2 = meshes[j]
+        empty_cubes = 0
+        for mask in masks:
+            if not np.any(mask):
+                empty_cubes += 1
+                continue
 
-                tasks.append((id_1, id_2, mesh_1, mesh_2))
+            indices = np.nonzero(mask)[0]
+            for i, idx1 in enumerate(indices):
+                mesh_1 = meshes[idx1]
+                id_1 = organelles_ids[idx1]
+                for idx2 in indices[i:]:
+                    mesh_2 = meshes[idx2]
+                    id_2 = organelles_ids[idx2]
+                    tasks.append((id_1, id_2, mesh_1, mesh_2))
+        project.logger.debug(f"n empty cube: {empty_cubes}")
 
-        # with multiprocessing.Pool(4) as pool:
-        #     results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
-        #     pool.close()
-        #     pool.join()
-        import cProfile
-        import pstats
-        import io
-
-        profiler = cProfile.Profile()
-        profiler.enable()
-
-        results = map(get_min_dist, tasks)
+        with multiprocessing.Pool(4) as pool:
+            results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
+            pool.close()
+            pool.join()
+        # results = map(get_min_dist, tasks)
 
         for res in tqdm(results, "gathering results", total=len(tasks)):
             distance_df.loc[res[0]] = res[1]
             distance_df.loc[res[0][::-1]] = res[1]
-
-        profiler.disable()
-        s = io.StringIO()
-        stats = pstats.Stats(profiler, stream=s).sort_stats("cumulative")
-        stats.print_stats(20)  # Print top 20 functions
-        stats = pstats.Stats(profiler, stream=s).sort_stats("tottime")
-        stats.print_stats(30)  # Print top 20 functions
-        print(s.getvalue())
 
         cache["distance_matrix"] = distance_df
         cache["max_distance_computed"] = max_dist
