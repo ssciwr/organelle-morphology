@@ -28,12 +28,17 @@ def _():
         selection_mode="directory", multiple=False, label="Project directory"
     )
 
+    hint = mo.md(
+        "<small>(To select a folder, click on the &nbsp;::lucide:folder::&nbsp; icon.)</small>"
+    ).style(margin_top="-1.5rem") # adjust margin if the text ever disappears
+
     run_project = mo.ui.run_button(label="Load Project")
 
     mo.vstack(
         [
             mo.md("###Load/Create a Project"),
             path_ui,
+            hint,
             run_project,
         ]
     )
@@ -65,6 +70,7 @@ def _(project):
         return mo.md(f"<h3>Current sources:</h3>{sources}")
 
     source_path_ui = mo.ui.file_browser(
+        initial_path=str(project.path),
         filetypes=[".xml"],
         selection_mode="file",
         label="Source xml",
@@ -437,7 +443,7 @@ def _(box_dict, mesh_id_filter, project):
 
         first = [n.split("_")[0] for n in result]
         orgs, counts = np.unique(first, return_counts=True)
-        orgs = " , ".join([o + "_\*" for o in orgs])
+        orgs = " , ".join([o + r"_\*" for o in orgs])
         output = mo.md(f"Organelles: {orgs}<br>Counts: {counts}"), pd.DataFrame(result)
 
         mo.output.replace(output)
@@ -465,19 +471,35 @@ def _():
 
 @app.cell
 def _(calc_stats_btn, mesh_id_filter, project):
-    # this cell is not rendered until all dependencies are met
+    # this cell is not rendered until all dependencies are met or the button is clicked
     import traceback
     output = mo.md("Click on \"Calculate Statistics\" to compute geometry properties.")
     if calc_stats_btn.value:
         try:
-            if project is None: raise NameError("Project is None") # (happens automatically, just stated here for clarity)
+            # (stated here for clarity, project is usually undefined and then has a value after it is loaded)
+            if project is None: raise NameError("Project is None")
             from organelle_morphology.statistics import Statistics
             stats = Statistics(project)
             df = stats.get_dataframe(ids=mesh_id_filter.value)
             # Create a table widget
             output = mo.vstack([
-                mo.md(f"### Statistics ({len(df)} items)"), 
-                mo.ui.table(df, selection=None, page_size=10)
+                mo.md(f"### Statistics ({len(df)} items)"),
+                mo.ui.table(
+                    df,
+                    selection=None,
+                    pagination=False,
+                    max_height=500,
+                    format_mapping={
+                        "Volume (vx)": "{:.0f}".format,
+                        "Sphericity": "{:.3f}".format,
+                        "Flatness": "{:.3f}".format,
+                    },
+                    text_justify_columns={
+                        "Volume (vx)": "right",
+                        "Sphericity": "right",
+                        "Flatness": "right",
+                    },
+                ),
             ])
         except NameError:
             output = mo.md("## No Project was loaded.\n ## Please load a project first.")
