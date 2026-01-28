@@ -279,13 +279,22 @@ def generate_distance_matrix(
 
             # TODO: maybe an upper limit on the number of boxes would be good
             xs = np.linspace(
-                clp_of[0], size[0], max(int(size[0] // cube_size), 1), endpoint=False
+                clp_of[0],
+                size[0] + clp_of[0],
+                max(int(size[0] // cube_size), 1),
+                endpoint=False,
             )
             ys = np.linspace(
-                clp_of[1], size[1], max(int(size[1] // cube_size), 1), endpoint=False
+                clp_of[1],
+                size[1] + clp_of[1],
+                max(int(size[1] // cube_size), 1),
+                endpoint=False,
             )
             zs = np.linspace(
-                clp_of[2], size[2], max(int(size[2] // cube_size), 1), endpoint=False
+                clp_of[2],
+                size[2] + clp_of[2],
+                max(int(size[2] // cube_size), 1),
+                endpoint=False,
             )
 
             xg, yg, zg = np.meshgrid(xs, ys, zs)
