@@ -42,6 +42,7 @@ class Project:
         compression_level: str = "s0",
         loglevel: Optional[str] = None,
         client: Optional[Client] = None,
+        n_workers=4,
     ):
         """Instantiate an EM project
 
@@ -84,7 +85,6 @@ class Project:
         self._geometric_properties = {}
 
         self._meshes = {}
-        self._distance_matrix = None
         self._curvature_map = {}
 
         # {label: {max_distance: float, min_distance: float}}
@@ -114,8 +114,9 @@ class Project:
         self.use_cache = True
         self.debug = False
 
-        self.cluster = client.cluster if client else LocalCluster(n_workers=4)
+        self.cluster = client.cluster if client else LocalCluster(n_workers=n_workers)
         self.client = client if client else Client(self.cluster)
+        self.n_workers = n_workers
 
     def recreate_client(self):
         self.client = Client(self.cluster)

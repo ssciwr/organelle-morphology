@@ -277,7 +277,7 @@ class Organelle:
 
         self._mcs[mcs_label][mcs_target] = mcs_entry
 
-    def get_mcs_dict_entry(self, mcs_label):
+    def calc_mcs_dict_entry(self, mcs_label):
         """
         Calculate the properties of the mcs partners for the given mcs label
 

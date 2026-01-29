@@ -11,13 +11,25 @@ import trimesh
 
 
 def test_distance_matrix(project_with_sources):
+    project_with_sources.max_distance = 100
     df = generate_distance_matrix(project_with_sources)
     assert isinstance(df, DataFrame)
     assert df.shape == (19, 19)
     for ind, row in df.iterrows():
-        assert row[ind] == 0.0
         assert row.loc[df.index[3]] == df.loc[df.index[3], ind]
-    assert all(df >= 0.0)
+        assert row.pop(ind) == -1.0
+        assert np.all(row >= 0.0)
+
+
+def test_distance_matrix_incomplete(project_with_sources):
+    project_with_sources.max_distance = 1
+    df = generate_distance_matrix(project_with_sources)
+    assert isinstance(df, DataFrame)
+    assert df.shape == (19, 19)
+    assert (df < 0).sum().sum() == 341
+    for ind, row in df.iterrows():
+        assert row.loc[df.index[3]] == df.loc[df.index[3], ind]
+        assert row.pop(ind) == -1.0
 
 
 def test_distance_matrix_no_source(project):
@@ -115,8 +127,81 @@ def test_analyze_mcs(project_with_sources):
     )
 
 
+def test_search_mcs_watertight_meshes():
+    """Test the search_mcs function with different combinations of watertight meshes."""
+
+    # Create simple watertight mesh (sphere)
+    mesh_watertight = trimesh.primitives.Sphere(radius=1.0)
+
+    vertices = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],  # Triangle 1
+            [1, 1, 0],
+            [1, 0, 1],
+            [0, 1, 1],  # Triangle 2
+        ]
+    )
+    faces = np.array(
+        [
+            [0, 1, 2],  # First triangle
+            [3, 4, 5],  # Second triangle (disconnected)
+        ]
+    )
+    mesh_non_watertight = trimesh.Trimesh(vertices=vertices, faces=faces)
+
+    # Test case 1: Both meshes watertight
+    calculator = MembraneContactSiteCalculator()
+    calculator.search_mcs("a", "b", mesh_watertight, mesh_watertight)
+
+    # Verify the function works correctly
+    assert calculator.id_source == "a"
+    assert calculator.id_target == "b"
+    assert calculator.distances is not None
+    assert calculator.min_distance >= 0 or np.isnan(calculator.min_distance)
+
+    # Test case 2: First mesh watertight, second not
+    calculator = MembraneContactSiteCalculator()
+    calculator.search_mcs("a", "b", mesh_watertight, mesh_non_watertight)
+
+    assert calculator.id_source == "a"
+    assert calculator.id_target == "b"
+    assert calculator.distances is not None
+
+    # Test case 3: First mesh not watertight, second watertight
+    calculator = MembraneContactSiteCalculator()
+    calculator.search_mcs("a", "b", mesh_non_watertight, mesh_watertight)
+
+    assert calculator.id_source == "b"
+    assert calculator.id_target == "a"
+    assert calculator.distances is not None
+
+    # Test case 4: Neither mesh watertight
+    calculator = MembraneContactSiteCalculator()
+    calculator.search_mcs("a", "b", mesh_non_watertight, mesh_non_watertight)
+
+    assert calculator.id_source == "a"  # Should pick smaller mesh as source
+    assert calculator.id_target == "b"
+    assert calculator.distances is not None
+    #
+    # Test with different vertex counts to verify ordering logic
+    small_mesh = trimesh.primitives.Sphere(radius=1.0, subdivisions=3)
+    large_mesh = trimesh.primitives.Sphere(radius=1.0, subdivisions=5)
+
+    calculator = MembraneContactSiteCalculator()
+    calculator.search_mcs("small", "large", small_mesh, large_mesh)
+    assert calculator.id_source == "large"
+    assert calculator.id_target == "small"
+
+
 def test_generate_mcs(project_with_sources):
     p = project_with_sources
 
     generate_mcs(p, 90)
-    # FIXME: implement test
+    assert list(project_with_sources.mcs_labels.keys())[0] == "0-90"
+    assert "0-90" in project_with_sources.organelles[0].mcs.keys()
+    assert "0-90" in project_with_sources.organelles[0].mcs_dict.keys()
+    mcs_d = project_with_sources.organelles[0].mcs_dict["0-90"]
+    np.testing.assert_almost_equal(mcs_d["mean_area"], 340.23860201)
+    assert mcs_d["n_contacts"] == 4

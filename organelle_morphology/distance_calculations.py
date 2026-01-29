@@ -1,4 +1,5 @@
 from typing import Optional
+from scipy.spatial import KDTree
 import trimesh
 
 import numpy as np
@@ -30,28 +31,6 @@ def _check_overlap(args):
 
 
 class MembraneContactSiteCalculator:
-    def __init__(self):
-        self.distances: Optional[np.ndarray] = None
-        self.index_source = []
-        self.index_target = []
-        self.normals_source = []
-        self.normals_target = []
-        self.dot_products = np.empty((0,))
-
-        self.id_source = None
-        self.id_target = None
-        self.mesh_source = None
-        self.mesh_target = None
-
-        self.mcs_label = None
-        self._distances = None
-        self._area_source = None
-        self._area_target = None
-        self._vertices_target = None
-        self._vertices_source = None
-        self._vertices_index_source = None
-        self._vertices_index_target = None
-
     def search_mcs(self, id_1, id_2, mesh_1, mesh_2):
         """
         first search the entire membrane surface that is facing the other organelle
@@ -71,7 +50,26 @@ class MembraneContactSiteCalculator:
         """
         self._repair_meshes(mesh_1, mesh_2)
 
+        watertight = True
         if len(mesh_1.vertices) < len(mesh_2.vertices):
+            if mesh_2.is_watertight:
+                ordering = 1
+            elif mesh_1.is_watertight:
+                ordering = 0
+            else:
+                # both not watertight -> smaller as target
+                ordering = 1
+                watertight = False
+        elif mesh_1.is_watertight:
+            ordering = 0
+        elif mesh_2.is_watertight:
+            ordering = 1
+        else:
+            # both not watertight -> smaller as target
+            ordering = 0
+            watertight = False
+
+        if ordering:
             mesh_source = mesh_2
             mesh_target = mesh_1
             id_source = id_2
@@ -82,11 +80,15 @@ class MembraneContactSiteCalculator:
             id_source = id_1
             id_target = id_2
 
-        distance, index_source = mesh_source.nearest.vertex(mesh_target.vertices)
+        if watertight:
+            distance, index_source = mesh_source.nearest.vertex(mesh_target.vertices)
+        else:
+            source_tree = KDTree(mesh_source.vertices)
+            distance, index_source = source_tree.query(mesh_target.vertices, k=1)
 
-        self.distances: np.ndarray = distance
-        self.index_source = index_source
-        self.index_target = np.asarray((range(len(mesh_target.vertices))))
+        self.distances = distance
+        self.index_source: np.ndarray = index_source
+        self.index_target: np.ndarray = np.asarray((range(len(mesh_target.vertices))))
 
         self.normals_source = mesh_source.vertex_normals[index_source]
         self.normals_target = mesh_target.vertex_normals
@@ -243,7 +245,7 @@ def generate_distance_matrix(
 
     if (
         "distance_matrix" not in cache or not project.use_cache
-    ) and max_dist > max_cached:
+    ) or max_dist > max_cached:
         project.logger.info("Initilizing distance matrix")
 
         project.logger.info("Loading meshes")
@@ -268,7 +270,6 @@ def generate_distance_matrix(
             columns=organelles_ids,
         )
 
-        breakpoint()
         if domain_decomposition:
             # domain decomposition into chunks of
             # size = size of clipped data in units of the resolution
@@ -310,7 +311,7 @@ def generate_distance_matrix(
                 end = start + stride
                 box = (start, end)
                 tasks.append((box, bounding_boxes))
-            with multiprocessing.Pool(4) as pool:
+            with multiprocessing.Pool(project.n_workers) as pool:
                 masks = pool.imap_unordered(_check_overlap, tasks, chunksize=100)
                 pool.close()
                 pool.join()
@@ -329,13 +330,13 @@ def generate_distance_matrix(
             for i, idx1 in enumerate(indices):
                 mesh_1 = meshes[idx1]
                 id_1 = organelles_ids[idx1]
-                for idx2 in indices[i:]:
+                for idx2 in indices[i + 1 :]:
                     mesh_2 = meshes[idx2]
                     id_2 = organelles_ids[idx2]
                     tasks.append((id_1, id_2, mesh_1, mesh_2))
         project.logger.debug(f"n empty cube: {empty_cubes}")
 
-        with multiprocessing.Pool(4) as pool:
+        with multiprocessing.Pool(project.n_workers) as pool:
             results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
             pool.close()
             pool.join()
@@ -380,7 +381,7 @@ def generate_mcs(project, max_distance, min_distance=0, override=False):
         (distance_matrix >= min_distance) & (distance_matrix <= max_distance)
     )
 
-    # generate the pair dictionary
+    # generate the pairs of organelles
     pairs = set()
     for i, j in zip(rows, columns):
         org_1_label = distance_matrix.index[i]
@@ -420,12 +421,13 @@ def generate_mcs(project, max_distance, min_distance=0, override=False):
             org1.add_mcs(mcs_target)
             org2.add_mcs(mcs_source)
 
-    for i in rows:
-        org_id = distance_matrix.index[i]
+    org_ids = {distance_matrix.index[i] for i in rows}
+    for org_id in org_ids:
         org = project.get_organelles(org_id)[0]
-        org.get_mcs_dict_entry(mcs_label)
+        org.calc_mcs_dict_entry(mcs_label)
 
     project._mcs_labels[mcs_label] = {
         "max_distance": max_distance,
         "min_distance": min_distance,
+        "organelles": org_ids,
     }
