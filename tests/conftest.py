@@ -137,11 +137,14 @@ def project_path(synthetic_data):
 @pytest.fixture
 def project(project_path, client):
     """A fixture for a valid project instance"""
-    return Project(project_path, client=client)
+    project = Project(project_path, client=client)
+    yield project
+    project.clear_caches(True)
 
 
 @pytest.fixture
 def project_with_sources(project):
     """A fixture for a valid project instance, incl. added sources"""
     project.add_source("synth_data", "mito")
-    return project
+    yield project
+    project.clear_caches(True)

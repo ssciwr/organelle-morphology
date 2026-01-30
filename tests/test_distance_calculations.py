@@ -40,6 +40,7 @@ def test_distance_matrix_no_source(project):
 def test_distance_matrix_cached(project_with_sources):
     dummy = "DUMMY"
     project_with_sources.cache["distance_matrix"] = dummy
+    project_with_sources.cache["max_distance_computed"] = 100
 
     assert generate_distance_matrix(project_with_sources) is dummy
 
@@ -74,14 +75,14 @@ def test_search_mcs(project_with_sources):
     assert calculator.id_target == "b"
     assert calculator.distances.shape == (226,)
     assert all(calculator.dot_products < 0)
-    np.testing.assert_almost_equal(calculator.min_distance, 88.97752525216691)
+    np.testing.assert_almost_equal(calculator.min_distance, 88.97752525)
 
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", meshes[1], meshes[0])
 
     assert calculator.id_source == "b"
     assert calculator.id_target == "a"
-    np.testing.assert_almost_equal(calculator.min_distance, 88.97752525216691)
+    np.testing.assert_almost_equal(calculator.min_distance, 88.97752525)
 
 
 def test_search_mcs_inverted_normals(project_with_sources, mocker):
@@ -155,7 +156,6 @@ def test_search_mcs_watertight_meshes():
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", mesh_watertight, mesh_watertight)
 
-    # Verify the function works correctly
     assert calculator.id_source == "a"
     assert calculator.id_target == "b"
     assert calculator.distances is not None
@@ -184,7 +184,7 @@ def test_search_mcs_watertight_meshes():
     assert calculator.id_source == "a"  # Should pick smaller mesh as source
     assert calculator.id_target == "b"
     assert calculator.distances is not None
-    #
+
     # Test with different vertex counts to verify ordering logic
     small_mesh = trimesh.primitives.Sphere(radius=1.0, subdivisions=3)
     large_mesh = trimesh.primitives.Sphere(radius=1.0, subdivisions=5)
