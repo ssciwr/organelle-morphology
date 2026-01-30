@@ -200,8 +200,9 @@ def test_generate_mcs(project_with_sources):
 
     generate_mcs(p, 90)
     assert list(project_with_sources.mcs_labels.keys())[0] == "0-90"
-    assert "0-90" in project_with_sources.organelles[0].mcs.keys()
-    assert "0-90" in project_with_sources.organelles[0].mcs_dict.keys()
-    mcs_d = project_with_sources.organelles[0].mcs_dict["0-90"]
+    org = project_with_sources.get_organelles("mito_0007")[0]
+    assert "0-90" in org.mcs.keys()
+    assert "0-90" in org.mcs_dict.keys()
+    mcs_d = org.mcs_dict["0-90"]
     np.testing.assert_almost_equal(mcs_d["mean_area"], 340.23860201)
     assert mcs_d["n_contacts"] == 4
