@@ -7,7 +7,11 @@ from organelle_morphology import Project
 import numpy as np
 import pytest
 from .synthetic_data_generator import generate_synthetic_dataset
-import resource
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 
 def cubify(p, x, y, z, min_s: int = 3, max_s: Optional[int] = 6, z_offset=0):
@@ -121,7 +125,8 @@ def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
 
 @pytest.fixture(scope="session")
 def client():
-    resource.setrlimit(resource.RLIMIT_NOFILE, (10000, 10000))
+    if resource is not None:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (10000, 10000))
 
     cluster = LocalCluster(dashboard_address=None)
     yield cluster.get_client()
