@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11", "3.14"]
     defaults:
       run:
         shell: bash -l {0}
@@ -39,8 +39,7 @@ jobs:
           miniforge-version: latest
           mamba-version: "*"
           channels: local,conda-forge
-          auto-activate-base: false
-          python-version: 3.11
+          python-version: ${{matrix.python-version}}
           activate-environment: morph
           environment-file: environment-dev.yml
           conda-remove-defaults: true
@@ -70,14 +69,11 @@ jobs:
           miniforge-version: latest
           mamba-version: "*"
           channels: local,conda-forge
-          auto-activate-base: false
           python-version: 3.11
           activate-environment: morph
           environment-file: environment-dev.yml
           conda-remove-defaults: true
 
-      - name: add conda only dependencies
-        run: conda install -c conda-forge python-elf
       - name: Install Python package
         run: |
           python -m pip install .[tests]
