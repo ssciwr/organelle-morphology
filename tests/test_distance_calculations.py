@@ -66,7 +66,7 @@ def test_get_min_dist():
 def test_search_mcs(project_with_sources):
     p = project_with_sources
     s = p.sources["synth_data"]
-    meshes = [m.compute() for m in s.meshes.values()]
+    meshes = [s.meshes[i].compute() for i in (7, 3)]
 
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", meshes[0], meshes[1])
@@ -88,7 +88,7 @@ def test_search_mcs(project_with_sources):
 def test_search_mcs_inverted_normals(project_with_sources, mocker):
     p = project_with_sources
     s = p.sources["synth_data"]
-    meshes = [m.compute() for m in s.meshes.values()]
+    meshes = [s.meshes[i].compute() for i in (7, 3)]
 
     # test inverted normals
     calculator = MembraneContactSiteCalculator()
@@ -107,7 +107,7 @@ def test_search_mcs_inverted_normals(project_with_sources, mocker):
 def test_analyze_mcs(project_with_sources):
     p = project_with_sources
     s = p.sources["synth_data"]
-    meshes = [m.compute() for m in s.meshes.values()]
+    meshes = [s.meshes[i].compute() for i in (7, 3)]
 
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", meshes[0], meshes[1])
