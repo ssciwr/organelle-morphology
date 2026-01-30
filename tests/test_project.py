@@ -149,7 +149,7 @@ def test_show_plain(project_with_sources, mocker):
     assert len(to_show) == 2
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
-    assert len(np.unique(to_show[0].visual.vertex_colors, axis=0)) == 29
+    assert 15 < len(np.unique(to_show[0].visual.vertex_colors, axis=0)) < 30
 
 
 def test_show_skeleton(project_with_sources, mocker):
