@@ -266,10 +266,10 @@ def test_cache_settings(project_with_sources):
 
 
 def test_mcs(project_with_sources):
-    project_with_sources.search_mcs("somename", 10)
+    project_with_sources.search_mcs(10)
 
     props = project_with_sources.get_mcs_properties()
-    assert props.shape == (11, 6)
+    assert props.shape == (10, 6)
 
     overview = project_with_sources.get_mcs_overview()
     assert overview.shape == (10, 1)
