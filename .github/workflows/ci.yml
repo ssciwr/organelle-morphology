@@ -17,6 +17,7 @@ on:
 jobs:
   build-and-test:
     name: Testing on ${{matrix.os}} (Python ${{matrix.python-version}})
+    if: github.event.pull_request.draft == false
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
@@ -54,6 +55,7 @@ jobs:
 
   coverage:
     name: Coverage Testing
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     defaults:
       run:
