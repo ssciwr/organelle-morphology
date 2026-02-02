@@ -755,7 +755,7 @@ class DataSource:
 
         if overlap:
             d_data = da.overlap.overlap(
-                self.data, depth={0: 2, 1: 2, 2: 2}, boundary={0: 0, 1: 0, 2: 0}
+                self.data, depth={0: 2, 1: 2, 2: 2}, boundary="reflect"
             ).to_delayed()
         else:
             d_data = self.data.to_delayed()
