@@ -42,6 +42,7 @@ class Project:
         compression_level: str = "s0",
         loglevel: Optional[str] = None,
         client: Optional[Client] = None,
+        n_workers=4,
     ):
         """Instantiate an EM project
 
@@ -84,7 +85,6 @@ class Project:
         self._geometric_properties = {}
 
         self._meshes = {}
-        self._distance_matrix = None
         self._curvature_map = {}
 
         # {label: {max_distance: float, min_distance: float}}
@@ -97,6 +97,9 @@ class Project:
 
         # The compression level at which we operate
         self.compression_level = compression_level
+
+        # Max distance for distance calculations
+        self._max_compute_distance = 10
 
         # callables will be updated on demand
         self._cache_settings = {
@@ -111,8 +114,9 @@ class Project:
         self.use_cache = True
         self.debug = False
 
-        self.cluster = client.cluster if client else LocalCluster(n_workers=4)
+        self.cluster = client.cluster if client else LocalCluster(n_workers=n_workers)
         self.client = client if client else Client(self.cluster)
+        self.n_workers = n_workers
 
     def recreate_client(self):
         self.client = Client(self.cluster)
@@ -190,6 +194,7 @@ class Project:
         ValueError
             Compression level of project not available
         """
+        self.logger.info(f"Project: {self}")
         xml_path = Path(xml_path)
         if xml_path.suffix != ".xml":
             xml_path = xml_path.with_suffix(".xml")
@@ -305,6 +310,7 @@ class Project:
         curvature=False,
         skeleton=False,
         curv_log=True,
+        color_instances=False,
     ):
         # TODO: mcs visualization
         orgs = self.get_organelles(ids=ids)
@@ -362,6 +368,9 @@ class Project:
                     )
                 mmesh = merge_meshes(to_merge, color=0)
 
+            elif color_instances:
+                mmesh = merge_meshes([o.mesh for o in orgs], color=1)
+
             else:  # No highlight
                 if len(o_types) <= 1:
                     mmesh = merge_meshes([o.mesh for o in orgs], color=1, transp=transp)
@@ -381,7 +390,7 @@ class Project:
                     to_show.append(o.skeleton.skeleton)
 
         if domain_box:
-            size = np.array(source.metadata["size"])
+            size = np.array(source.metadata["size"]) * source.data_resolution
             domain_box = trimesh.path.creation.box_outline(
                 extents=size,
                 transform=trimesh.transformations.translation_matrix(size / 2),
@@ -481,27 +490,25 @@ class Project:
         return fig
 
     def distance_filtering(
-        self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="names"
+        self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="labels"
     ):
         """Filter the organelles based on the distance between two filtered organelle lists.
               These can be from one or more types depending on the given filter.
 
-        :param ids_source: Filter string for the source ids, defaults to "*"
-        :type ids_source: str, optional
-        :param ids_target: filter string for the target ids, defaults to "*"
-        :type ids_target: str, optional
-        :param filter_distance: The distance in micro meter used for filtering, defaults to 0.01
-        :type filter_distance: float, optional
-        :param attribute: Show names, number of contacts (contacts) or return the organelle objects ("objects"), defaults to "names"
-        :type attribute: str, optional
-
-        :return: Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
-        :rtype: dict
+        Args:
+            ids_source: Filter string for the source ids, defaults to "*"
+            ids_target: filter string for the target ids, defaults to "*"
+            filter_distance: The distance in micro meter used for filtering,
+                defaults to 0.01
+            attribute: Show names, number of contacts (contacts) or return
+                the organelle objects ("objects"), defaults to "names"
+        Returns:
+            Dictionary with the source organelle ids as keys and the target organelle ids or number of contact sites as values
         """
 
-        if attribute not in ["names", "contacts", "objects"]:
+        if attribute not in ["labels", "contacts", "objects"]:
             raise ValueError(
-                f"Attribute must be one of 'names', 'contacts' or 'objects' but is {attribute}"
+                f"Attribute must be one of 'labels', 'contacts' or 'objects' but is {attribute}"
             )
 
         orgs_1 = self.get_organelle_ids(ids=ids_source)
@@ -548,6 +555,14 @@ class Project:
 
         return output_filtered_dict
 
+    @property
+    def max_distance(self):
+        return self._max_compute_distance
+
+    @max_distance.setter
+    def max_distance(self, max_distance):
+        self._max_compute_distance = max_distance
+
     def distance_analysis(self, ids_source="*", ids_target="*", attribute="dist"):
         """get more information about the distance between two filtered organelle lists.
            These can be from one or more types depending on the given filter.
@@ -590,9 +605,7 @@ class Project:
 
             return df_mean
 
-    def search_mcs(
-        self, mcs_label, max_distance, min_distance=0, override_mcs_label=False
-    ):
+    def search_mcs(self, max_distance, min_distance=0, override_mcs_label=False):
         """
         This function is used to search for membrane contact sites within a project.
         Pairs will only be selected when their minimum mesh distance is between
@@ -608,10 +621,9 @@ class Project:
             None
         """
 
-        if mcs_label in self._mcs_labels and not override_mcs_label:
-            raise ValueError(f"MCS label {mcs_label} already exists in the project")
-
-        generate_mcs(self, mcs_label, max_distance, min_distance)
+        if max_distance > self.max_distance:
+            self.max_distance = max_distance
+        generate_mcs(self, max_distance, min_distance, override=override_mcs_label)
 
     @property
     def mcs_labels(self):
@@ -700,7 +712,7 @@ class Project:
         """Trigger the calculation of meshes for all organelles"""
 
         for source in self.sources.values():
-            source.calculate_mesh()
+            source.meshes
 
     @property
     def geometric_properties(self):
@@ -928,6 +940,12 @@ class Project:
         if len(_clipping) != 2 or len(_clipping[0]) != 3 or len(_clipping[1]) != 3:
             raise ValueError("Clipping must be a tuple of two tuples of length 3")
         self._clipping = _clipping
+
+    @property
+    def clipping_corners(self):
+        if len(self.sources) == 0:
+            raise ValueError("No sources loaded! Can't compute clipping corners")
+        return list(self.sources.values())[0].clipping_corners
 
     @property
     def organelles(self):

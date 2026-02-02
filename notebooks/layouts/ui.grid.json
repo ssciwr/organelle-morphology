@@ -37,9 +37,6 @@
         ]
       },
       {
-        "position": null
-      },
-      {
         "position": [
           6,
           31,
@@ -144,6 +141,9 @@
           20
         ],
         "scrollable": true
+      },
+      {
+        "position": null
       },
       {
         "position": null

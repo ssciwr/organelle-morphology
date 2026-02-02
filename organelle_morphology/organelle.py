@@ -270,7 +270,6 @@ class Organelle:
         mcs_label = mcs_dict["mcs_label"]
 
         mcs_entry = {
-            "vertices": mcs_dict["vertices"],
             "vertices_index": mcs_dict["vertices_index"],
             "distances": mcs_dict["distances"],
             "area": mcs_dict["area"],
@@ -278,7 +277,7 @@ class Organelle:
 
         self._mcs[mcs_label][mcs_target] = mcs_entry
 
-    def get_mcs_dict_entry(self, mcs_label):
+    def calc_mcs_dict_entry(self, mcs_label):
         """
         Calculate the properties of the mcs partners for the given mcs label
 

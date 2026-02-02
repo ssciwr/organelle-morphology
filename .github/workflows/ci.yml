@@ -5,21 +5,24 @@ on:
   push:
     branches:
       - main
+      - om2
   # and on all pull requests to the main branch
   pull_request:
     branches:
       - main
+      - om2
   # as well as upon manual triggers through the 'Actions' tab of the Github UI
   workflow_dispatch:
 
 jobs:
   build-and-test:
     name: Testing on ${{matrix.os}} (Python ${{matrix.python-version}})
+    if: github.event.pull_request.draft == false
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11", "3.13"]
     defaults:
       run:
         shell: bash -l {0}
@@ -37,8 +40,7 @@ jobs:
           miniforge-version: latest
           mamba-version: "*"
           channels: local,conda-forge
-          auto-activate-base: false
-          python-version: 3.11
+          python-version: ${{matrix.python-version}}
           activate-environment: morph
           environment-file: environment-dev.yml
           conda-remove-defaults: true
@@ -53,6 +55,7 @@ jobs:
 
   coverage:
     name: Coverage Testing
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -68,14 +71,11 @@ jobs:
           miniforge-version: latest
           mamba-version: "*"
           channels: local,conda-forge
-          auto-activate-base: false
           python-version: 3.11
           activate-environment: morph
           environment-file: environment-dev.yml
           conda-remove-defaults: true
 
-      - name: add conda only dependencies
-        run: conda install -c conda-forge python-elf
       - name: Install Python package
         run: |
           python -m pip install .[tests]

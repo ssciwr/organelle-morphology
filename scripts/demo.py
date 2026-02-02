@@ -5,6 +5,7 @@
 from collections import defaultdict
 from pathlib import Path
 
+from dask.delayed import delayed
 from tqdm import tqdm
 import trimesh
 from trimesh import Trimesh
@@ -55,6 +56,13 @@ s.calculate_mesh(debug_color=2)
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 show(mmesh)
 
+# %% debug colors -- correct merging
+s = p.sources["mito_it00_b0_7_stitched"]
+p.clipping = [[0.6,0,0], [1,1,1]]
+s.calculate_mesh(debug_color=0)
+mmesh = merge_meshes(list(s.meshes.values()), color=2).compute()
+show(mmesh)
+
 # %% weired cubes in the middle
 s = p.sources["mito_it00_b0_7_stitched"]
 p.clipping = [[0.3,0,0], [0.7,1,1]]
@@ -103,6 +111,14 @@ p.show(skeleton=True)
 p.skeleton_info
 o.mesh_properties
 o.geometric_data
+
+# %% mcs
+p.clipping = [[0.5,0.5,0.4], [0.6,0.6,1]]
+p.compression_level = "s2"
+p.max_distance = 0.1
+p.search_mcs(0.1)
+
+
 
 
 # %% Curvature
@@ -193,3 +209,35 @@ np.unique(mmesh.unique_faces(),return_counts=True)
 mmesh.update_faces(mmesh.unique_faces())
 
 # %%
+import dask.dataframe as dd
+import pandas as pd
+
+t = delayed(lambda: 5)
+dm = np.zeros((5,5))
+df = pd.DataFrame(dm)
+
+df.loc[:] = delayed(lambda: 5)
+
+# %% DEBUG clipping face
+project_path = Path.cwd() / ".." / "example_analysis"
+p = Project(project_path, compression_level="s2", loglevel="DEBUG", clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)))
+p.add_source("../data/mitosis_dT/cell_it02_b0_7_stitched.xml", "cell")
+s = p.sources["cell_it02_b0_7_stitched"]
+
+p.clipping = [[0.5]*3, [0.6]*3]
+
+import dask
+dask.config.set(scheduler='synchronous')
+
+# %%
+import numpy as np
+from zmesh import Mesher
+from trimesh import Trimesh
+
+block = np.zeros((10, 10, 10),dtype=int)
+block[:9, :9, :9] = 9
+mesher = Mesher((1, 1, 1))
+mesher.mesh(block, close=False)
+zmesh = mesher.get(9)
+tmesh = Trimesh(zmesh.vertices, zmesh.faces, process=False)
+tmesh.show()

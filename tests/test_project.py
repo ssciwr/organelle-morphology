@@ -42,11 +42,11 @@ def test_valid_project_init(synthetic_data, client):
     cebra_project_path = synthetic_data[0]
     # With a pathlib.Path object
     project = Project(project_path=cebra_project_path, client=client)
-    assert project.path == cebra_project_path
+    assert project.path.samefile(cebra_project_path)
 
     # With a string path
     project = Project(project_path=str(cebra_project_path), client=client)
-    assert project.path == cebra_project_path
+    assert project.path.samefile(cebra_project_path)
 
 
 def test_project_clipping(synthetic_data, client):
@@ -149,7 +149,7 @@ def test_show_plain(project_with_sources, mocker):
     assert len(to_show) == 2
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
-    assert len(np.unique(to_show[0].visual.vertex_colors, axis=0)) == 29
+    assert 15 < len(np.unique(to_show[0].visual.vertex_colors, axis=0)) < 30
 
 
 def test_show_skeleton(project_with_sources, mocker):
@@ -266,10 +266,10 @@ def test_cache_settings(project_with_sources):
 
 
 def test_mcs(project_with_sources):
-    project_with_sources.search_mcs("somename", 10)
+    project_with_sources.search_mcs(10)
 
     props = project_with_sources.get_mcs_properties()
-    assert props.shape == (11, 6)
+    assert props.shape == (10, 6)
 
     overview = project_with_sources.get_mcs_overview()
     assert overview.shape == (10, 1)

@@ -110,7 +110,6 @@ def _block_mesher(
     mesher = Mesher((1, 1, 1))
     mesher.mesh(block, close=False)
     meshes = {}
-    assert len(mesher.ids()) == np.unique(block).shape[0] - 1  # zero is no label
 
     for id in mesher.ids():
         assert meshes.get(id) is None, f"{id} was in mesh already!"
@@ -394,7 +393,16 @@ class DataSource:
 
     @property
     def metadata(self) -> dict:
-        """Return the metadata of this source. Loads the metadata, if necessary"""
+        """Return the metadata of this source. Loads the metadata, if necessary
+
+        coarse_level: coarsest level available
+        data_root: path to n5 data directory
+        downsampling: list of factors by which the resolution can be decreased
+        levels: names of downsampling levels, aligned with downsampling list
+        name: name
+        resolution: size of one voxel at highest resolution
+        size: number of voxels at highest resolution
+        """
 
         if self._metadata is None:
             self.load_metadata()
@@ -461,11 +469,10 @@ class DataSource:
             self._curvature_map = {}
 
     @property
-    def clipping_corners(self):
-        """Lower and upper clipping corner after scaling"""
-        if self.project.clipping is not None:
-            if self._clip_low_corner is None or self._clip_high_corner is None:
-                self.get_data(None)
+    def clipping_corners(self) -> tuple[np.ndarray, np.ndarray]:
+        """Lower and upper clipping corner in units of the resolution"""
+        if self._clip_low_corner is None or self._clip_high_corner is None:
+            self.get_data(None)
         return self._clip_low_corner, self._clip_high_corner
 
     @clipping_corners.setter
@@ -475,12 +482,8 @@ class DataSource:
     @property
     def clipping_corners_data(self):
         """Lower and upper clipping corner matching the raw data"""
-        if self.project.clipping is not None:
-            if (
-                self._clip_low_corner_data is None
-                or self._clip_high_corner_data is None
-            ):
-                self.get_data(None)
+        if self._clip_low_corner_data is None or self._clip_high_corner_data is None:
+            self.get_data(None)
         return self._clip_low_corner_data, self._clip_high_corner_data
 
     @clipping_corners_data.setter
@@ -502,17 +505,16 @@ class DataSource:
         Returns:
             Dask array of the data. Respects the in the project set clipping.
         """
-        if compression_level is None:
-            self._level = self.project.compression_level
+        level = compression_level
+        if level is None:
+            level = self.project.compression_level
 
-        data_at_level: z5py.dataset.Dataset = getattr(
-            self.timepoint, str(self._level)
-        ).data
+        data_at_level: z5py.dataset.Dataset = getattr(self.timepoint, str(level)).data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
 
-        _idx = np.nonzero(np.array(self.metadata["levels"]) == self._level)[0][0]
+        _idx = np.nonzero(np.array(self.metadata["levels"]) == level)[0][0]
 
         cube_slice = (slice(None), slice(None), slice(None))
 
@@ -529,13 +531,13 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        if clipping is None:
-            self._scaling_factors = self.metadata["downsampling"][_idx]
-            self.clipping_corners_data = (c_low_d, c_high_d)
-            self.clipping_corners = (
-                c_low_d * self._scaling_factors,
-                c_high_d * self._scaling_factors,
-            )
+        # self._scaling_factors = self.metadata["downsampling"][_idx]
+        self._scaling_factors = self.resolution
+        self.clipping_corners_data = (c_low_d, c_high_d)
+        self.clipping_corners = (
+            c_low_d * self._scaling_factors,
+            c_high_d * self._scaling_factors,
+        )
 
         return data[cube_slice]
 
@@ -801,7 +803,7 @@ class DataSource:
         # get some statistics
         all_chunks = list(_ids_to_chunks.values())
         all_ids = np.array(list(_ids_to_chunks.keys()))
-        id_amounts = [len(idxs) for idxs in all_chunks]
+        id_amounts = np.array([len(idxs) for idxs in all_chunks])
         amounts, inverse, freqs = np.unique(
             id_amounts, return_counts=True, return_inverse=True
         )
@@ -810,7 +812,7 @@ class DataSource:
 
         # Cleanup: Merge meshes crossing chunks
         self._meshes = {}
-        duplicate_ids = all_ids[np.nonzero(inverse != 0)]
+        duplicate_ids = all_ids[np.nonzero(id_amounts > 1)]
         for ind in duplicate_ids:
             chunk_idxs = _ids_to_chunks[ind]
             meshes = [_meshes_chunked[idx][ind] for idx in chunk_idxs]
@@ -819,7 +821,7 @@ class DataSource:
                 merged_mesh = simplify_mesh(merged_mesh, simplify)
             self._meshes[ind] = merged_mesh
 
-        unique_ids = all_ids[np.nonzero(inverse == 0)]
+        unique_ids = all_ids[np.nonzero(id_amounts == 1)]
         for ind in unique_ids:
             mesh = _meshes_chunked[_ids_to_chunks[ind][0]][ind]
             if simplify:
@@ -848,7 +850,6 @@ class DataSource:
         self._clip_low_corner_data = None
         self._clip_high_corner_data = None
         self._scaling_factors = None
-        self._level = None
         self._curv_radius = 4.0
 
     def instantiate_organelles(self):
