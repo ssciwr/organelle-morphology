@@ -754,20 +754,29 @@ class DataSource:
             return mesh
 
         if overlap:
-            d_data = da.overlap.overlap(
+            overlapped = da.overlap.overlap(
                 self.data, depth={0: 2, 1: 2, 2: 2}, boundary="reflect"
-            ).to_delayed()
+            )
+            chunks = overlapped.chunks
+            d_data = overlapped.to_delayed()
         else:
+            chunks = self.data.chunks
             d_data = self.data.to_delayed()
         _meshes_chunked = np.empty_like(d_data)
         ids_chunked = np.empty_like(d_data)
-
         assert self._clip_low_corner_data is not None
+
         # cumsum of chunksizes over xyz, starting from lower clipping bound
-        size_offset_cumsum = [
-            np.cumsum(np.array([self._clip_low_corner_data[dim]] + list(ch)))
-            for dim, ch in enumerate(self.data.chunks)
-        ]
+        size_offset_cumsum = []
+        for dim, ch in enumerate(chunks):
+            if overlap:
+                # remove overlap to get correct size
+                ch = [c - 4 for c in ch]
+            else:
+                ch = list(ch)
+            size_offset_cumsum.append(
+                np.cumsum(np.array([self._clip_low_corner_data[dim]] + ch))
+            )
 
         for index, d_block in np.ndenumerate(d_data):
             space_offset = tuple(
