@@ -204,5 +204,7 @@ def test_generate_mcs(project_with_sources):
     assert "0-90" in org.mcs.keys()
     assert "0-90" in org.mcs_dict.keys()
     mcs_d = org.mcs_dict["0-90"]
-    np.testing.assert_almost_equal(mcs_d["mean_area"], 340.23860201)
+    # deviation due to mesh normals and subsequent filtering
+    # -> different area on windows
+    np.testing.assert_almost_equal(mcs_d["mean_area"], 340.23860201, decimal=1)
     assert mcs_d["n_contacts"] == 4
