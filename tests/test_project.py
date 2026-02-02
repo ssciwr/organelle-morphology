@@ -42,11 +42,11 @@ def test_valid_project_init(synthetic_data, client):
     cebra_project_path = synthetic_data[0]
     # With a pathlib.Path object
     project = Project(project_path=cebra_project_path, client=client)
-    assert project.path == cebra_project_path
+    assert project.path.samefile(cebra_project_path)
 
     # With a string path
     project = Project(project_path=str(cebra_project_path), client=client)
-    assert project.path == cebra_project_path
+    assert project.path.samefile(cebra_project_path)
 
 
 def test_project_clipping(synthetic_data, client):
