@@ -49,6 +49,20 @@ def test_block_mesher_c_on_edge(voxels_c_on_edge):
     assert len(ids) == 1
 
 
+def test_block_mesher_solid():
+    voxels = np.ones((10, 10, 10))
+    meshes, ids = compute(
+        *source._block_mesher(
+            block=voxels,
+            space_offset=(0, 0, 0),
+            debug_color=0,
+        ),
+        scheduler="single-threaded",
+    )
+    assert len(meshes) == 0
+    assert len(ids) == 0
+
+
 def plot_voxels(voxels):
     """For debugging"""
     cm = mpl.colormaps["tab20"]
