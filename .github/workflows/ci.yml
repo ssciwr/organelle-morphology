@@ -11,13 +11,14 @@ on:
     branches:
       - main
       - om2
+    types: [opened, synchronize, reopened, ready_for_review]
   # as well as upon manual triggers through the 'Actions' tab of the Github UI
   workflow_dispatch:
 
 jobs:
   build-and-test:
     name: Testing on ${{matrix.os}} (Python ${{matrix.python-version}})
-    if: github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false|| github.event_name != 'pull_request'
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
@@ -55,7 +56,7 @@ jobs:
 
   coverage:
     name: Coverage Testing
-    if: github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false|| github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
