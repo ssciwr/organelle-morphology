@@ -417,7 +417,7 @@ class Project:
         if box:
             npbox = np.array(box)
             if np.all(npbox <= 1.0):
-                npbox = npbox * source.metadata["size"]
+                npbox = npbox * source.metadata["size"] * source.data_resolution
             edges = corners_to_edges(*npbox)
             trans = trimesh.transformations.translation_matrix(npbox[0] + (edges / 2))
 
