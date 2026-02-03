@@ -238,3 +238,13 @@ def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
         np.count_nonzero(np.unique(mesh.vertices, axis=0, return_counts=True)[1] != 1)
         == 0
     )
+
+
+def test_get_meshes_curvature_colored(project_with_sources, mocker):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+
+    meshes = s.get_meshes_curvature_colored(labels=1)
+    assert len(meshes) == 1
+    meshes = s.get_meshes_curvature_colored(labels=[3, 2])
+    assert len(meshes) == 2

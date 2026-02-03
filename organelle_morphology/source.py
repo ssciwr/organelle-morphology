@@ -448,7 +448,7 @@ class DataSource:
         """Get the curvature map for all organelles"""
         self.logger.debug("get curvature map for all organelles")
 
-        self.get_curvature(labels=None, color=False)
+        self.calc_curvature(labels=None)
         return self._curvature_map
 
     @property
@@ -664,6 +664,69 @@ class DataSource:
                 self.logger.debug("Meshes saved in cache")
 
         return self._meshes
+
+    def calc_curvature(self, labels: Optional[int | list[int]] = None):
+        """Calculate the curvature on vertices.
+        If no label is supplied, all meshes are calculated.
+
+        Args:
+            labels: Optional label or list of labels of meshes to compute
+            the curvature for.
+        """
+        if labels is None:
+            labels = self.labels
+        if not isinstance(labels, (list, tuple)):
+            labels = [labels]
+
+        if all([la in self._curvature_map for la in labels]):
+            self.logger.debug("All curvatures already calculated.")
+            return
+
+        tasks = []
+        self.logger.debug("Starting curvature calculation")
+        for label in labels:
+            dmesh = self.meshes[label]
+            if label in self._curvature_map:
+                curvature = self._curvature_map[label]
+                tasks.append(curvature)
+            else:
+                curvature = mesure_gaussian_curvature_delayed(
+                    dmesh, radius=self._curv_radius
+                )
+                tasks.append(curvature)
+
+        result = compute(*tasks)
+        self._curvature_map = {label: result[i] for i, label in enumerate(labels)}
+
+    def get_meshes_curvature_colored(
+        self,
+        vmin: Optional[float] = None,
+        vmax: Optional[float] = None,
+        labels: Optional[int | list[int]] = None,
+        log=True,
+    ) -> list[Trimesh]:
+        if labels is None:
+            labels = self.labels
+        if not isinstance(labels, (list, tuple)):
+            labels = [labels]
+
+        self.calc_curvature(labels)
+        if vmin is None:
+            vmin = min([a.min() for a in self._curvature_map.values()])
+        if vmax is None:
+            vmax = max([a.max() for a in self._curvature_map.values()])
+
+        tasks = []
+        for label in labels:
+            dmesh = self.meshes[label]
+            curvature = self._curvature_map[label]
+            tasks.append(
+                color_delayed_trimesh_rgba(
+                    dmesh, curvature, log=log, vmin=vmin, vmax=vmax
+                )
+            )
+        result: list[Trimesh] = compute(*tasks)
+        return result
 
     def get_curvature(self, labels: Optional[int | list[int]], color=True, log=True):
         """Calculate the curvature on vertices.

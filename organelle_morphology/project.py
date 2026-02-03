@@ -856,6 +856,13 @@ class Project:
 
         return self._curvature_map
 
+    def set_curvature_radius(self, radius):
+        """Set the radius for curvature calculations.
+        Resets the cached curvature.
+        """
+        for source in self.sources.values():
+            source.curvature_radius = radius
+
     @property
     def distance_matrix(self):
         """
