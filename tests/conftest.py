@@ -133,7 +133,7 @@ def client():
     cluster.close()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def project_path(synthetic_data):
     """Returns a path that conains a valid project"""
     return synthetic_data[0]
