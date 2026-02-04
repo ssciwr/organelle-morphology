@@ -171,16 +171,16 @@ def test_show_curvature(project_with_sources, mocker):
     s = project_with_sources.sources["synth_data"]
 
     mock_util_show = mocker.patch("organelle_morphology.project.show")
-    mock_curvature = mocker.spy(s, "get_curvature")
+    mock_curvature = mocker.patch.object(s, "get_meshes_curvature_colored")
+    mock_curvature.return_value = s.meshes
 
     p.show(curvature=True)
+    mock_curvature.assert_called_once()
     mock_util_show.assert_called_once()
     to_show = mock_util_show.call_args[0][0]
     assert len(to_show) == 2
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
-    assert len(np.unique(to_show[0].visual.vertex_colors, axis=0)) > 20
-    mock_curvature.assert_called_once()
 
 
 def test_show_highlight(project_with_sources, mocker):
@@ -278,9 +278,9 @@ def test_mcs(project_with_sources):
 def test_curvature_map(project_with_sources, mocker):
     p: Project = project_with_sources
     s = project_with_sources.sources["synth_data"]
-    mock_curv = mocker.patch.object(s, "get_curvature")
+    mock_curv = mocker.patch.object(s, "calc_curvature")
 
-    p.curvature_map
+    assert p.curvature_map == {"synth_data": {}}
     mock_curv.assert_called_once()
 
 

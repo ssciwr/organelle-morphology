@@ -4,7 +4,6 @@ import plotly.graph_objects as go
 import dask.array as da
 from collections import defaultdict
 
-from trimesh import Trimesh
 
 import organelle_morphology
 from organelle_morphology.util import bounding_box_delayed
@@ -259,11 +258,11 @@ class Organelle:
     @property
     def curvature_map(self) -> np.ndarray:
         """Get the mesh data for this organelle"""
-        return self.source.get_curvature(self.label, color=False)[0]
+        return self.source.calc_curvature(self.label)[self.label]
 
     @property
-    def curvature_mesh(self) -> Trimesh:
-        return self.source.get_curvature(self.label, color=True)[1][0]
+    def curvature_mesh(self) -> Delayed:
+        return self.source.get_meshes_curvature_colored(labels=self.label)[0]
 
     def add_mcs(self, mcs_dict):
         mcs_target = mcs_dict["partner_id"]

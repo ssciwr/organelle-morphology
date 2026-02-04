@@ -138,16 +138,12 @@ class Cache:
 
 
 @delayed
-def mesure_gaussian_curvature_delayed(tmesh: Trimesh, radius: float):
-    # morph radius can be 0 if vertices are used as sample points.
-    morph_radius = radius
-    # curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
-    try:
-        curvature_vertices = trimesh.curvature.discrete_mean_curvature_measure(
-            tmesh, tmesh.vertices, radius=morph_radius
-        )
-    except ValueError:
-        curvature_vertices = np.zeros_like(tmesh.vertices)
+def measure_gaussian_curvature_delayed(tmesh: Trimesh, radius: float):
+    """Return curvature of mesh normalized by the circle area or radius"""
+    # radius can be 0 if vertices are used as sample points.
+    curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
+        tmesh, tmesh.vertices, radius=radius
+    ) / (np.pi * radius * radius)
     return curvature_vertices
 
 
