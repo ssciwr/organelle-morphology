@@ -30,7 +30,7 @@ from organelle_morphology.util import (
     color_delayed_trimesh_rgba,
     get_skeleton_info,
     merge_meshes,
-    mesure_gaussian_curvature_delayed,
+    measure_gaussian_curvature_delayed,
     sample_skeleton,
 )
 
@@ -448,7 +448,7 @@ class DataSource:
         """Get the curvature map for all organelles"""
         self.logger.debug("get curvature map for all organelles")
 
-        self.get_curvature(labels=None, color=False)
+        self.calc_curvature(labels=None)
         return self._curvature_map
 
     @property
@@ -457,10 +457,12 @@ class DataSource:
 
     @property
     def curvature_radius(self) -> float:
+        if self._curv_radius is None:
+            self._curv_radius = self.resolution[0] * 2
         return self._curv_radius
 
     @curvature_radius.setter
-    def curvature_radius(self, radius):
+    def curvature_radius(self, radius: float):
         """Set the radius for curvature calculations.
         Resets the cached curvature.
         """
@@ -665,56 +667,77 @@ class DataSource:
 
         return self._meshes
 
-    def get_curvature(self, labels: Optional[int | list[int]], color=True, log=True):
+    def calc_curvature(self, labels: Optional[int | list[int]] = None) -> dict:
         """Calculate the curvature on vertices.
         If no label is supplied, all meshes are calculated.
-        To color the meshes they are all moved to a singel worker, avoid for
-        large meshes.
 
-        Parameters
-        ----------
-        labels
-            Optional label or list of labels of meshes to compute the curvature for.
-        color
-            Whether to color the original mesh according to the curvature.
-            Defaults to True
-        log
-            Use a log color scale
-
-        Returns
-        -------
-        curvature
-            List of arrays of the curvature at each vertex. List over all labels.
-        mesh
-            Only returned if color is requested. List of computed meshes, colored
-            by curvature.
+        Args:
+            labels: Optional label or list of labels of meshes to compute
+            the curvature for.
+        Returns:
+            curvature_map dict for all labels
         """
         if labels is None:
             labels = self.labels
         if not isinstance(labels, (list, tuple)):
             labels = [labels]
 
+        if all([la in self._curvature_map for la in labels]):
+            self.logger.debug("All curvatures already calculated.")
+            return self._curvature_map
+
+        tasks = []
+        self.logger.debug("Starting curvature calculation")
+        for label in labels:
+            dmesh = self.meshes[label]
+            curvature = measure_gaussian_curvature_delayed(
+                dmesh, radius=self.curvature_radius
+            )
+            tasks.append(curvature)
+
+        result = compute(*tasks)
+        self._curvature_map.update({label: result[i] for i, label in enumerate(labels)})
+        return self._curvature_map
+
+    def get_curvature_range(self):
+        # mean_mean = np.mean([c.mean() for c in self._curvature_map.values()])
+        mean_std = np.mean([c.std() for c in self._curvature_map.values()])
+
+        return {
+            "vmin": -15 * mean_std,
+            "vmax": 15 * mean_std,
+        }
+
+    def get_meshes_curvature_colored(
+        self,
+        labels: Optional[int | list[int]] = None,
+        vmin: Optional[float] = None,
+        vmax: Optional[float] = None,
+        log=True,
+    ) -> list[Delayed]:
+        if labels is None:
+            labels = self.labels
+        if not isinstance(labels, (list, tuple)):
+            labels = [labels]
+
+        self.calc_curvature(labels)
+        if vmin is None or vmax is None:
+            new_maxima = self.get_curvature_range()
+        if vmin is None:
+            vmin = new_maxima["vmin"]
+        if vmax is None:
+            vmax = new_maxima["vmax"]
+
         tasks = []
         for label in labels:
             dmesh = self.meshes[label]
-            if label in self._curvature_map:
-                curvature = self._curvature_map[label]
-                tasks.append(curvature)
-            else:
-                curvature = mesure_gaussian_curvature_delayed(
-                    dmesh, radius=self._curv_radius
+            curvature = self._curvature_map[label]
+            tasks.append(
+                color_delayed_trimesh_rgba(
+                    dmesh, curvature, log=log, vmin=vmin, vmax=vmax
                 )
-                tasks.append(curvature)
-            if color:
-                tasks.append(color_delayed_trimesh_rgba(dmesh, curvature, log=log))
-        step = 2 if color else 1
-        result = compute(*tasks)
-        self._curvature_map = {
-            label: result[::step][i] for i, label in enumerate(labels)
-        }
-        if color:
-            return result[::2], result[1::2]
-        return result
+            )
+        return tasks
 
     def calculate_mesh(
         self,
@@ -859,7 +882,7 @@ class DataSource:
         self._clip_low_corner_data = None
         self._clip_high_corner_data = None
         self._scaling_factors = None
-        self._curv_radius = 4.0
+        self._curv_radius = None
 
     def instantiate_organelles(self):
         if self._organelles is None:

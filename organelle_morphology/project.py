@@ -331,11 +331,25 @@ class Project:
             for o in orgs:
                 org_per_source[o.source].append(o)
             meshes = []
+            # calculate curvatures on all sources
+            for source, orgs in org_per_source.items():
+                labels = [o.label for o in orgs]
+                source.calc_curvature(labels=labels)
+            vmin, vmax = (0.0, 0.0)
+            for source in org_per_source.keys():
+                maxima = source.get_curvature_range()
+                if (new_vmin := maxima["vmin"]) < vmin:
+                    vmin = new_vmin
+                if (new_vmax := maxima["vmax"]) > vmax:
+                    vmax = new_vmax
+
             for s, o_s in org_per_source.items():
                 labels = [o.label for o in o_s]
                 meshes.append(
                     merge_meshes(
-                        s.get_curvature(labels, color=True, log=curv_log)[1],
+                        s.get_meshes_curvature_colored(
+                            labels=labels, log=curv_log, vmin=vmin, vmax=vmax
+                        ),
                         color=0,
                         transp=transp,
                     )
@@ -856,6 +870,13 @@ class Project:
 
         return self._curvature_map
 
+    def set_curvature_radius(self, radius):
+        """Set the radius for curvature calculations.
+        Resets the cached curvature.
+        """
+        for source in self.sources.values():
+            source.curvature_radius = radius
+
     @property
     def distance_matrix(self):
         """
@@ -948,11 +969,11 @@ class Project:
         return list(self.sources.values())[0].clipping_corners
 
     @property
-    def organelles(self):
+    def organelles(self) -> list[Organelle]:
         return self.get_organelles("*")
 
     @property
-    def organelle_ids(self):
+    def organelle_ids(self) -> list[str]:
         return self.get_organelle_ids("*")
 
     def get_organelles(

@@ -138,25 +138,31 @@ class Cache:
 
 
 @delayed
-def mesure_gaussian_curvature_delayed(tmesh: Trimesh, radius: float):
-    # morph radius can be 0 if vertices are used as sample points.
-    morph_radius = radius
+def measure_gaussian_curvature_delayed(tmesh: Trimesh, radius: float):
+    """Return curvature of mesh normalized by the circle area or radius"""
+    # radius can be 0 if vertices are used as sample points.
     curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
-        tmesh, tmesh.vertices, radius=morph_radius
-    )
+        tmesh, tmesh.vertices, radius=radius
+    ) / (np.pi * radius * radius)
     return curvature_vertices
 
 
 @delayed
-def color_delayed_trimesh_rgba(tmesh: Trimesh, values, log=True) -> Trimesh:
+def color_delayed_trimesh_rgba(
+    tmesh: Trimesh,
+    values,
+    vmin: float,
+    vmax: float,
+    log=True,
+) -> Trimesh:
     cm = mpl.colormaps["RdBu"].copy().reversed()
     cm.set_extremes(under=(1, 0, 1, 1), over=(0, 1, 0, 1))
     if log:
         norm = mpl.colors.SymLogNorm(
-            linthresh=0.01, linscale=0.01, base=10, vmin=-8, vmax=8
+            linthresh=0.01, linscale=0.01, base=10, vmin=vmin, vmax=vmax
         )
     else:
-        norm = mpl.colors.Normalize(vmin=-8, vmax=8)
+        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     colors = cm(norm(values))
     tmesh.visual.face_colors = (0, 0, 0, 0)
     tmesh.visual.vertex_colors = colors

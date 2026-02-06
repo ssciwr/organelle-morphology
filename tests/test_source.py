@@ -157,26 +157,6 @@ def test_curvature_map(project_with_sources):
     assert len(curvs) == 19
 
 
-def test_curvature(project_with_sources):
-    s = list(project_with_sources.sources.values())[0]
-    res = s.get_curvature(labels=None, color=True, log=True)
-    assert len(res) == 2
-    assert len(res[0]) == len(res[1])
-    assert all([v.shape == (m.vertices.shape[0],) for v, m in zip(res[0], res[1])])
-
-    res = s.get_curvature(labels=None, color=True, log=False)
-    assert len(res) == 2
-    assert len(res[0]) == len(res[1])
-    assert all([v.shape == (m.vertices.shape[0],) for v, m in zip(res[0], res[1])])
-
-    res = s.get_curvature(labels=None, color=False)
-    assert len(res) == 19
-    assert all([isinstance(r, np.ndarray) for r in res])
-
-    res = s.get_curvature(labels=s.labels[0], color=False)
-    assert len(res) == 1
-
-
 @pytest.mark.parametrize("chunksize", range(0, 7))
 def test_calculate_mesh(project_with_sources, mocker, chunksize):
     p = project_with_sources
@@ -238,3 +218,55 @@ def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
         np.count_nonzero(np.unique(mesh.vertices, axis=0, return_counts=True)[1] != 1)
         == 0
     )
+
+
+def test_get_meshes_curvature_colored(project_with_sources, mocker):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+
+    mock_calc_curv = mocker.patch.object(s, "calc_curvature")
+    s._curvature_map = {
+        la: np.ones(s.meshes[la].compute().vertices.shape[0]) for la in s.labels
+    }
+
+    meshes = s.get_meshes_curvature_colored(labels=None)
+    assert len(meshes) == 19
+    mock_calc_curv.assert_called_with(s.labels)
+    meshes = s.get_meshes_curvature_colored(labels=1)
+    assert len(meshes) == 1
+    meshes = s.get_meshes_curvature_colored(labels=[3, 2])
+    assert np.all(sum(meshes).compute().visual.vertex_colors == [5, 48, 97, 255])
+    assert len(meshes) == 2
+
+
+def test_calc_curvature(project_with_sources, mocker):
+    """Test the calc_curvature method directly"""
+    s = list(project_with_sources.sources.values())[0]
+    s.labels  # compute before mocking `compute`
+
+    mock_logger = mocker.patch.object(s, "logger")
+    mock_compute = mocker.patch("organelle_morphology.source.compute")
+
+    mock_compute.return_value = s.labels  # list as long as the labels
+    ret = s.calc_curvature(labels=None)
+
+    assert ret is s._curvature_map
+    assert len(s._curvature_map) == 19
+    mock_compute.assert_called_once()
+
+    mock_logger.debug.reset_mock()
+
+    s.calc_curvature(labels=s.labels[5])
+
+    mock_compute.assert_called_once()  # not called again
+    mock_logger.debug.assert_called_with("All curvatures already calculated.")
+
+    mock_logger.debug.reset_mock()
+    labels_to_clear = s.labels[:3]
+    for label in labels_to_clear:
+        if label in s._curvature_map:
+            del s._curvature_map[label]
+
+    s.calc_curvature(labels=labels_to_clear + [s.labels[5]])
+
+    assert len(s._curvature_map) == 19
