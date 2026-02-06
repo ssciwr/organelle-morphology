@@ -125,9 +125,6 @@ p.search_mcs(0.1)
 o.curvature_map
 color_delayed_trimesh_rgba(o.mesh, o.curvature_map).compute().show()
 
-curv, meshes = s.get_curvature(label)
-curv, meshes = s.get_curvature(None)
-merge_meshes(meshes).show()
 
 
 # %% distances
@@ -197,47 +194,3 @@ bmesh.show()
 # %%
 with open("/home/kriedmiller/test/mmesh_overlap.stl", "wb") as f:
     f.write(trimesh.exchange.stl.export_stl(mmesh))
-
-
-# %% ### Merge seams ###
-s.calculate_mesh(reduction_factor=0, overlap=True)
-mmesh = Trimesh() # all meshes, but should be only the overlapping
-for mesh in tqdm(meshes[:]):
-    mmesh += mesh
-mmesh.merge_vertices(merge_tex=True, merge_norm=True, digits_vertex=1, digits_norm=1, digits_uv=1)
-np.unique(mmesh.unique_faces(),return_counts=True)
-mmesh.update_faces(mmesh.unique_faces())
-
-# %%
-import dask.dataframe as dd
-import pandas as pd
-
-t = delayed(lambda: 5)
-dm = np.zeros((5,5))
-df = pd.DataFrame(dm)
-
-df.loc[:] = delayed(lambda: 5)
-
-# %% DEBUG clipping face
-project_path = Path.cwd() / ".." / "example_analysis"
-p = Project(project_path, compression_level="s2", loglevel="DEBUG", clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)))
-p.add_source("../data/mitosis_dT/cell_it02_b0_7_stitched.xml", "cell")
-s = p.sources["cell_it02_b0_7_stitched"]
-
-p.clipping = [[0.5]*3, [0.6]*3]
-
-import dask
-dask.config.set(scheduler='synchronous')
-
-# %%
-import numpy as np
-from zmesh import Mesher
-from trimesh import Trimesh
-
-block = np.zeros((10, 10, 10),dtype=int)
-block[:9, :9, :9] = 9
-mesher = Mesher((1, 1, 1))
-mesher.mesh(block, close=False)
-zmesh = mesher.get(9)
-tmesh = Trimesh(zmesh.vertices, zmesh.faces, process=False)
-tmesh.show()
