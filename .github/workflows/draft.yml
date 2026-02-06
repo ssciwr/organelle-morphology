@@ -14,5 +14,3 @@ jobs:
         uses: voiceflow/draft-pr@latest
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cancel runnig jobs
-        run: exit 1
