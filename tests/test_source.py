@@ -256,7 +256,7 @@ def test_calc_curvature(project_with_sources, mocker):
 
     mock_logger.debug.reset_mock()
 
-    s.calc_curvature(labels=s.labels[:5])
+    s.calc_curvature(labels=s.labels[5])
 
     mock_compute.assert_called_once()  # not called again
     mock_logger.debug.assert_called_with("All curvatures already calculated.")

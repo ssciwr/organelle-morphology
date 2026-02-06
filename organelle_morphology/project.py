@@ -969,11 +969,11 @@ class Project:
         return list(self.sources.values())[0].clipping_corners
 
     @property
-    def organelles(self):
+    def organelles(self) -> list[Organelle]:
         return self.get_organelles("*")
 
     @property
-    def organelle_ids(self):
+    def organelle_ids(self) -> list[str]:
         return self.get_organelle_ids("*")
 
     def get_organelles(

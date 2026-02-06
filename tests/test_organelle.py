@@ -23,3 +23,15 @@ def test_organelle_curvature(project_with_sources, mocker):
         assert isinstance(curv, np.ndarray)
         mock_calc.assert_called_with(org.label)
         mock_calc.reset_mock()
+
+
+def test_curvature_map(project_with_sources):
+    org = project_with_sources.organelles[0]
+    cmap = org.curvature_map
+    assert cmap.shape == (900,)
+
+
+def test_curvature_mesh(project_with_sources):
+    org = project_with_sources.organelles[0]
+    mesh = org.curvature_mesh.compute()
+    assert len(mesh.vertices) == 900
