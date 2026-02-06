@@ -457,10 +457,12 @@ class DataSource:
 
     @property
     def curvature_radius(self) -> float:
+        if self._curv_radius is None:
+            self._curv_radius = self.resolution[0] * 2
         return self._curv_radius
 
     @curvature_radius.setter
-    def curvature_radius(self, radius):
+    def curvature_radius(self, radius: float):
         """Set the radius for curvature calculations.
         Resets the cached curvature.
         """
@@ -689,7 +691,7 @@ class DataSource:
         for label in labels:
             dmesh = self.meshes[label]
             curvature = measure_gaussian_curvature_delayed(
-                dmesh, radius=self._curv_radius
+                dmesh, radius=self.curvature_radius
             )
             tasks.append(curvature)
 
@@ -702,8 +704,8 @@ class DataSource:
         mean_std = np.mean([c.std() for c in self._curvature_map.values()])
 
         return {
-            "vmin": -10 * mean_std,
-            "vmax": 10 * mean_std,
+            "vmin": -15 * mean_std,
+            "vmax": 15 * mean_std,
         }
 
     def get_meshes_curvature_colored(
@@ -880,7 +882,7 @@ class DataSource:
         self._clip_low_corner_data = None
         self._clip_high_corner_data = None
         self._scaling_factors = None
-        self._curv_radius = 4.0
+        self._curv_radius = None
 
     def instantiate_organelles(self):
         if self._organelles is None:
