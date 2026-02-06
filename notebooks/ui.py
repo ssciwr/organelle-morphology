@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.4"
+__generated_with = "0.19.7"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -188,7 +188,8 @@ def _(run_progress):
 
 
 @app.cell
-def _():
+def _(project):
+    mo.stop(len(project.sources) < 1, "Add a source first!")
     run_show_mesh = mo.ui.run_button(label="Show Mesh")
     mesh_id_filter = mo.ui.text(value="*", label="Organelle id filter")
     highlight_filter = mo.ui.text(value="", label="Highligh ids")
@@ -209,8 +210,12 @@ def _():
     skeleton_check = mo.ui.checkbox(label="Skeleton", value=False)
     curvature_check = mo.ui.checkbox(label="Curvature", value=False)
     log_check = mo.ui.checkbox(label="log scale", value=True)
+
+    sources = list(project.sources.values())
+    rad = sources[0].curvature_radius
+
     curv_radius_slider = mo.ui.slider(
-        label="radius", value=4.0, start=0.0, stop=15, step=0.1
+        label="radius", value=rad, start=0.0, stop=10 * rad, step=rad / 10
     )
     color_indiv_check = mo.ui.checkbox(label="Color individual organelles", value=False)
     popout_viewer_check = mo.ui.checkbox(label="High-quality viewer", value=False)
