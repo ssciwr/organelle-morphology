@@ -239,11 +239,30 @@ def sample_skeleton(skeleton, path_sample_dist: float = 0.1):
     return _sampled_skeleton
 
 
-def get_skeleton_info(skeleton):
+def get_skeleton_info(skeleton) -> dict:
+    """
+    Extract information from a skeleton graph.
+
+    Args:
+        skeleton: A skeleton object containing graph data.
+
+    Returns:
+        dict: A dictionary containing the following keys:
+            - num_nodes (int): Number of nodes in the graph.
+            - num_branch_points (int): Number of nodes with degree > 2.
+            - end_points (int): Number of nodes with degree == 1.
+            - total_length (float): Sum of all edge weights.
+            - longest_path (float): Length of the longest path in the graph.
+            - mean_length (float): Mean edge weight.
+            - std_length (float): Standard deviation of edge weights.
+            - mean_radius (float): Mean radius of the skeleton.
+            - std_radius (float): Standard deviation of the skeleton radius.
+    """
+
     skeleton_info = {}
     graph = skeleton.get_graph()
     if len(graph.nodes) == 0:
-        return 0
+        return skeleton_info
 
     skeleton_info["num_nodes"] = len(graph.nodes)
     skeleton_info["num_branch_points"] = len(
@@ -261,8 +280,8 @@ def get_skeleton_info(skeleton):
     skeleton_info["mean_length"] = np.mean(lengths)
     skeleton_info["std_length"] = np.std(lengths)
 
-    skeleton_info["mean_radius"] = np.mean(skeleton.radius[0])
-    skeleton_info["std_radius"] = np.std(skeleton.radius[0])
+    skeleton_info["mean_radius"] = np.mean(skeleton.radius)
+    skeleton_info["std_radius"] = np.std(skeleton.radius)
     return skeleton_info
 
 

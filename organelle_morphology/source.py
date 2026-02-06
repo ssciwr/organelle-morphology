@@ -883,6 +883,7 @@ class DataSource:
         self._clip_high_corner_data = None
         self._scaling_factors = None
         self._curv_radius = None
+        self._skeletonized = []
 
     def instantiate_organelles(self):
         if self._organelles is None:
@@ -1145,4 +1146,5 @@ class DataSource:
             organelles_labeled[label].skeleton_info = skeleton_info
             organelles_labeled[label].sampled_skeleton = sampled_skeleton
             orgs.append(organelles_labeled[label])
+            self._skeletonized.append(label)
         return orgs
