@@ -15,6 +15,7 @@ with app.setup:
     from organelle_morphology.util import bounding_box_delayed
     from dask.base import compute
     import pandas as pd
+    import traceback
 
 
 @app.cell
@@ -34,7 +35,7 @@ def _():
 
     hint = mo.md(
         "<small>(To select a folder, click on the &nbsp;::lucide:folder::&nbsp; icon.)</small>"
-    ).style(margin_top="-1.5rem") # adjust margin if the text ever disappears
+    ).style(margin_top="-1.0rem") # adjust margin if the text ever disappears
 
     run_project = mo.ui.run_button(label="Load Project")
 
@@ -520,50 +521,105 @@ def _(of_run_button, project):
 
 @app.cell
 def _():
-    calc_stats_btn = mo.ui.run_button(label="Calculate Statistics")
+    prop_selector = mo.ui.dictionary({
+        # Mesh Properties
+        "mesh_volume": mo.ui.checkbox(value=True, label="Mesh Volume"),
+        "sphericity": mo.ui.checkbox(value=True, label="Sphericity"),
+        "flatness_ratio": mo.ui.checkbox(value=True, label="Flatness Ratio"),
+        "water_tight": mo.ui.checkbox(value=False, label="Watertight"),
+        "mesh_area": mo.ui.checkbox(value=False, label="Mesh Area"),
 
+        # Skeleton / Graph Properties
+        "num_nodes": mo.ui.checkbox(value=False, label="Skeleton Nodes"),
+        "total_length": mo.ui.checkbox(value=False, label="Skeleton Length"),
+        "avg_edge_length": mo.ui.checkbox(value=False, label="Avg Branch Length"),
+
+        # Voxel / Geometry Properties
+        "solidity": mo.ui.checkbox(value=False, label="Solidity (Voxel)"),
+        "extent": mo.ui.checkbox(value=False, label="Extent (Voxel)"),
+
+        # Contact Sites (Examples - these should match your mcs_dict keys)
+        "contact_er": mo.ui.checkbox(value=False, label="ER Contact Area"),
+        "contact_mito": mo.ui.checkbox(value=False, label="Mito Contact Area")
+    })
+
+    calc_stats_btn = mo.ui.run_button(label="Calculate Statistics")
     display = mo.vstack([
         mo.md("## Statistics"),
-        mo.md("Click to calculate geometry properties."),
+        mo.md("Select Properties to Calculate:"),
+        prop_selector,
         calc_stats_btn
     ])
-    display # display the layout by referencing it
-    return (calc_stats_btn,)
+
+    display
+    return calc_stats_btn, prop_selector
 
 
 @app.cell
-def _(calc_stats_btn, mesh_id_filter, project):
-    # This cell is not rendered until all dependencies are met or the button is clicked
-    import traceback
+def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
+    # Standard prompt before the button is clicked
     output = mo.md("Click on \"Calculate Statistics\" to compute geometry properties.")
+
     if calc_stats_btn.value:
         try:
             from organelle_morphology.statistics import Statistics
             stats = Statistics(project)
-            df = stats.get_dataframe(ids=mesh_id_filter.value)
 
-            output = mo.vstack([
-                mo.md(f"### Statistics ({len(df)} items)"),
-                mo.ui.table(
-                    df,
-                    selection=None,
-                    pagination=False,
-                    max_height=500,
-                    format_mapping={
-                        "Volume (vx)": "{:.0f}".format,
-                        "Sphericity": "{:.3f}".format,
-                        "Flatness": "{:.3f}".format,
-                    },
-                    text_justify_columns={
-                        "Volume (vx)": "right",
-                        "Sphericity": "right",
-                        "Flatness": "right",
-                    },
-                ),
-            ])
-        except NameError:
-            output = mo.md("## No Project was loaded.\n ## Please load a project first.")
+            # Get the list of internal keys from the checkbox dictionary
+            selected_properties = [
+                key for key, checked in prop_selector.value.items() if checked
+            ]
+
+            # 1. Generate the raw data table
+            df_data = stats.get_dataframe(
+                ids=mesh_id_filter.value, 
+                properties=selected_properties
+            )
+
+            # 2. Generate the statistical summary table
+            df_summary = stats.get_summary_dataframe(df_data)
+
+            if not df_data.empty:
+                # Identify column types for specialized formatting
+                bool_cols = df_data.select_dtypes(include=[bool]).columns.tolist()
+                float_cols = df_data.select_dtypes(include=['float', 'float64']).columns.tolist()
+
+                # Define formatting for the Summary Table
+                # Booleans show as percentage in 'Average' and '-' elsewhere
+                summary_formats = {}
+                for col in df_summary.columns:
+                    if col in bool_cols:
+                        summary_formats[col] = lambda x: f"{x*100:.1f}%" if pd.notnull(x) else "-"
+                    elif col in float_cols:
+                        summary_formats[col] = "{:.3f}".format
+
+                # Define formatting for the Raw Data Table
+                data_formats = {col: "{:.3f}".format for col in float_cols}
+
+                output = mo.vstack([
+                    mo.md("### Statistical Summary"),
+                    mo.ui.table(
+                        df_summary,
+                        selection=None,
+                        pagination=False,
+                        format_mapping=summary_formats,
+                        text_justify_columns={col: "right" for col in (bool_cols + float_cols)},
+                    ),
+                    mo.md(f"### Raw Organelle Data ({len(df_data)} items)"),
+                    mo.ui.table(
+                        df_data,
+                        selection=None,
+                        pagination=False,
+                        max_height=400,
+                        format_mapping=data_formats,
+                        text_justify_columns={col: "right" for col in float_cols},
+                    ),
+                ])
+
+        #except NameError:
+        #    output = mo.md("## No Project was loaded.\n ## Please load a project first.")
         except Exception:
+            # Capture errors and display them
             output = mo.md(f"## Unable to calculate statistics\n\n```\n{traceback.format_exc()}\n```")
     output # display the widget (polymorphic: displays Markdown or Table)
     return
