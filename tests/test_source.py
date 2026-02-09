@@ -270,3 +270,18 @@ def test_calc_curvature(project_with_sources, mocker):
     s.calc_curvature(labels=labels_to_clear + [s.labels[5]])
 
     assert len(s._curvature_map) == 19
+
+
+def test_mcs_dicts(project_with_sources):
+    p = project_with_sources
+    s = list(project_with_sources.sources.values())[0]
+
+    p.search_mcs(10)
+    mcs_dicts = s.mcs_dicts
+    assert list(mcs_dicts.keys()) == ["0-10"]
+    assert len(mcs_dicts["0-10"]) == 10
+    assert len(mcs_dicts["0-10"]["mito_0019"]) == 2
+    assert all(
+        k in mcs_dicts["0-10"]["mito_0019"]["mito_0015"].keys()
+        for k in ["area", "distances", "vertices_index"]
+    )

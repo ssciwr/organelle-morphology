@@ -1,4 +1,3 @@
-from typing import Optional
 from scipy.spatial import KDTree
 import trimesh
 
@@ -104,20 +103,23 @@ class MembraneContactSiteCalculator:
         # To determine which one to search for, we calculate the mean distance for both cases
         # and choose the one with the smaller mean distance.
 
-        mean_distance_normal = np.mean(
-            [
-                self.distances[i]
-                for i in range(len(self.distances))
-                if self.dot_products[i] < 0
-            ]
-        )
-        mean_distance_inverse = np.mean(
-            [
-                self.distances[i]
-                for i in range(len(self.distances))
-                if self.dot_products[i] > 0
-            ]
-        )
+        _normal_dists = [
+            self.distances[i]
+            for i in range(len(self.distances))
+            if self.dot_products[i] < 0
+        ]
+        mean_distance_normal = 0.0
+        if _normal_dists:
+            mean_distance_normal = np.mean(_normal_dists)
+
+        _inverse_dists = [
+            self.distances[i]
+            for i in range(len(self.distances))
+            if self.dot_products[i] > 0
+        ]
+        mean_distance_inverse = 0.0
+        if _inverse_dists:
+            mean_distance_inverse = np.mean(_inverse_dists)
 
         if mean_distance_normal < mean_distance_inverse:
             self._filter_distances(lambda i: self.dot_products[i] < 0)
@@ -129,7 +131,7 @@ class MembraneContactSiteCalculator:
         self.mesh_source = mesh_source
         self.mesh_target = mesh_target
 
-    def analyze_mcs(self, max_distance, min_distance=0):
+    def analyze_mcs(self, max_distance, min_distance=0.0):
         """After searching the entire surface we now filter only the area we are interested in
 
         :param max_distance:  Maximum distance to the other organelle
@@ -277,24 +279,26 @@ def generate_distance_matrix(
             cube_size = max_dist * 10
             stride = max_dist * 9
             clp_of = source.clipping_corners[0]
+            n_x_cubes = min(max(int(size[0] // cube_size), 1), 50)
+            n_y_cubes = min(max(int(size[1] // cube_size), 1), 50)
+            n_z_cubes = min(max(int(size[2] // cube_size), 1), 50)
 
-            # TODO: maybe an upper limit on the number of boxes would be good
             xs = np.linspace(
                 clp_of[0],
                 size[0] + clp_of[0],
-                max(int(size[0] // cube_size), 1),
+                n_x_cubes,
                 endpoint=False,
             )
             ys = np.linspace(
                 clp_of[1],
                 size[1] + clp_of[1],
-                max(int(size[1] // cube_size), 1),
+                n_y_cubes,
                 endpoint=False,
             )
             zs = np.linspace(
                 clp_of[2],
                 size[2] + clp_of[2],
-                max(int(size[2] // cube_size), 1),
+                n_z_cubes,
                 endpoint=False,
             )
 
@@ -302,7 +306,9 @@ def generate_distance_matrix(
             xg, yg, zg = list(map(lambda a: a.flatten(), (xg, yg, zg)))
 
             project.logger.debug(f"Cube size: {cube_size}")
-            project.logger.debug(f"n cubes: {len(xg)}")
+            project.logger.debug(
+                f"n cubes: {n_x_cubes}, {n_y_cubes}, {n_z_cubes} => {len(xg)}"
+            )
             project.logger.debug(f"n organelles: {len(organelles)}")
 
             tasks = []
@@ -342,7 +348,7 @@ def generate_distance_matrix(
             pool.join()
         # results = map(get_min_dist, tasks)
 
-        for res in tqdm(results, "gathering results", total=len(tasks)):
+        for res in tqdm(results, "gathering distances", total=len(tasks)):
             distance_df.loc[res[0]] = res[1]
             distance_df.loc[res[0][::-1]] = res[1]
 
@@ -355,7 +361,9 @@ def generate_distance_matrix(
     return cache["distance_matrix"]
 
 
-def generate_mcs(project, max_distance, min_distance=0, override=False):
+def generate_mcs(
+    project, max_distance: float, min_distance: float = 0, overwrite=False
+) -> str:
     """
     Generates the MCS (Membrane Contact Site) pairs for a given project.
 
@@ -366,12 +374,12 @@ def generate_mcs(project, max_distance, min_distance=0, override=False):
         min_distance (float, optional): The minimum distance for the MCS pairs. Defaults to 0.
 
     Returns:
-        None
+        str: the label of this mcs search
     """
     mcs_label = f"{min_distance}-{max_distance}"
 
-    if project._mcs_labels.get(mcs_label) and not override:
-        return project._mcs_labels[mcs_label]
+    if project._mcs_labels.get(mcs_label) and not overwrite:
+        return mcs_label
 
     distance_matrix = project.distance_matrix
 
@@ -401,7 +409,7 @@ def generate_mcs(project, max_distance, min_distance=0, override=False):
                 meshes[label] = project.get_organelles(label)[0].mesh
     meshes = compute(meshes)[0]
 
-    for org_1_label, org_2_label in tqdm(pairs):
+    for org_1_label, org_2_label in tqdm(pairs, "mcs calculation"):
         org1 = project.get_organelles(org_1_label)[0]
         org2 = project.get_organelles(org_2_label)[0]
         mcs_calculator = MembraneContactSiteCalculator()
@@ -431,3 +439,4 @@ def generate_mcs(project, max_distance, min_distance=0, override=False):
         "min_distance": min_distance,
         "organelles": org_ids,
     }
+    return mcs_label

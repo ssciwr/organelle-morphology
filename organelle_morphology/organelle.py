@@ -3,10 +3,15 @@ import numpy as np
 import plotly.graph_objects as go
 import dask.array as da
 from collections import defaultdict
+import matplotlib.pyplot as plt
 
 
 import organelle_morphology
-from organelle_morphology.util import bounding_box_delayed
+from organelle_morphology.util import (
+    bounding_box_delayed,
+    color_delayed_trimesh_vertices,
+    reset_color_delayed,
+)
 
 
 def organelle_types() -> list[str]:
@@ -205,10 +210,27 @@ class Organelle:
         """Get the mesh for this organelle"""
         return self.source.meshes[self.label]
 
-    def mesh_mcs(self) -> Delayed:
+    def get_mesh_mcs_colored(self, mcs_label=None) -> Delayed:
         """Get mcs colored delayed meshes"""
+        cm = plt.get_cmap("tab20")
+        colored = self.mesh
+        if mcs_label is None:
+            labels = list(self.source.project.mcs_labels.keys())
+            if len(labels) == 0:
+                self.logger.warning("No mcs data, first run project.search_mcs")
+                return colored
+            mcs_label = labels[0]
 
-        return self.mesh
+        if mcs_partners_dict := self.mcs.get(mcs_label):
+            colored = reset_color_delayed(colored)
+            for i, mcs_dict in enumerate(mcs_partners_dict.values()):
+                j = i % 20
+                colored = color_delayed_trimesh_vertices(
+                    colored,
+                    mcs_dict["vertices_index"],
+                    [c * 255 for c in cm(j)],
+                )
+        return colored
 
     @property
     def id(self):
@@ -341,7 +363,7 @@ class Organelle:
         self._mcs_dict = _mcs_dict
 
     @property
-    def mcs(self):
+    def mcs(self) -> defaultdict:
         return self._mcs
 
     @property
