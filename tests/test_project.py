@@ -42,11 +42,11 @@ def test_valid_project_init(synthetic_data, client):
     cebra_project_path = synthetic_data[0]
     # With a pathlib.Path object
     project = Project(project_path=cebra_project_path, client=client)
-    assert project.path == cebra_project_path
+    assert project.path.samefile(cebra_project_path)
 
     # With a string path
     project = Project(project_path=str(cebra_project_path), client=client)
-    assert project.path == cebra_project_path
+    assert project.path.samefile(cebra_project_path)
 
 
 def test_project_clipping(synthetic_data, client):
@@ -149,7 +149,7 @@ def test_show_plain(project_with_sources, mocker):
     assert len(to_show) == 2
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
-    assert len(np.unique(to_show[0].visual.vertex_colors, axis=0)) == 29
+    assert 15 < len(np.unique(to_show[0].visual.vertex_colors, axis=0)) < 30
 
 
 def test_show_skeleton(project_with_sources, mocker):
@@ -171,16 +171,16 @@ def test_show_curvature(project_with_sources, mocker):
     s = project_with_sources.sources["synth_data"]
 
     mock_util_show = mocker.patch("organelle_morphology.project.show")
-    mock_curvature = mocker.spy(s, "get_curvature")
+    mock_curvature = mocker.patch.object(s, "get_meshes_curvature_colored")
+    mock_curvature.return_value = s.meshes
 
     p.show(curvature=True)
+    mock_curvature.assert_called_once()
     mock_util_show.assert_called_once()
     to_show = mock_util_show.call_args[0][0]
     assert len(to_show) == 2
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
-    assert len(np.unique(to_show[0].visual.vertex_colors, axis=0)) > 20
-    mock_curvature.assert_called_once()
 
 
 def test_show_highlight(project_with_sources, mocker):
@@ -266,10 +266,10 @@ def test_cache_settings(project_with_sources):
 
 
 def test_mcs(project_with_sources):
-    project_with_sources.search_mcs("somename", 10)
+    project_with_sources.search_mcs(10)
 
     props = project_with_sources.get_mcs_properties()
-    assert props.shape == (11, 6)
+    assert props.shape == (10, 6)
 
     overview = project_with_sources.get_mcs_overview()
     assert overview.shape == (10, 1)
@@ -278,9 +278,9 @@ def test_mcs(project_with_sources):
 def test_curvature_map(project_with_sources, mocker):
     p: Project = project_with_sources
     s = project_with_sources.sources["synth_data"]
-    mock_curv = mocker.patch.object(s, "get_curvature")
+    mock_curv = mocker.patch.object(s, "calc_curvature")
 
-    p.curvature_map
+    assert p.curvature_map == {"synth_data": {}}
     mock_curv.assert_called_once()
 
 

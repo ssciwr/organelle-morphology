@@ -7,7 +7,11 @@ from organelle_morphology import Project
 import numpy as np
 import pytest
 from .synthetic_data_generator import generate_synthetic_dataset
-import resource
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 
 def cubify(p, x, y, z, min_s: int = 3, max_s: Optional[int] = 6, z_offset=0):
@@ -121,14 +125,15 @@ def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
 
 @pytest.fixture(scope="session")
 def client():
-    resource.setrlimit(resource.RLIMIT_NOFILE, (10000, 10000))
+    if resource is not None:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (10000, 10000))
 
     cluster = LocalCluster(dashboard_address=None)
     yield cluster.get_client()
     cluster.close()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def project_path(synthetic_data):
     """Returns a path that conains a valid project"""
     return synthetic_data[0]
@@ -137,11 +142,14 @@ def project_path(synthetic_data):
 @pytest.fixture
 def project(project_path, client):
     """A fixture for a valid project instance"""
-    return Project(project_path, client=client)
+    project = Project(project_path, client=client)
+    yield project
+    project.clear_caches(True)
 
 
 @pytest.fixture
 def project_with_sources(project):
     """A fixture for a valid project instance, incl. added sources"""
     project.add_source("synth_data", "mito")
-    return project
+    yield project
+    project.clear_caches(True)

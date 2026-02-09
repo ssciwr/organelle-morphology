@@ -5,6 +5,7 @@
 from collections import defaultdict
 from pathlib import Path
 
+from dask.delayed import delayed
 from tqdm import tqdm
 import trimesh
 from trimesh import Trimesh
@@ -53,6 +54,13 @@ s = p.sources["mito_it00_b0_7_stitched"]
 p.clipping = [[0.6,0,0], [1,1,1]]
 s.calculate_mesh(debug_color=2)
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
+show(mmesh)
+
+# %% debug colors -- correct merging
+s = p.sources["mito_it00_b0_7_stitched"]
+p.clipping = [[0.6,0,0], [1,1,1]]
+s.calculate_mesh(debug_color=0)
+mmesh = merge_meshes(list(s.meshes.values()), color=2).compute()
 show(mmesh)
 
 # %% weired cubes in the middle
@@ -104,14 +112,19 @@ p.skeleton_info
 o.mesh_properties
 o.geometric_data
 
+# %% mcs
+p.clipping = [[0.5,0.5,0.4], [0.6,0.6,1]]
+p.compression_level = "s2"
+p.max_distance = 0.1
+p.search_mcs(0.1)
+
+
+
 
 # %% Curvature
 o.curvature_map
 color_delayed_trimesh_rgba(o.mesh, o.curvature_map).compute().show()
 
-curv, meshes = s.get_curvature(label)
-curv, meshes = s.get_curvature(None)
-merge_meshes(meshes).show()
 
 
 # %% distances
@@ -181,15 +194,3 @@ bmesh.show()
 # %%
 with open("/home/kriedmiller/test/mmesh_overlap.stl", "wb") as f:
     f.write(trimesh.exchange.stl.export_stl(mmesh))
-
-
-# %% ### Merge seams ###
-s.calculate_mesh(reduction_factor=0, overlap=True)
-mmesh = Trimesh() # all meshes, but should be only the overlapping
-for mesh in tqdm(meshes[:]):
-    mmesh += mesh
-mmesh.merge_vertices(merge_tex=True, merge_norm=True, digits_vertex=1, digits_norm=1, digits_uv=1)
-np.unique(mmesh.unique_faces(),return_counts=True)
-mmesh.update_faces(mmesh.unique_faces())
-
-# %%

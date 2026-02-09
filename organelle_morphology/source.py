@@ -30,7 +30,7 @@ from organelle_morphology.util import (
     color_delayed_trimesh_rgba,
     get_skeleton_info,
     merge_meshes,
-    mesure_gaussian_curvature_delayed,
+    measure_gaussian_curvature_delayed,
     sample_skeleton,
 )
 
@@ -110,7 +110,6 @@ def _block_mesher(
     mesher = Mesher((1, 1, 1))
     mesher.mesh(block, close=False)
     meshes = {}
-    assert len(mesher.ids()) == np.unique(block).shape[0] - 1  # zero is no label
 
     for id in mesher.ids():
         assert meshes.get(id) is None, f"{id} was in mesh already!"
@@ -394,7 +393,16 @@ class DataSource:
 
     @property
     def metadata(self) -> dict:
-        """Return the metadata of this source. Loads the metadata, if necessary"""
+        """Return the metadata of this source. Loads the metadata, if necessary
+
+        coarse_level: coarsest level available
+        data_root: path to n5 data directory
+        downsampling: list of factors by which the resolution can be decreased
+        levels: names of downsampling levels, aligned with downsampling list
+        name: name
+        resolution: size of one voxel at highest resolution
+        size: number of voxels at highest resolution
+        """
 
         if self._metadata is None:
             self.load_metadata()
@@ -440,7 +448,7 @@ class DataSource:
         """Get the curvature map for all organelles"""
         self.logger.debug("get curvature map for all organelles")
 
-        self.get_curvature(labels=None, color=False)
+        self.calc_curvature(labels=None)
         return self._curvature_map
 
     @property
@@ -449,10 +457,12 @@ class DataSource:
 
     @property
     def curvature_radius(self) -> float:
+        if self._curv_radius is None:
+            self._curv_radius = self.resolution[0] * 2
         return self._curv_radius
 
     @curvature_radius.setter
-    def curvature_radius(self, radius):
+    def curvature_radius(self, radius: float):
         """Set the radius for curvature calculations.
         Resets the cached curvature.
         """
@@ -461,11 +471,10 @@ class DataSource:
             self._curvature_map = {}
 
     @property
-    def clipping_corners(self):
-        """Lower and upper clipping corner after scaling"""
-        if self.project.clipping is not None:
-            if self._clip_low_corner is None or self._clip_high_corner is None:
-                self.get_data(None)
+    def clipping_corners(self) -> tuple[np.ndarray, np.ndarray]:
+        """Lower and upper clipping corner in units of the resolution"""
+        if self._clip_low_corner is None or self._clip_high_corner is None:
+            self.get_data(None)
         return self._clip_low_corner, self._clip_high_corner
 
     @clipping_corners.setter
@@ -475,12 +484,8 @@ class DataSource:
     @property
     def clipping_corners_data(self):
         """Lower and upper clipping corner matching the raw data"""
-        if self.project.clipping is not None:
-            if (
-                self._clip_low_corner_data is None
-                or self._clip_high_corner_data is None
-            ):
-                self.get_data(None)
+        if self._clip_low_corner_data is None or self._clip_high_corner_data is None:
+            self.get_data(None)
         return self._clip_low_corner_data, self._clip_high_corner_data
 
     @clipping_corners_data.setter
@@ -502,17 +507,16 @@ class DataSource:
         Returns:
             Dask array of the data. Respects the in the project set clipping.
         """
-        if compression_level is None:
-            self._level = self.project.compression_level
+        level = compression_level
+        if level is None:
+            level = self.project.compression_level
 
-        data_at_level: z5py.dataset.Dataset = getattr(
-            self.timepoint, str(self._level)
-        ).data
+        data_at_level: z5py.dataset.Dataset = getattr(self.timepoint, str(level)).data
 
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
 
-        _idx = np.nonzero(np.array(self.metadata["levels"]) == self._level)[0][0]
+        _idx = np.nonzero(np.array(self.metadata["levels"]) == level)[0][0]
 
         cube_slice = (slice(None), slice(None), slice(None))
 
@@ -529,13 +533,13 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        if clipping is None:
-            self._scaling_factors = self.metadata["downsampling"][_idx]
-            self.clipping_corners_data = (c_low_d, c_high_d)
-            self.clipping_corners = (
-                c_low_d * self._scaling_factors,
-                c_high_d * self._scaling_factors,
-            )
+        # self._scaling_factors = self.metadata["downsampling"][_idx]
+        self._scaling_factors = self.resolution
+        self.clipping_corners_data = (c_low_d, c_high_d)
+        self.clipping_corners = (
+            c_low_d * self._scaling_factors,
+            c_high_d * self._scaling_factors,
+        )
 
         return data[cube_slice]
 
@@ -663,56 +667,77 @@ class DataSource:
 
         return self._meshes
 
-    def get_curvature(self, labels: Optional[int | list[int]], color=True, log=True):
+    def calc_curvature(self, labels: Optional[int | list[int]] = None) -> dict:
         """Calculate the curvature on vertices.
         If no label is supplied, all meshes are calculated.
-        To color the meshes they are all moved to a singel worker, avoid for
-        large meshes.
 
-        Parameters
-        ----------
-        labels
-            Optional label or list of labels of meshes to compute the curvature for.
-        color
-            Whether to color the original mesh according to the curvature.
-            Defaults to True
-        log
-            Use a log color scale
-
-        Returns
-        -------
-        curvature
-            List of arrays of the curvature at each vertex. List over all labels.
-        mesh
-            Only returned if color is requested. List of computed meshes, colored
-            by curvature.
+        Args:
+            labels: Optional label or list of labels of meshes to compute
+            the curvature for.
+        Returns:
+            curvature_map dict for all labels
         """
         if labels is None:
             labels = self.labels
         if not isinstance(labels, (list, tuple)):
             labels = [labels]
 
+        if all([la in self._curvature_map for la in labels]):
+            self.logger.debug("All curvatures already calculated.")
+            return self._curvature_map
+
+        tasks = []
+        self.logger.debug("Starting curvature calculation")
+        for label in labels:
+            dmesh = self.meshes[label]
+            curvature = measure_gaussian_curvature_delayed(
+                dmesh, radius=self.curvature_radius
+            )
+            tasks.append(curvature)
+
+        result = compute(*tasks)
+        self._curvature_map.update({label: result[i] for i, label in enumerate(labels)})
+        return self._curvature_map
+
+    def get_curvature_range(self):
+        # mean_mean = np.mean([c.mean() for c in self._curvature_map.values()])
+        mean_std = np.mean([c.std() for c in self._curvature_map.values()])
+
+        return {
+            "vmin": -15 * mean_std,
+            "vmax": 15 * mean_std,
+        }
+
+    def get_meshes_curvature_colored(
+        self,
+        labels: Optional[int | list[int]] = None,
+        vmin: Optional[float] = None,
+        vmax: Optional[float] = None,
+        log=True,
+    ) -> list[Delayed]:
+        if labels is None:
+            labels = self.labels
+        if not isinstance(labels, (list, tuple)):
+            labels = [labels]
+
+        self.calc_curvature(labels)
+        if vmin is None or vmax is None:
+            new_maxima = self.get_curvature_range()
+        if vmin is None:
+            vmin = new_maxima["vmin"]
+        if vmax is None:
+            vmax = new_maxima["vmax"]
+
         tasks = []
         for label in labels:
             dmesh = self.meshes[label]
-            if label in self._curvature_map:
-                curvature = self._curvature_map[label]
-                tasks.append(curvature)
-            else:
-                curvature = mesure_gaussian_curvature_delayed(
-                    dmesh, radius=self._curv_radius
+            curvature = self._curvature_map[label]
+            tasks.append(
+                color_delayed_trimesh_rgba(
+                    dmesh, curvature, log=log, vmin=vmin, vmax=vmax
                 )
-                tasks.append(curvature)
-            if color:
-                tasks.append(color_delayed_trimesh_rgba(dmesh, curvature, log=log))
-        step = 2 if color else 1
-        result = compute(*tasks)
-        self._curvature_map = {
-            label: result[::step][i] for i, label in enumerate(labels)
-        }
-        if color:
-            return result[::2], result[1::2]
-        return result
+            )
+        return tasks
 
     def calculate_mesh(
         self,
@@ -752,20 +777,29 @@ class DataSource:
             return mesh
 
         if overlap:
-            d_data = da.overlap.overlap(
-                self.data, depth={0: 2, 1: 2, 2: 2}, boundary={0: 0, 1: 0, 2: 0}
-            ).to_delayed()
+            overlapped = da.overlap.overlap(
+                self.data, depth={0: 2, 1: 2, 2: 2}, boundary="reflect"
+            )
+            chunks = overlapped.chunks
+            d_data = overlapped.to_delayed()
         else:
+            chunks = self.data.chunks
             d_data = self.data.to_delayed()
         _meshes_chunked = np.empty_like(d_data)
         ids_chunked = np.empty_like(d_data)
-
         assert self._clip_low_corner_data is not None
+
         # cumsum of chunksizes over xyz, starting from lower clipping bound
-        size_offset_cumsum = [
-            np.cumsum(np.array([self._clip_low_corner_data[dim]] + list(ch)))
-            for dim, ch in enumerate(self.data.chunks)
-        ]
+        size_offset_cumsum = []
+        for dim, ch in enumerate(chunks):
+            if overlap:
+                # remove overlap to get correct size
+                ch = [c - 4 for c in ch]
+            else:
+                ch = list(ch)
+            size_offset_cumsum.append(
+                np.cumsum(np.array([self._clip_low_corner_data[dim]] + ch))
+            )
 
         for index, d_block in np.ndenumerate(d_data):
             space_offset = tuple(
@@ -801,7 +835,7 @@ class DataSource:
         # get some statistics
         all_chunks = list(_ids_to_chunks.values())
         all_ids = np.array(list(_ids_to_chunks.keys()))
-        id_amounts = [len(idxs) for idxs in all_chunks]
+        id_amounts = np.array([len(idxs) for idxs in all_chunks])
         amounts, inverse, freqs = np.unique(
             id_amounts, return_counts=True, return_inverse=True
         )
@@ -810,7 +844,7 @@ class DataSource:
 
         # Cleanup: Merge meshes crossing chunks
         self._meshes = {}
-        duplicate_ids = all_ids[np.nonzero(inverse != 0)]
+        duplicate_ids = all_ids[np.nonzero(id_amounts > 1)]
         for ind in duplicate_ids:
             chunk_idxs = _ids_to_chunks[ind]
             meshes = [_meshes_chunked[idx][ind] for idx in chunk_idxs]
@@ -819,7 +853,7 @@ class DataSource:
                 merged_mesh = simplify_mesh(merged_mesh, simplify)
             self._meshes[ind] = merged_mesh
 
-        unique_ids = all_ids[np.nonzero(inverse == 0)]
+        unique_ids = all_ids[np.nonzero(id_amounts == 1)]
         for ind in unique_ids:
             mesh = _meshes_chunked[_ids_to_chunks[ind][0]][ind]
             if simplify:
@@ -848,8 +882,7 @@ class DataSource:
         self._clip_low_corner_data = None
         self._clip_high_corner_data = None
         self._scaling_factors = None
-        self._level = None
-        self._curv_radius = 4.0
+        self._curv_radius = None
 
     def instantiate_organelles(self):
         if self._organelles is None:

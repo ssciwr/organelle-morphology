@@ -69,3 +69,10 @@ write_to = "organelle_morphology/_version.py"
 # The following is the configuration for the pytest test suite
 [tool.pytest.ini_options]
 testpaths = ["tests", "notebooks"]
+
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.paths]
+source = ["organelle_morphology"]

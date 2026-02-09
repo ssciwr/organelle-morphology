@@ -1,7 +1,8 @@
 import pytest
 from organelle_morphology import source
 import numpy as np
-from dask import compute
+from dask.base import compute
+import dask.array as da
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
@@ -46,6 +47,20 @@ def test_block_mesher_c_on_edge(voxels_c_on_edge):
     )
     assert len(meshes) == 1
     assert len(ids) == 1
+
+
+def test_block_mesher_solid():
+    voxels = np.ones((10, 10, 10))
+    meshes, ids = compute(
+        *source._block_mesher(
+            block=voxels,
+            space_offset=(0, 0, 0),
+            debug_color=0,
+        ),
+        scheduler="single-threaded",
+    )
+    assert len(meshes) == 0
+    assert len(ids) == 0
 
 
 def plot_voxels(voxels):
@@ -142,21 +157,116 @@ def test_curvature_map(project_with_sources):
     assert len(curvs) == 19
 
 
-def test_curvature(project_with_sources):
+@pytest.mark.parametrize("chunksize", range(0, 7))
+def test_calculate_mesh(project_with_sources, mocker, chunksize):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+    if chunksize == 0:
+        chunksize = -1
+
+    data = np.arange(343).reshape((7, 7, 7))
+    data = da.from_array(data, chunks=chunksize)
+    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+    mock_data.return_value = data
+
+    s.calculate_mesh()
+    assert len(list(s._meshes.keys())) == 342
+
+
+@pytest.mark.parametrize("chunksize", range(0, 7))
+def test_calculate_mesh_clipped(project_with_sources, mocker, chunksize):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+    if chunksize == 0:
+        chunksize = -1
+
+    p.clipping = ((0.3, 0.3, 0.3), (1, 1, 1))
+
+    data = np.arange(1000).reshape((10, 10, 10))
+    data = da.from_array(data, chunks=chunksize)
+    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+    mock_data.return_value = data
+
+    s.calculate_mesh()
+    assert len(list(s._meshes.keys())) == 343
+
+
+@pytest.mark.parametrize("rep", range(20))
+def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+
+    o1 = np.random.randint(4) + 1
+    o2 = np.random.randint(4) + 1
+    o3 = np.random.randint(4) + 1
+    data = np.zeros((1000,), dtype=int).reshape((10, 10, 10))
+    data[o1 : o1 + 4, o2 : o1 + 4, o3 : o1 + 4] = 1
+    data = da.from_array(data, chunks=5)
+    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+    mock_data.return_value = data
+
+    # for debugging:
+    import dask
+
+    dask.config.set(scheduler="synchronous")
+    s.calculate_mesh(debug_color=0)
+
+    mesh = list(s._meshes.values())[0].compute()
+    assert mesh.is_watertight
+    assert len(list(s._meshes.keys())) == 1
+    assert (
+        np.count_nonzero(np.unique(mesh.vertices, axis=0, return_counts=True)[1] != 1)
+        == 0
+    )
+
+
+def test_get_meshes_curvature_colored(project_with_sources, mocker):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+
+    mock_calc_curv = mocker.patch.object(s, "calc_curvature")
+    s._curvature_map = {
+        la: np.ones(s.meshes[la].compute().vertices.shape[0]) for la in s.labels
+    }
+
+    meshes = s.get_meshes_curvature_colored(labels=None)
+    assert len(meshes) == 19
+    mock_calc_curv.assert_called_with(s.labels)
+    meshes = s.get_meshes_curvature_colored(labels=1)
+    assert len(meshes) == 1
+    meshes = s.get_meshes_curvature_colored(labels=[3, 2])
+    assert np.all(sum(meshes).compute().visual.vertex_colors == [5, 48, 97, 255])
+    assert len(meshes) == 2
+
+
+def test_calc_curvature(project_with_sources, mocker):
+    """Test the calc_curvature method directly"""
     s = list(project_with_sources.sources.values())[0]
-    res = s.get_curvature(labels=None, color=True, log=True)
-    assert len(res) == 2
-    assert len(res[0]) == len(res[1])
-    assert all([v.shape == (m.vertices.shape[0],) for v, m in zip(res[0], res[1])])
+    s.labels  # compute before mocking `compute`
 
-    res = s.get_curvature(labels=None, color=True, log=False)
-    assert len(res) == 2
-    assert len(res[0]) == len(res[1])
-    assert all([v.shape == (m.vertices.shape[0],) for v, m in zip(res[0], res[1])])
+    mock_logger = mocker.patch.object(s, "logger")
+    mock_compute = mocker.patch("organelle_morphology.source.compute")
 
-    res = s.get_curvature(labels=None, color=False)
-    assert len(res) == 19
-    assert all([isinstance(r, np.ndarray) for r in res])
+    mock_compute.return_value = s.labels  # list as long as the labels
+    ret = s.calc_curvature(labels=None)
 
-    res = s.get_curvature(labels=s.labels[0], color=False)
-    assert len(res) == 1
+    assert ret is s._curvature_map
+    assert len(s._curvature_map) == 19
+    mock_compute.assert_called_once()
+
+    mock_logger.debug.reset_mock()
+
+    s.calc_curvature(labels=s.labels[5])
+
+    mock_compute.assert_called_once()  # not called again
+    mock_logger.debug.assert_called_with("All curvatures already calculated.")
+
+    mock_logger.debug.reset_mock()
+    labels_to_clear = s.labels[:3]
+    for label in labels_to_clear:
+        if label in s._curvature_map:
+            del s._curvature_map[label]
+
+    s.calc_curvature(labels=labels_to_clear + [s.labels[5]])
+
+    assert len(s._curvature_map) == 19

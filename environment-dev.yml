@@ -17,11 +17,11 @@ dependencies:
   - scipy
   - scikit-image
   - z5py
-  - zmesh
   - pip:
       - python-fcl
       - setuptools==65.7.0
       - trimesh[easy,recommend]
       - xdg
       - skeletor
+      - zmesh
       - -e ./
