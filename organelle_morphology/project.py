@@ -355,7 +355,7 @@ class Project:
                     )
                 )
             to_show.extend(compute(*meshes))
-        else:
+        else:  # not curvature
             if ids_highlight is not None:
                 orgs_highlight = self.get_organelles(ids_highlight)
                 to_merge = []

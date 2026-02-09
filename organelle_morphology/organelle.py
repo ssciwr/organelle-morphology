@@ -201,9 +201,14 @@ class Organelle:
         self._sampled_skeleton = value
 
     @property
-    def mesh(self):
+    def mesh(self) -> Delayed:
         """Get the mesh for this organelle"""
         return self.source.meshes[self.label]
+
+    def mesh_mcs(self) -> Delayed:
+        """Get mcs colored delayed meshes"""
+
+        return self.mesh
 
     @property
     def id(self):
