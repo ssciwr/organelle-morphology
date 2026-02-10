@@ -63,7 +63,7 @@ class Project:
         """
 
         self._project_path = Path(project_path)
-        self._cache = None
+        self.clear_memory_cache()
 
         self.logger = get_logger(self.path / "om2.log")
         self.set_loglevel(loglevel)
@@ -79,17 +79,6 @@ class Project:
         if clipping is not None:
             self.clipping = clipping
 
-        self._basic_geometric_properties = {}
-        self._mesh_properties = {}
-
-        self._geometric_properties = {}
-
-        self._meshes = {}
-        self._curvature_map = {}
-
-        # {label: {max_distance: float, min_distance: float}}
-        self._mcs_labels = {}
-
         # this permanent filter can be used to soft drop organelles from the project
         # for example if they are too small to be considered
         self.permanent_whitelist = []
@@ -99,7 +88,7 @@ class Project:
         self.compression_level = compression_level
 
         # Max distance for distance calculations
-        self._max_compute_distance = 10
+        self._max_compute_distance = 0.0
 
         # callables will be updated on demand
         self._cache_settings = {
@@ -311,8 +300,9 @@ class Project:
         skeleton=False,
         curv_log=True,
         color_instances=False,
+        mcs_min: Optional[float] = None,
+        mcs_max: Optional[float] = None,
     ):
-        # TODO: mcs visualization
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
             self.logger.warning(f"Selection {ids} does not match any organelles!")
@@ -326,7 +316,21 @@ class Project:
             transp = True
 
         to_show = []
-        if curvature:
+        if mcs_max is not None:
+            if mcs_min is None:
+                mcs_min = 0.0
+            mcs_label = self.search_mcs(max_distance=mcs_max, min_distance=mcs_min)
+            mcs_orgs = self.mcs_labels[mcs_label]["organelles"]
+            meshes = []
+            for org in orgs:
+                if org.id in mcs_orgs:
+                    meshes.append(org.get_mesh_mcs_colored(mcs_label))
+                else:
+                    meshes.append(org.mesh)
+            mmesh = merge_meshes(meshes, color=0, transp=transp)
+            to_show = [mmesh.compute()]
+
+        elif curvature:
             org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
             for o in orgs:
                 org_per_source[o.source].append(o)
@@ -355,7 +359,7 @@ class Project:
                     )
                 )
             to_show.extend(compute(*meshes))
-        else:
+        else:  # not curvature or mcs
             if ids_highlight is not None:
                 orgs_highlight = self.get_organelles(ids_highlight)
                 to_merge = []
@@ -619,7 +623,12 @@ class Project:
 
             return df_mean
 
-    def search_mcs(self, max_distance, min_distance=0, override_mcs_label=False):
+    def search_mcs(
+        self,
+        max_distance: float,
+        min_distance: float = 0.0,
+        ovewrite_mcs_label=False,
+    ):
         """
         This function is used to search for membrane contact sites within a project.
         Pairs will only be selected when their minimum mesh distance is between
@@ -632,12 +641,14 @@ class Project:
             min_distance (float, optional): The minimum distance for the MCS pairs. Defaults to 0.
 
         Returns:
-            None
+            str: The label of this mcs search
         """
 
         if max_distance > self.max_distance:
             self.max_distance = max_distance
-        generate_mcs(self, max_distance, min_distance, override=override_mcs_label)
+        return generate_mcs(
+            self, max_distance, min_distance, overwrite=ovewrite_mcs_label
+        )
 
     @property
     def mcs_labels(self):
@@ -647,7 +658,7 @@ class Project:
                 f"  {key}: {value['min_distance']}um - {value['max_distance']}um\n"
             )
 
-        self.logger.info("Available MCS labels and their search radius: \n%s", mcs_str)
+        self.logger.debug("Available MCS labels and their search radius: \n%s", mcs_str)
         return self._mcs_labels
 
     def hist_distance_matrix(
@@ -1125,12 +1136,22 @@ class Project:
         self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
         return caches
 
+    def clear_memory_cache(self):
+        """(Re)initialize project-level storage."""
+
+        self._basic_geometric_properties = {}
+        self._mesh_properties = {}
+        self._geometric_properties = {}
+        self._curvature_map = {}
+        self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
+        self._cache = None
+
     def clear_caches(self, clear_disk=False):
         """Clear all caches related to this project, optionally also from disk"""
 
         for source in self.sources.values():
             source.clear_memory_cache()
-        self._cache = None
+        self.clear_memory_cache()
         self.logger.debug("Cleared memory cache of all sources.")
 
         if clear_disk:

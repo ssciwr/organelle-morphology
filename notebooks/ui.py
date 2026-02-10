@@ -90,15 +90,16 @@ def _(project):
 
 
 @app.cell
-def _(get_source_header, run_add_source):
+def _(get_source_header, project, run_add_source):
     run_add_source
+    sources = list(project.sources.values())
     get_source_header()
-    return
+    return (sources,)
 
 
 @app.cell
-def _(project, run_add_source):
-    mo.stop(len(project.sources) < 1, "Add a source first!")
+def _(project, run_add_source, sources):
+    mo.stop(len(sources) < 1, "Add a source first!")
     run_add_source
 
     cl_switch = mo.ui.switch(value=False, label="Clipping")
@@ -167,18 +168,35 @@ def _(change_settings_button, project):
 
 
 @app.cell
-def _():
-    run_progress = mo.ui.button(
-        label="Refresh Progress View", value=0, on_click=lambda v: v + 1
+def _(project):
+    import webbrowser
+
+    def open_url_in_new_tab(url):
+        try:
+            webbrowser.open_new_tab(url)
+            return True
+        except Exception as e:
+            print(f"Failed to open URL: {e}")
+            return False
+
+    show_dashboard_button = mo.ui.button(
+        label="Show Dashboard",
+        on_click=lambda _: open_url_in_new_tab(project.client.dashboard_link),
     )
-    run_progress
-    return (run_progress,)
+    reset_client_button = mo.ui.button(
+        label="Reset dask",
+        on_click=lambda _: project.recreate_client(),
+    )
+
+    mo.hstack([show_dashboard_button, reset_client_button], justify="center")
+    return
 
 
 @app.cell
-def _(run_progress):
-    mo.stop(run_progress.value == 0, "Please refresh once the project is created")
-    url = "http://localhost:8787/individual-progress"
+def _(project):
+    # mo.stop(run_progress.value == 0, "Please refresh once the project is created")
+    url = project.client.dashboard_link.split("/")
+    url = "/".join(url[:-1]) + "/individual-progress"
     mo.iframe(
         f'<iframe src="{url}" width="100%" height="600" frameborder="0"></iframe>',
         width="100%",
@@ -188,8 +206,8 @@ def _(run_progress):
 
 
 @app.cell
-def _(project):
-    mo.stop(len(project.sources) < 1, "Add a source first!")
+def _(sources):
+    mo.stop(len(sources) < 1, "Add a source first!")
     run_show_mesh = mo.ui.run_button(label="Show Mesh")
     mesh_id_filter = mo.ui.text(value="*", label="Organelle id filter")
     highlight_filter = mo.ui.text(value="", label="Highligh ids")
@@ -211,7 +229,10 @@ def _(project):
     curvature_check = mo.ui.checkbox(label="Curvature", value=False)
     log_check = mo.ui.checkbox(label="log scale", value=True)
 
-    sources = list(project.sources.values())
+    mcs_checkbox = mo.ui.checkbox(label="MCS", value=False)
+    mcs_min_ui = mo.ui.number(label="Min dist", value=0.0, step=0.001)
+    mcs_max_ui = mo.ui.number(label="Max dist", value=0.1, step=0.001)
+
     rad = sources[0].curvature_radius
 
     curv_radius_slider = mo.ui.slider(
@@ -235,6 +256,12 @@ def _(project):
                 justify="start",
             ),
             color_indiv_check,
+            mo.hstack(
+                [mcs_checkbox, mo.md(f"(Resolution: {sources[0].resolution})")],
+                justify="start",
+            ),
+            mcs_min_ui,
+            mcs_max_ui,
             box_dict,
             mo.hstack(
                 [
@@ -252,6 +279,9 @@ def _(project):
         curvature_check,
         highlight_filter,
         log_check,
+        mcs_checkbox,
+        mcs_max_ui,
+        mcs_min_ui,
         mesh_id_filter,
         popout_viewer_check,
         run_show_mesh,
@@ -267,6 +297,9 @@ def show_mesh(
     curvature_check,
     highlight_filter,
     log_check,
+    mcs_checkbox,
+    mcs_max_ui,
+    mcs_min_ui,
     mesh_id_filter,
     popout_viewer_check,
     project,
@@ -295,6 +328,12 @@ def show_mesh(
     for source in project.sources.values():
         source.curvature_radius = curv_radius_slider.value
 
+    mcs_min = None
+    mcs_max = None
+    if mcs_checkbox.value:
+        mcs_min = mcs_min_ui.value
+        mcs_max = mcs_max_ui.value
+
     scene = project.show(
         box=box,
         ids=mesh_id_filter.value,
@@ -303,6 +342,8 @@ def show_mesh(
         skeleton=skeleton_check.value,
         curv_log=log_check.value,
         color_instances=color_indiv_check.value,
+        mcs_min=mcs_min,
+        mcs_max=mcs_max,
     )
     viewer = "marimo"
     if popout_viewer_check.value:
@@ -312,7 +353,8 @@ def show_mesh(
 
 
 @app.cell
-def _():
+def _(sources):
+    mo.stop(len(sources) < 1, "Add a source first!")
     skel_dict = mo.ui.dictionary(
         {
             "theta": mo.ui.number(value=0.4),
@@ -358,21 +400,6 @@ def _(project, run_skeleton_button, skel_form):
         elif form["method"] == "vertex cluster":
             settings.pop("waves")
             project.skeletonize_vertex_clusters(**settings)
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
     return
 
 
@@ -456,7 +483,8 @@ def _(box_dict, mesh_id_filter, project):
 
 
 @app.cell
-def _():
+def _(sources):
+    mo.stop(len(sources) < 1, "Add a source first!")
     of_ids_source = mo.ui.text(label="Labels 1", value="*")
     of_ids_target = mo.ui.text(label="Labels 2", value="*")
     of_filter_dist = mo.ui.number(label="Filter distance [um]", value=1)
@@ -505,8 +533,8 @@ def _(
 
 
 @app.cell
-def _(project):
-    project.distance_matrix
+def _(sources):
+    mo.stop(len(sources) < 1, "Add a source first!")
     return
 
 
