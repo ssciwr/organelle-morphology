@@ -62,10 +62,10 @@
       },
       {
         "position": [
-          20,
-          5,
+          18,
           4,
-          2
+          6,
+          3
         ]
       },
       {
@@ -85,53 +85,50 @@
         ]
       },
       {
-        "position": null
-      },
-      {
         "position": [
           6,
           40,
           18,
-          29
+          28
         ]
       },
       {
         "position": [
           0,
-          89,
-          9,
-          20
+          68,
+          8,
+          19
         ]
       },
       {
         "position": [
           0,
-          109,
-          9,
-          4
-        ]
-      },
-      {
-        "position": null
-      },
-      {
-        "position": null
-      },
-      {
-        "position": null
+          87,
+          8,
+          13
+        ],
+        "scrollable": true
       },
       {
         "position": [
-          16,
-          69,
+          18,
+          82,
           6,
-          9
+          7
         ]
       },
       {
         "position": [
-          16,
-          78,
+          18,
+          89,
+          6,
+          21
+        ]
+      },
+      {
+        "position": [
+          15,
+          110,
           8,
           29
         ]
@@ -139,14 +136,11 @@
       {
         "position": [
           0,
-          69,
+          106,
           9,
           20
         ],
         "scrollable": true
-      },
-      {
-        "position": null
       },
       {
         "position": null

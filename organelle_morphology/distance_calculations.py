@@ -108,7 +108,7 @@ class MembraneContactSiteCalculator:
             for i in range(len(self.distances))
             if self.dot_products[i] < 0
         ]
-        mean_distance_normal = 0.0
+        mean_distance_normal = np.nan
         if _normal_dists:
             mean_distance_normal = np.mean(_normal_dists)
 
@@ -117,7 +117,7 @@ class MembraneContactSiteCalculator:
             for i in range(len(self.distances))
             if self.dot_products[i] > 0
         ]
-        mean_distance_inverse = 0.0
+        mean_distance_inverse = np.nan
         if _inverse_dists:
             mean_distance_inverse = np.mean(_inverse_dists)
 
@@ -241,6 +241,11 @@ def generate_distance_matrix(
         source = sources[0]
     else:
         raise ValueError("No sources loaded! Can't calculate distances.")
+    if max_dist == 0:
+        max_dist = source.resolution[0] * 10
+        project.logger.warning(
+            f"No max distance set, calculating distance matrix up to {max_dist}"
+        )
 
     if "max_distance_computed" in cache:
         max_cached = cache["max_distance_computed"]
