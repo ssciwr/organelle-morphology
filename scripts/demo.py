@@ -124,7 +124,19 @@ mesh.compute().show()
 p.show(mcs_max=0.02)
 
 
+# %% MCS queries
+p.clipping = [[0.5,0.6,0.5], [0.6,0.7,1]]
+p.compression_level = "s2"
 
+p.max_distance = 0.2
+p.distance_analysis()
+p.search_mcs(0.05, ids_filter_1="mito*", ids_filter_2="er*")
+p.get_mcs_overview()
+
+# %%
+p.clipping = None
+p.compression_level = "s3"
+p.search_mcs(0.05, ids_filter_1="mito*", ids_filter_2="er*")
 
 # %% Curvature
 o.curvature_map
