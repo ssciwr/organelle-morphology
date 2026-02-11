@@ -121,7 +121,9 @@ class MembraneContactSiteCalculator:
         if _inverse_dists:
             mean_distance_inverse = np.mean(_inverse_dists)
 
-        if mean_distance_normal < mean_distance_inverse:
+        if mean_distance_normal < mean_distance_inverse or np.isnan(
+            mean_distance_inverse
+        ):
             self._filter_distances(lambda i: self.dot_products[i] < 0)
         else:
             self._filter_distances(lambda i: self.dot_products[i] > 0)
@@ -131,19 +133,19 @@ class MembraneContactSiteCalculator:
         self.mesh_source = mesh_source
         self.mesh_target = mesh_target
 
-    def analyze_mcs(self, max_distance, min_distance=0.0):
+    def analyze_mcs(self, mcs_label: str, max_distance: float, min_distance=0.0):
         """After searching the entire surface we now filter only the area we are interested in
 
-        :param max_distance:  Maximum distance to the other organelle
-        :type max_distance: float
-        :param min_distance: minimum distance, defaults to 0
-        :type min_distance: int, optional
-        :raises ValueError: search_mcs must be performed first.
-        """
-        if self.distances is None:
-            raise ValueError("No MCS found. Please run search_mcs first.")
+        Args:
+            mcs_label (str): label of this mcs search
+            max_distance (float): Maximum distance to the other organelle
+            min_distance (float, optional): minimum distance. Defaults to 0.
 
-        self.mcs_label = f"{min_distance}-{max_distance}"
+        Raises:
+            ValueError: search_mcs must be performed first.
+        """
+
+        self.mcs_label = mcs_label
 
         filtered_indices = [
             i
@@ -200,7 +202,6 @@ class MembraneContactSiteCalculator:
             "self_id": self.id_target,
             "partner_id": self.id_source,
             "mcs_label": self.mcs_label,
-            # "vertices": self._vertices_target, # TODO: Remove unnecessary this copy
             "vertices_index": self._vertices_index_target,
             "distances": self._distances,
             "area": self._area_target,
@@ -217,7 +218,6 @@ class MembraneContactSiteCalculator:
             "self_id": self.id_source,
             "partner_id": self.id_target,
             "mcs_label": self.mcs_label,
-            # "vertices": self._vertices_source, # TODO: Remove unnecessary this copy
             "vertices_index": self._vertices_index_source,
             "distances": self._distances,
             "area": self._area_source,
@@ -367,29 +367,49 @@ def generate_distance_matrix(
 
 
 def generate_mcs(
-    project, max_distance: float, min_distance: float = 0, overwrite=False
+    project,
+    ids_filter_1: str,
+    ids_filter_2: str,
+    max_distance: float,
+    min_distance: float = 0,
+    overwrite=False,
 ) -> str:
-    """
-    Generates the MCS (Membrane Contact Site) pairs for a given project.
+    """Generates the MCS (Membrane Contact Site) pairs for a given project.
+    The MCSs are calculated between two sets of organelles, defined by the
+    two filter strings provided.
 
 
     Args:
-        project (Project): The project object containing the distance matrix and organelles.
+        project (Project): The project object containing the distance
+            matrix and organelles.
         max_distance (float): The maximum distance for the MCS pairs.
-        min_distance (float, optional): The minimum distance for the MCS pairs. Defaults to 0.
+        min_distance (float, optional): The minimum distance for the MCS pairs.
+            Defaults to 0.
+        ids_filter_1 (str, optional): Filter for the first set of
+            organelles using glob-style patterns. Defaults to "*".
+        ids_filter_2 (str, optional): Filter for the second set of
+            organelles using glob-style patterns. Defaults to "*".
+
+        overwrite (bool, optional): Whether to overwrite existing MCS data.
+            Defaults to False.
 
     Returns:
-        str: the label of this mcs search
+        str: The label of this MCS search
     """
-    mcs_label = f"{min_distance}-{max_distance}"
 
+    if max_distance > project.max_distance:
+        project.max_distance = max_distance
+    label_1 = ids_filter_1.replace("*", "")
+    label_2 = ids_filter_2.replace("*", "")
+    mcs_label = f"{min_distance}-{max_distance},{label_1}-{label_2}"
     if project._mcs_labels.get(mcs_label) and not overwrite:
         return mcs_label
 
+    ids_1 = project.get_organelle_ids(ids_filter_1)
+    ids_2 = project.get_organelle_ids(ids_filter_2)
     distance_matrix = project.distance_matrix
 
     # filter dataframe and get row, column where the distance is between min_distance and max_distance
-
     rows, columns = np.where(
         (distance_matrix >= min_distance) & (distance_matrix <= max_distance)
     )
@@ -401,6 +421,9 @@ def generate_mcs(
         org_2_label = distance_matrix.columns[j]
 
         if org_1_label == org_2_label:
+            continue
+
+        if org_1_label not in ids_1 or org_2_label not in ids_2:
             continue
 
         pairs.add(tuple(sorted([org_1_label, org_2_label])))
@@ -421,7 +444,9 @@ def generate_mcs(
         mcs_calculator.search_mcs(
             org_1_label, org_2_label, meshes[org_1_label], meshes[org_2_label]
         )
-        mcs_calculator.analyze_mcs(max_distance, min_distance)
+        mcs_calculator.analyze_mcs(
+            mcs_label, max_distance=max_distance, min_distance=min_distance
+        )
 
         mcs_source = mcs_calculator.mcs_source
         mcs_target = mcs_calculator.mcs_target
@@ -434,7 +459,10 @@ def generate_mcs(
             org1.add_mcs(mcs_target)
             org2.add_mcs(mcs_source)
 
-    org_ids = {distance_matrix.index[i] for i in rows}
+    org_ids = set()
+    for o1, o2 in pairs:
+        org_ids.add(o1)
+        org_ids.add(o2)
     for org_id in org_ids:
         org = project.get_organelles(org_id)[0]
         org.calc_mcs_dict_entry(mcs_label)

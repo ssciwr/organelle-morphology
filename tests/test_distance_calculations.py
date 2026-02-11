@@ -112,7 +112,7 @@ def test_analyze_mcs(project_with_sources):
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", meshes[0], meshes[1])
 
-    calculator.analyze_mcs(90, 0)
+    calculator.analyze_mcs("test", 90, 0)
     assert np.all(calculator._distances < 90)
     assert np.all(calculator._distances > 88)
     assert calculator._distances.shape == (20,)

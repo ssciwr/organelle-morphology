@@ -661,7 +661,8 @@ class DataSource:
                 delayed_saves = []
                 for label, mesh_d in self._meshes.items():
                     delayed_saves.append(_write_to_cache(label, mesh_d, cs))
-                compute(*delayed_saves)
+                self.logger.debug(f"Saving {len(delayed_saves)} meshes")
+                compute(*delayed_saves, traverse=False)
 
                 self.logger.debug("Meshes saved in cache")
 
