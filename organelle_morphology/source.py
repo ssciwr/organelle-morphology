@@ -605,16 +605,18 @@ class DataSource:
             return Trimesh(verts, faces)
 
         @delayed(pure=False)
-        def _write_to_cache(key, mesh, cs):
+        def _write_to_cache_batch(key_values, cs):
+            """Write multiple meshes to cache in a single operation"""
             name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
-            cache[key] = (mesh.vertices, mesh.faces)
+            for key, mesh in key_values:
+                cache[key] = (mesh.vertices, mesh.faces)
 
-        self.logger.debug("Requested meshes")
+        # self.logger.debug("Requested meshes")
         if self._meshes is None or (
             self._computed_compression != self.project.compression_level
         ):
-            self.logger.debug("Meshes not loaded")
+            self.logger.debug(f"Meshes not loaded: {self.org_name}")
             self._meshes = {}
             labels = None
 
@@ -627,7 +629,8 @@ class DataSource:
                     self._meshes[label] = _get_from_cache(label, self.cache)
 
                 # keep meshes in distributed memory, gc previously computed meshes
-                self._storage["ref_meshes"] = persist(*self._meshes.values())
+                # self._storage["ref_meshes"] = persist(*self._meshes.values())
+                self._meshes = persist(self._meshes)[0]
 
                 if self.project.clipping is not None:
                     assert "clipping_data" in self.cache, (
@@ -641,10 +644,10 @@ class DataSource:
                     self._scaling_factors = self.cache["scaling"]
 
                 self._computed_compression = self.project.compression_level
-                self.logger.debug("Meshes loaded from cache")
+                self.logger.debug(f"Meshes {self.org_name} loaded from cache")
 
             else:
-                self.logger.info("Meshes not in cache, calculating..")
+                self.logger.info(f"Meshes {self.org_name} not in cache, calculating..")
                 self.calculate_mesh()
                 self.logger.debug("Saving meshes to cache..")
 
@@ -658,10 +661,20 @@ class DataSource:
                 cs = self.project.cache_settings.copy()
                 cs["source"] = self.xml_path.stem
 
+                # Batch the mesh saving operations to reduce overhead
+                # Group meshes into batches to minimize scheduling overhead
+                batch_size = 500  # Adjust based on your system
                 delayed_saves = []
-                for label, mesh_d in self._meshes.items():
-                    delayed_saves.append(_write_to_cache(label, mesh_d, cs))
-                self.logger.debug(f"Saving {len(delayed_saves)} meshes")
+
+                # Convert to list to allow indexing
+                mesh_items = list(self._meshes.items())
+
+                for i in range(0, len(mesh_items), batch_size):
+                    batch = mesh_items[i : i + batch_size]
+                    delayed_save = _write_to_cache_batch(batch, cs)
+                    delayed_saves.append(delayed_save)
+
+                self.logger.debug(f"Saving {len(delayed_saves)} batches of meshes")
                 compute(*delayed_saves, traverse=False)
 
                 self.logger.debug("Meshes saved in cache")
@@ -828,7 +841,7 @@ class DataSource:
             d_meshes.append(mesh)
 
         # calculate meshes and keep references to make mesh persistend on workers
-        self._storage["ref_meshes"] = persist(*(d_meshes + d_ids))
+        # self._storage["ref_meshes"] = persist(*(d_meshes + d_ids))
 
         _ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
         assert _ids_to_chunks is not None  # for linter
@@ -862,7 +875,8 @@ class DataSource:
             self._meshes[ind] = mesh
 
         # keep references to make simplified meshes persistent, gc raw meshes
-        self._storage["ref_meshes"] = persist(*self._meshes.values())
+        # self._storage["ref_meshes"] = persist(*self._meshes.values())
+        self._meshes = persist(self._meshes)[0]
 
         self._computed_compression = self.project.compression_level
 

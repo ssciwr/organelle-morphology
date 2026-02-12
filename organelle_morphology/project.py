@@ -65,6 +65,7 @@ class Project:
         self._project_path = Path(project_path)
         self.clear_memory_cache()
 
+        self.path.mkdir(exist_ok=True)
         self.logger = get_logger(self.path / "om2.log")
         self.set_loglevel(loglevel)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")

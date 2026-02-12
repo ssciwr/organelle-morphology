@@ -253,10 +253,10 @@ def generate_distance_matrix(
     if (
         "distance_matrix" not in cache or not project.use_cache
     ) or max_dist > max_cached:
-        project.logger.info("Initilizing distance matrix")
+        project.logger.info("Initializing distance matrix")
 
-        project.logger.info("Loading meshes")
-        project.calculate_meshes()
+        # project.logger.info("Loading meshes")
+        # project.calculate_meshes()
 
         organelles = project.organelles
         organelles_ids = project.organelle_ids
@@ -330,6 +330,7 @@ def generate_distance_matrix(
             # no domain decomposition -> all to all
             masks = [np.ones((num_rows,))]
 
+        project.logger.debug("Masks created")
         tasks = []
         empty_cubes = 0
         for mask in masks:
@@ -346,6 +347,7 @@ def generate_distance_matrix(
                     id_2 = organelles_ids[idx2]
                     tasks.append((id_1, id_2, mesh_1, mesh_2))
         project.logger.debug(f"n empty cube: {empty_cubes}")
+        project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
         with multiprocessing.Pool(project.n_workers) as pool:
             results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
