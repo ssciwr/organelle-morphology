@@ -503,7 +503,7 @@ def _(sources):
 
     mo.vstack(
         [
-            mo.md("Filter Organelles"),
+            mo.md("Filter Organelles for distance-based calculations"),
             of_ids_source,
             of_ids_target,
             of_filter_dist,
@@ -521,7 +521,7 @@ def _(sources):
 
 
 @app.cell
-def _(
+def calculation_cell(
     of_attribute,
     of_filter_dist,
     of_ids_source,
@@ -529,25 +529,34 @@ def _(
     of_run_button,
     project,
 ):
+    calc_status = mo.md("Select filter settings and click 'Run filter'")
     mo.stop(not of_run_button.value, "Organelle filter results")
-
-    project.distance_filtering(
-        of_ids_source.value,
-        of_ids_target.value,
-        of_filter_dist.value,
-        of_attribute.value,
-    )
-    return
+    calc_status = mo.md("Calculating...")
+    try:
+        filtered_distance_results = project.distance_filtering(
+            of_ids_source.value,
+            of_ids_target.value,
+            of_filter_dist.value,
+            of_attribute.value,
+        )
+        calc_status = mo.md("Distance calculation is done.")
+    except Exception:
+        calc_status = mo.md(f"Unable to run filter. Clear Cache and try again.\n\n```\n{traceback.format_exc()}\n```")
+    calc_status
+    return filtered_distance_results
 
 
 @app.cell
-def _(of_run_button, project):
-    of_run_button.value
-    mo.ui.table(project.distance_matrix,
-                selection=None,
-                pagination=False,
-                max_height=400,
-                )
+def table_display_cell(filtered_distance_results, of_run_button):
+    table_display = mo.md("Click on \"Run filter\" to see results here.")
+    if of_run_button.value :
+        table_display= mo.ui.table(
+            filtered_distance_results,
+            selection=None,
+            pagination=False,
+            max_height=400,
+        )
+    table_display
     return
 
 
