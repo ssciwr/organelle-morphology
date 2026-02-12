@@ -14,6 +14,65 @@ class Statistics:
 
     def __init__(self, project: Project):
         self.project = project
+    
+    def get_mesh_properties(self) -> list[str]:
+        """Returns a list of all available mesh properties."""
+        mesh_properties = [
+            "mesh_volume",
+            "sphericity",
+            "flatness_ratio",
+            "water_tight",
+            "mesh_area",
+            "mesh_centroid",
+            "mesh_inertia",
+        ]
+        return mesh_properties
+    
+    def get_skeleton_properties(self) -> list[str]:
+        """Returns a list of all available skeleton properties."""
+        skeleton_properties = [
+            "num_nodes",
+            "num_edges",
+            "total_length",
+            "avg_edge_length",
+            "num_branch_points",
+            "end_points",
+            "mean_length",
+            "longest_path",
+            "mean_radius",
+            "std_radius",
+        ]
+        return skeleton_properties
+    
+    def get_geometry_properties(self) -> list[str]:
+        """Returns a list of all available geometry properties."""
+        geometry_properties = [
+            "solidity",
+            "extent",
+        ]
+        return geometry_properties
+
+    def get_contact_properties(self) -> list[str]:
+        """Returns a list of all available contact properties."""
+        contact_properties = [
+            "n_contacts",
+            "total_area",
+            "mean_area",
+            "std_area",
+            "mean_dist",
+            "std_dist",
+        ]
+        return contact_properties
+    
+    def get_properties(self) -> list[str]:
+        """Returns a list of all available properties across mesh, skeleton, geometry, and contact sources."""
+        all_properties = (
+            self.get_mesh_properties() +
+            self.get_skeleton_properties() +
+            self.get_geometry_properties() +
+            self.get_contact_properties()
+        )
+        return sorted(all_properties)
 
     def get_organelle_mesh_properties(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
         """
@@ -21,15 +80,12 @@ class Statistics:
         """
 
         # Define the keys that only the mesh property provides
-        mesh_keys = {"mesh_volume", "mesh_area", "mesh_centroid", "mesh_inertia", 
-                     "water_tight", "sphericity", "flatness_ratio"}
+        mesh_keys = set(self.get_mesh_properties())
         to_extract = selected.intersection(mesh_keys)
         if not to_extract: return {}
 
         res = {}
         try:
-            # We only access .mesh_properties if at least one mesh property is requested
-            # as this call often triggers the expensive mesh computation.
             props = organelle.mesh_properties
             
             for p in selected:
@@ -42,7 +98,7 @@ class Statistics:
     
     def get_skeleton_stats(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
         """Extracts requested graph/skeleton metrics."""
-        skeleton_keys = {"num_nodes", "num_edges", "total_length", "avg_edge_length"}
+        skeleton_keys = set(self.get_skeleton_properties())
         to_extract = selected.intersection(skeleton_keys)
         
         # If no keys selected OR skeleton hasn't been generated yet, skip
@@ -60,7 +116,7 @@ class Statistics:
     def get_geometry_stats(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
         """Extracts requested voxel-based geometric data (solidity, extent, etc)."""
 
-        voxel_keys = {"solidity", "extent"}  # things that require voxel data
+        voxel_keys = set(self.get_geometry_properties())  # things that require voxel data
         to_extract = selected.intersection(voxel_keys) # find intersection
         if not to_extract: return {} # return early if no voxel keys are requested
 
@@ -75,31 +131,35 @@ class Statistics:
         except Exception:
             pass
         return res
-
+    
     def get_contact_stats(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
         """Extracts requested contact site (MCS) data."""
-        # Use the specific keys selected by the user
-        mcs_keys = {k for k in selected if k.startswith("contact_")}
-        if not mcs_keys: return {}
+        contact_keys = set(self.get_contact_properties())
+        to_extract = selected.intersection(contact_keys)
+        if not to_extract:
+            return {}
+
+        mcs_data = organelle.mcs_dict
+        if not mcs_data:
+            return {}
 
         res = {}
-        mcs_data = organelle.mcs_dict
-        for p in mcs_keys:
-            if p in mcs_data:
-                res[p] = mcs_data[p]
+        # Iterate through each MCS label (e.g., "0-0.01", "0-0.03") and its metrics
+        for mcs_label, metrics in mcs_data.items():
+            # For each requested base property (e.g., "n_contacts")
+            for prop_name in to_extract:
+                # If the metric exists for this MCS label, add it to the result
+                # with a new key format: "MCS_LABEL-PROPERTY_NAME"
+                if prop_name in metrics:
+                    res[f"{mcs_label}-{prop_name}"] = metrics[prop_name]
+
         return res
 
     def get_dataframe(self, ids: str = "*", properties: List[str] = None) -> pd.DataFrame:
         """
         Returns a unified DataFrame with a user-defined selection of properties
         from mesh, skeleton, geometry, and contact sources.
-
-        Available keys:
-        - Mesh: 'mesh_volume', 'mesh_area', 'mesh_centroid', 'mesh_inertia', 
-                'water_tight', 'sphericity', 'flatness_ratio'
-        - Skeleton: 'num_nodes', 'num_edges', 'total_length', 'avg_edge_length'
-        - Geometry (Voxel): 'solidity', 'extent'
-        - Contact: 'contact_er', 'contact_mito' (or other 'contact_*' keys)
+        check get_properties89 to see all potentially available properties.
 
         :param ids: Glob-style filter for organelles (e.g., "mito_*").
         :param properties: List of keys to include. If None, defaults to 
@@ -114,13 +174,13 @@ class Statistics:
         try:
             organelles = self.project.get_organelles(ids=ids)
         except Exception:
-            # If retrieval fails, return empty DF
-            return pd.DataFrame()
+            # If retrieval fails, return empty DF with correct columns
+            return pd.DataFrame(columns=["ID"] + sorted(list(selected_set)))
 
         if not organelles:
-            return pd.DataFrame()
+            return pd.DataFrame(columns=["ID"] + sorted(list(selected_set)))
 
-        # 2. Collect Data
+        # Collect Data
         data_rows = []
         for org in organelles:
             row = {"ID": org.id}
@@ -135,12 +195,24 @@ class Statistics:
 
         df = pd.DataFrame(data_rows)
 
-        for prop in selected_set:
-            if prop not in df.columns:
-                df[prop] = np.nan
+        # Determine Final Columns and handle dynamic contact columns (e.g., "0-0.01-n_contacts")
+        # which correspond to the generic selected keys (e.g., "n_contacts").
+        contact_props = set(self.get_contact_properties())
+        selected_contact_props = selected_set.intersection(contact_props)
+        static_props = selected_set - contact_props
 
-        cols = sorted([c for c in df.columns if c != "ID"])
-        return df[["ID"] + cols]
+        final_cols = ["ID"] + sorted(list(static_props))
+
+        if not df.empty:
+            dynamic_cols = []
+            for col in df.columns:
+                # Check if the column ends with a selected contact property
+                parts = col.rsplit("-", 1)
+                if len(parts) == 2 and parts[1] in selected_contact_props:
+                    dynamic_cols.append(col)
+            final_cols.extend(sorted(dynamic_cols))
+
+        return df.reindex(columns=final_cols)
 
     def get_summary_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculates statistics. Booleans only contribute to the average/share."""
