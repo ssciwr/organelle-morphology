@@ -16,6 +16,7 @@ with app.setup:
     from dask.base import compute
     import pandas as pd
     import traceback
+    from organelle_morphology.statistics import Statistics
 
 
 @app.cell
@@ -515,38 +516,31 @@ def _(
 @app.cell
 def _(of_run_button, project):
     of_run_button.value
-    project.distance_matrix
+    mo.ui.table(project.distance_matrix,
+                selection=None,
+                pagination=False,
+                max_height=400,
+                )
     return
 
 
 @app.cell
-def _():
-    prop_selector = mo.ui.dictionary({
-        # Mesh Properties
-        "mesh_volume": mo.ui.checkbox(value=True, label="Mesh Volume"),
-        "sphericity": mo.ui.checkbox(value=True, label="Sphericity"),
-        "flatness_ratio": mo.ui.checkbox(value=True, label="Flatness Ratio"),
-        "water_tight": mo.ui.checkbox(value=False, label="Watertight"),
-        "mesh_area": mo.ui.checkbox(value=False, label="Mesh Area"),
+def prop_selector_cell(project):
 
-        # Skeleton / Graph Properties
-        "num_nodes": mo.ui.checkbox(value=False, label="Skeleton Nodes"),
-        "total_length": mo.ui.checkbox(value=False, label="Skeleton Length"),
-        "avg_edge_length": mo.ui.checkbox(value=False, label="Avg Branch Length"),
+    stats =Statistics(project)
+    available_properties = stats.get_properties()
 
-        # Voxel / Geometry Properties
-        "solidity": mo.ui.checkbox(value=False, label="Solidity (Voxel)"),
-        "extent": mo.ui.checkbox(value=False, label="Extent (Voxel)"),
+    # Convert the list of available_properties keys into a dictionary of checkboxes
+    properties_checkboxes = {}
+    for key in available_properties:
+        properties_checkboxes[key] = mo.ui.checkbox(value=True, label=f"{key}")
 
-        # Contact Sites (Examples - these should match your mcs_dict keys)
-        "contact_er": mo.ui.checkbox(value=False, label="ER Contact Area"),
-        "contact_mito": mo.ui.checkbox(value=False, label="Mito Contact Area")
-    })
 
+    prop_selector = mo.ui.dictionary(properties_checkboxes)
     calc_stats_btn = mo.ui.run_button(label="Calculate Statistics")
+
     display = mo.vstack([
-        mo.md("## Statistics"),
-        mo.md("Select Properties to Calculate:"),
+        mo.md("## Select properties"),
         prop_selector,
         calc_stats_btn
     ])
@@ -558,26 +552,25 @@ def _():
 @app.cell
 def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
     # Standard prompt before the button is clicked
-    output = mo.md("Click on \"Calculate Statistics\" to compute geometry properties.")
+    stats_output = mo.md("Click on \"Calculate Statistics\" to compute geometry properties.")
 
     if calc_stats_btn.value:
         try:
-            from organelle_morphology.statistics import Statistics
-            stats = Statistics(project)
+            display_stats = Statistics(project)
 
             # Get the list of internal keys from the checkbox dictionary
             selected_properties = [
                 key for key, checked in prop_selector.value.items() if checked
             ]
 
-            # 1. Generate the raw data table
-            df_data = stats.get_dataframe(
+            # Generate the raw data table
+            df_data = display_stats.get_dataframe(
                 ids=mesh_id_filter.value, 
                 properties=selected_properties
             )
 
-            # 2. Generate the statistical summary table
-            df_summary = stats.get_summary_dataframe(df_data)
+            # Generate the statistical summary table
+            df_summary = display_stats.get_summary_dataframe(df_data)
 
             if not df_data.empty:
                 # Identify column types for specialized formatting
@@ -596,7 +589,7 @@ def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                 # Define formatting for the Raw Data Table
                 data_formats = {col: "{:.3f}".format for col in float_cols}
 
-                output = mo.vstack([
+                stats_output = mo.vstack([
                     mo.md("### Statistical Summary"),
                     mo.ui.table(
                         df_summary,
@@ -616,12 +609,12 @@ def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                     ),
                 ])
 
-        #except NameError:
-        #    output = mo.md("## No Project was loaded.\n ## Please load a project first.")
+        except NameError:
+            stats_output = mo.md("## No Project was loaded.\n ## Please load a project first.")
         except Exception:
             # Capture errors and display them
-            output = mo.md(f"## Unable to calculate statistics\n\n```\n{traceback.format_exc()}\n```")
-    output # display the widget (polymorphic: displays Markdown or Table)
+            stats_output = mo.md(f"## Unable to calculate statistics\n\n```\n{traceback.format_exc()}\n```")
+    stats_output 
     return
 
 
