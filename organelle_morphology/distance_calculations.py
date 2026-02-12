@@ -1,3 +1,4 @@
+from dask.delayed import delayed
 from scipy.spatial import KDTree
 import trimesh
 
@@ -7,8 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import organelle_morphology
-from dask.base import compute
-import multiprocessing
+from dask.base import compute, persist
 
 from organelle_morphology.util import bounding_box_delayed, boxes_overlap
 
@@ -27,6 +27,26 @@ def _check_overlap(args):
         is_in[i] = boxes_overlap(box, org_bb)
 
     return is_in
+
+
+def _process_overlaps_batch(batch_tasks, bbs):
+    """Process a batch of overlap check tasks to reduce dask computation overhead."""
+    results = []
+    for box in batch_tasks:
+        is_in = np.empty((len(bbs),), dtype=bool)
+        for i, org_bb in enumerate(bbs):
+            is_in[i] = boxes_overlap(box, org_bb)
+        results.append(is_in)
+    return results
+
+
+def _process_get_min_dist_batch(batch_tasks):
+    """Process a batch of get_min_dist tasks to reduce dask computation overhead."""
+    results = []
+    for task in batch_tasks:
+        result = get_min_dist(task)
+        results.append(result)
+    return results
 
 
 class MembraneContactSiteCalculator:
@@ -265,7 +285,10 @@ def generate_distance_matrix(
         for organelle in organelles:
             meshes.append(organelle.mesh)
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
-        meshes, bounding_boxes = compute(meshes, bounding_boxes)
+        # meshes, bounding_boxes = compute(meshes, bounding_boxes)
+        meshes, bounding_boxes = persist(meshes, bounding_boxes)
+        bounding_boxes = compute(bounding_boxes)[0]
+        print(f"bounding_boxes {len(bounding_boxes)}")
 
         project.logger.info("Calculating distance matrix")
         num_rows = len(meshes)
@@ -321,11 +344,34 @@ def generate_distance_matrix(
                 start = np.array((x, y, z))
                 end = start + stride
                 box = (start, end)
-                tasks.append((box, bounding_boxes))
-            with multiprocessing.Pool(project.n_workers) as pool:
-                masks = pool.imap_unordered(_check_overlap, tasks, chunksize=100)
-                pool.close()
-                pool.join()
+                tasks.append(box)
+            # with multiprocessing.Pool(project.n_workers) as pool:
+            #     masks = pool.imap_unordered(_check_overlap, tasks, chunksize=100)
+            #     pool.close()
+            #     pool.join()
+            if len(tasks) > 0:
+                # Process in batches to avoid creating too many dask delayed objects
+                batch_size = 500  # Tune this value based on performance
+                batched_tasks = [
+                    tasks[i : i + batch_size] for i in range(0, len(tasks), batch_size)
+                ]
+
+                # Create delayed computations for each batch
+                batch_results = []
+                for batch in batched_tasks:
+                    delayed_batch = delayed(_process_overlaps_batch)(
+                        batch, bounding_boxes
+                    )
+                    batch_results.append(delayed_batch)
+
+                # Compute all batches
+                all_masks = []
+                for result in compute(*batch_results, traverse=False):
+                    all_masks.extend(result)
+
+                masks = all_masks
+            else:
+                masks = []
         else:
             # no domain decomposition -> all to all
             masks = [np.ones((num_rows,))]
@@ -349,11 +395,34 @@ def generate_distance_matrix(
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
-        with multiprocessing.Pool(project.n_workers) as pool:
-            results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
-            pool.close()
-            pool.join()
+        # with multiprocessing.Pool(project.n_workers) as pool:
+        #     results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
+        #     pool.close()
+        #     pool.join()
         # results = map(get_min_dist, tasks)
+
+        # Batch the get_min_dist calculations to reduce dask computation overhead
+        if len(tasks) > 0:
+            # Process in batches to avoid creating too many dask delayed objects
+            batch_size = 500  # Tune this value based on performance
+            batched_tasks = [
+                tasks[i : i + batch_size] for i in range(0, len(tasks), batch_size)
+            ]
+
+            # Create delayed computations for each batch
+            batch_results = []
+            for batch in batched_tasks:
+                delayed_batch = delayed(_process_get_min_dist_batch)(batch)
+                batch_results.append(delayed_batch)
+
+            # Compute all batches
+            all_results = []
+            for result in compute(*batch_results, traverse=False):
+                all_results.extend(result)
+
+            results = all_results
+        else:
+            results = []
 
         for res in tqdm(results, "gathering distances", total=len(tasks)):
             distance_df.loc[res[0]] = res[1]
