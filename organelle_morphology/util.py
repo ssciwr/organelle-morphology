@@ -148,6 +148,18 @@ def measure_gaussian_curvature_delayed(tmesh: Trimesh, radius: float):
 
 
 @delayed
+def reset_color_delayed(tmesh):
+    tmesh.visual.vertex_colors[:] = [100, 100, 100, 255]
+    return tmesh
+
+
+@delayed
+def color_delayed_trimesh_vertices(tmesh, vertices, color):
+    tmesh.visual.vertex_colors[vertices] = color
+    return tmesh
+
+
+@delayed
 def color_delayed_trimesh_rgba(
     tmesh: Trimesh,
     values,

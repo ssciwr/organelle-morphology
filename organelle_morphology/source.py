@@ -883,6 +883,20 @@ class DataSource:
         self._clip_high_corner_data = None
         self._scaling_factors = None
         self._curv_radius = None
+        self._mcs_dicts = {}
+
+    @property
+    def mcs_dicts(self) -> dict:
+        for mcs_label in self.project.mcs_labels:
+            if mcs_label in self._mcs_dicts:
+                continue
+            labeled_dict = defaultdict(dict)
+            self._mcs_dicts[mcs_label] = labeled_dict
+            for org in self.organelles:
+                if mcs := org.mcs[mcs_label]:
+                    labeled_dict[org.id] = mcs
+
+        return self._mcs_dicts
 
     def instantiate_organelles(self):
         if self._organelles is None:
