@@ -20,8 +20,7 @@ def get_min_dist(args):
     return (id_1, id_2), mcs_calculator.min_distance
 
 
-def _check_overlap(args):
-    box, bounding_boxes = args
+def _check_overlap(box, bounding_boxes):
     is_in = np.empty((len(bounding_boxes),), dtype=bool)
     for i, org_bb in enumerate(bounding_boxes):
         is_in[i] = boxes_overlap(box, org_bb)
@@ -278,15 +277,15 @@ def generate_distance_matrix(
         # project.logger.info("Loading meshes")
         # project.calculate_meshes()
 
-        organelles = project.organelles
-        organelles_ids = project.organelle_ids
+        organelles = np.array(project.organelles)
+        organelles_ids = np.array(project.organelle_ids)
         meshes = []
         bounding_boxes = []
         for organelle in organelles:
             meshes.append(organelle.mesh)
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
         # meshes, bounding_boxes = compute(meshes, bounding_boxes)
-        meshes, bounding_boxes = persist(meshes, bounding_boxes)
+        # meshes, bounding_boxes = persist(meshes, bounding_boxes)
         bounding_boxes = compute(bounding_boxes)[0]
         print(f"bounding_boxes {len(bounding_boxes)}")
 
@@ -349,80 +348,66 @@ def generate_distance_matrix(
             #     masks = pool.imap_unordered(_check_overlap, tasks, chunksize=100)
             #     pool.close()
             #     pool.join()
-            if len(tasks) > 0:
-                # Process in batches to avoid creating too many dask delayed objects
-                batch_size = 500  # Tune this value based on performance
-                batched_tasks = [
-                    tasks[i : i + batch_size] for i in range(0, len(tasks), batch_size)
-                ]
-
-                # Create delayed computations for each batch
-                batch_results = []
-                for batch in batched_tasks:
-                    delayed_batch = delayed(_process_overlaps_batch)(
-                        batch, bounding_boxes
-                    )
-                    batch_results.append(delayed_batch)
-
-                # Compute all batches
-                all_masks = []
-                for result in compute(*batch_results, traverse=False):
-                    all_masks.extend(result)
-
-                masks = all_masks
-            else:
-                masks = []
+            masks = project.client.gather(
+                project.client.map(
+                    lambda b: _check_overlap(b, bounding_boxes), tasks, batch_size=500
+                )
+            )
         else:
             # no domain decomposition -> all to all
             masks = [np.ones((num_rows,))]
 
         project.logger.debug("Masks created")
-        tasks = []
+        results = []
         empty_cubes = 0
+        tasks = []
         for mask in masks:
+            indices = np.nonzero(mask)[0]
+            local_meshes_d = [o.mesh for o in organelles[indices]]
+            local_ids = organelles_ids[indices]
+
+            ## delayed
+            local_meshes = compute(local_meshes_d)[0]
+            tasks = []
             if not np.any(mask):
                 empty_cubes += 1
                 continue
 
-            indices = np.nonzero(mask)[0]
-            for i, idx1 in enumerate(indices):
-                mesh_1 = meshes[idx1]
-                id_1 = organelles_ids[idx1]
-                for idx2 in indices[i + 1 :]:
-                    mesh_2 = meshes[idx2]
-                    id_2 = organelles_ids[idx2]
+            for i in range(len(local_meshes)):
+                mesh_1 = local_meshes[i]
+                id_1 = local_ids[i]
+                for j in range(i + 1, len(local_meshes)):
+                    mesh_2 = local_meshes[j]
+                    id_2 = local_ids[j]
                     tasks.append((id_1, id_2, mesh_1, mesh_2))
+
+            min_dists = project.client.gather(
+                project.client.map(get_min_dist, tasks, batch_size=500)
+            )
+
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
-        # with multiprocessing.Pool(project.n_workers) as pool:
-        #     results = pool.imap_unordered(get_min_dist, tasks, chunksize=500)
-        #     pool.close()
-        #     pool.join()
-        # results = map(get_min_dist, tasks)
-
-        # Batch the get_min_dist calculations to reduce dask computation overhead
-        if len(tasks) > 0:
-            # Process in batches to avoid creating too many dask delayed objects
-            batch_size = 500  # Tune this value based on performance
-            batched_tasks = [
-                tasks[i : i + batch_size] for i in range(0, len(tasks), batch_size)
-            ]
-
-            # Create delayed computations for each batch
-            batch_results = []
-            for batch in batched_tasks:
-                delayed_batch = delayed(_process_get_min_dist_batch)(batch)
-                batch_results.append(delayed_batch)
-
-            # Compute all batches
-            all_results = []
-            for result in compute(*batch_results, traverse=False):
-                all_results.extend(result)
-
-            results = all_results
-        else:
-            results = []
+        # if len(tasks) > 0:
+        #     batch_size = 500  # Tune this value based on performance
+        #     batched_tasks = [
+        #         tasks[i : i + batch_size] for i in range(0, len(tasks), batch_size)
+        #     ]
+        #
+        #     # Create delayed computations for each batch
+        #     batch_results = []
+        #     for batch in batched_tasks:
+        #         delayed_batch = delayed(_process_get_min_dist_batch)(batch)
+        #         batch_results.append(delayed_batch)
+        #
+        #     # Compute all batches
+        #     all_results = []
+        #     for result in compute(*batch_results, traverse=False):
+        #         all_results.extend(result)
+        #
+        #     results = all_results
+        # else:
+        #     results = []
 
         for res in tqdm(results, "gathering distances", total=len(tasks)):
             distance_df.loc[res[0]] = res[1]
