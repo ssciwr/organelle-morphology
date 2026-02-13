@@ -876,7 +876,7 @@ class DataSource:
 
         # keep references to make simplified meshes persistent, gc raw meshes
         # self._storage["ref_meshes"] = persist(*self._meshes.values())
-        # self._meshes = persist(self._meshes)[0]
+        self._meshes = persist(self._meshes)[0]
 
         self._computed_compression = self.project.compression_level
 

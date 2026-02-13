@@ -1,6 +1,7 @@
 from dask.delayed import delayed
 from scipy.spatial import KDTree
 import trimesh
+from distributed import get_client, secede, rejoin
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,26 @@ def _check_overlap(box, bounding_boxes):
         is_in[i] = boxes_overlap(box, org_bb)
 
     return is_in
+
+
+def delayed_domain_min_dists(args):
+    local_meshes, local_ids = args
+    client = get_client()
+    local_meshes = compute(local_meshes)[0]
+    tasks = []
+
+    for i in range(len(local_meshes)):
+        mesh_1 = local_meshes[i]
+        id_1 = local_ids[i]
+        for j in range(i + 1, len(local_meshes)):
+            mesh_2 = local_meshes[j]
+            id_2 = local_ids[j]
+            #         tasks.append((id_1, id_2, mesh_1, mesh_2))
+            #
+            # return client.gather(client.map(get_min_dist, tasks, batch_size=500))
+
+            tasks.append(get_min_dist((id_1, id_2, mesh_1, mesh_2)))
+    return tasks
 
 
 def _process_overlaps_batch(batch_tasks, bbs):
@@ -285,7 +306,8 @@ def generate_distance_matrix(
             meshes.append(organelle.mesh)
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
         # meshes, bounding_boxes = compute(meshes, bounding_boxes)
-        # meshes, bounding_boxes = persist(meshes, bounding_boxes)
+        meshes, bounding_boxes = persist(meshes, bounding_boxes)
+        # WHY is this single threaded??
         bounding_boxes = compute(bounding_boxes)[0]
         print(f"bounding_boxes {len(bounding_boxes)}")
 
@@ -303,8 +325,8 @@ def generate_distance_matrix(
             # domain decomposition into chunks of
             # size = size of clipped data in units of the resolution
             size = np.array(source.resolution) * source.data.shape
-            cube_size = max_dist * 10
-            stride = max_dist * 9
+            cube_size = max_dist * 20
+            stride = max_dist * 19
             clp_of = source.clipping_corners[0]
             n_x_cubes = min(max(int(size[0] // cube_size), 1), 50)
             n_y_cubes = min(max(int(size[1] // cube_size), 1), 50)
@@ -344,20 +366,24 @@ def generate_distance_matrix(
                 end = start + stride
                 box = (start, end)
                 tasks.append(box)
-            # with multiprocessing.Pool(project.n_workers) as pool:
-            #     masks = pool.imap_unordered(_check_overlap, tasks, chunksize=100)
-            #     pool.close()
-            #     pool.join()
-            masks = project.client.gather(
-                project.client.map(
-                    lambda b: _check_overlap(b, bounding_boxes), tasks, batch_size=500
-                )
-            )
+            # if len(tasks) > 1000000:
+            #     project.logger.debug("Many cubes --> parallel mask creation")
+            #     masks = list(
+            #         project.client.gather(  # pyright: ignore
+            #             project.client.map(
+            #                 lambda b: _check_overlap(b, bounding_boxes),
+            #                 tasks,
+            #                 batch_size=5000,
+            #             )
+            #         )
+            #     )
+            # else:
+            masks = list(map(lambda b: _check_overlap(b, bounding_boxes), tasks))
         else:
             # no domain decomposition -> all to all
             masks = [np.ones((num_rows,))]
 
-        project.logger.debug("Masks created")
+        project.logger.debug(f"Masks created: {len(masks)}")
         results = []
         empty_cubes = 0
         tasks = []
@@ -366,48 +392,19 @@ def generate_distance_matrix(
             local_meshes_d = [o.mesh for o in organelles[indices]]
             local_ids = organelles_ids[indices]
 
-            ## delayed
-            local_meshes = compute(local_meshes_d)[0]
-            tasks = []
-            if not np.any(mask):
+            if len(indices) < 2:
                 empty_cubes += 1
                 continue
 
-            for i in range(len(local_meshes)):
-                mesh_1 = local_meshes[i]
-                id_1 = local_ids[i]
-                for j in range(i + 1, len(local_meshes)):
-                    mesh_2 = local_meshes[j]
-                    id_2 = local_ids[j]
-                    tasks.append((id_1, id_2, mesh_1, mesh_2))
-
-            min_dists = project.client.gather(
-                project.client.map(get_min_dist, tasks, batch_size=500)
-            )
+            tasks.append((local_meshes_d, local_ids))
 
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
-        # if len(tasks) > 0:
-        #     batch_size = 500  # Tune this value based on performance
-        #     batched_tasks = [
-        #         tasks[i : i + batch_size] for i in range(0, len(tasks), batch_size)
-        #     ]
-        #
-        #     # Create delayed computations for each batch
-        #     batch_results = []
-        #     for batch in batched_tasks:
-        #         delayed_batch = delayed(_process_get_min_dist_batch)(batch)
-        #         batch_results.append(delayed_batch)
-        #
-        #     # Compute all batches
-        #     all_results = []
-        #     for result in compute(*batch_results, traverse=False):
-        #         all_results.extend(result)
-        #
-        #     results = all_results
-        # else:
-        #     results = []
+        results = project.client.gather(
+            project.client.map(delayed_domain_min_dists, tasks, batch_size=200)
+        )
+        results = [r for res in results for r in res]
 
         for res in tqdm(results, "gathering distances", total=len(tasks)):
             distance_df.loc[res[0]] = res[1]
