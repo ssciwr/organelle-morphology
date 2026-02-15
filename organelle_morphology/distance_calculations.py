@@ -1,9 +1,11 @@
+from time import time
 from dask.delayed import delayed
 from scipy.spatial import KDTree
 import trimesh
 from distributed import get_client, secede, rejoin
 
 import numpy as np
+from multiprocessing import Pool
 import pandas as pd
 
 from tqdm import tqdm
@@ -31,7 +33,6 @@ def _check_overlap(box, bounding_boxes):
 
 def delayed_domain_min_dists(args):
     local_meshes, local_ids = args
-    client = get_client()
     local_meshes = compute(local_meshes)[0]
     tasks = []
 
@@ -41,9 +42,6 @@ def delayed_domain_min_dists(args):
         for j in range(i + 1, len(local_meshes)):
             mesh_2 = local_meshes[j]
             id_2 = local_ids[j]
-            #         tasks.append((id_1, id_2, mesh_1, mesh_2))
-            #
-            # return client.gather(client.map(get_min_dist, tasks, batch_size=500))
 
             tasks.append(get_min_dist((id_1, id_2, mesh_1, mesh_2)))
     return tasks
@@ -306,7 +304,7 @@ def generate_distance_matrix(
             meshes.append(organelle.mesh)
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
         # meshes, bounding_boxes = compute(meshes, bounding_boxes)
-        meshes, bounding_boxes = persist(meshes, bounding_boxes)
+        meshes = persist(*meshes)
         # WHY is this single threaded??
         bounding_boxes = compute(bounding_boxes)[0]
         print(f"bounding_boxes {len(bounding_boxes)}")
@@ -365,20 +363,11 @@ def generate_distance_matrix(
                 start = np.array((x, y, z))
                 end = start + stride
                 box = (start, end)
-                tasks.append(box)
-            # if len(tasks) > 1000000:
-            #     project.logger.debug("Many cubes --> parallel mask creation")
-            #     masks = list(
-            #         project.client.gather(  # pyright: ignore
-            #             project.client.map(
-            #                 lambda b: _check_overlap(b, bounding_boxes),
-            #                 tasks,
-            #                 batch_size=5000,
-            #             )
-            #         )
-            #     )
-            # else:
-            masks = list(map(lambda b: _check_overlap(b, bounding_boxes), tasks))
+                tasks.append((box, bounding_boxes))
+            # masks = list(map(lambda b: _check_overlap(b, bounding_boxes), tasks))
+            with Pool(processes=project.n_workers) as pool:
+                masks = pool.starmap(_check_overlap, tasks, chunksize=100)
+
         else:
             # no domain decomposition -> all to all
             masks = [np.ones((num_rows,))]
@@ -401,12 +390,16 @@ def generate_distance_matrix(
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
+        t0 = time()
+        workers = [project.client.who_has(m) for m in meshes]
+        print(f"who has?? {time() - t0}")
+
         results = project.client.gather(
             project.client.map(delayed_domain_min_dists, tasks, batch_size=200)
         )
         results = [r for res in results for r in res]
 
-        for res in tqdm(results, "gathering distances", total=len(tasks)):
+        for res in tqdm(results, "gathering distances"):
             distance_df.loc[res[0]] = res[1]
             distance_df.loc[res[0][::-1]] = res[1]
 
