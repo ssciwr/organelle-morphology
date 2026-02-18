@@ -1,8 +1,5 @@
-from time import time
-from dask.delayed import delayed
 from scipy.spatial import KDTree
 import trimesh
-from distributed import get_client, secede, rejoin
 
 import numpy as np
 from multiprocessing import Pool
@@ -323,8 +320,8 @@ def generate_distance_matrix(
             # domain decomposition into chunks of
             # size = size of clipped data in units of the resolution
             size = np.array(source.resolution) * source.data.shape
-            cube_size = max_dist * 20
-            stride = max_dist * 19
+            cube_size = max_dist * 10
+            stride = max_dist * 9
             clp_of = source.clipping_corners[0]
             n_x_cubes = min(max(int(size[0] // cube_size), 1), 50)
             n_y_cubes = min(max(int(size[1] // cube_size), 1), 50)
@@ -390,10 +387,6 @@ def generate_distance_matrix(
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
-        t0 = time()
-        workers = [project.client.who_has(m) for m in meshes]
-        print(f"who has?? {time() - t0}")
-
         results = project.client.gather(
             project.client.map(delayed_domain_min_dists, tasks, batch_size=200)
         )
@@ -409,6 +402,7 @@ def generate_distance_matrix(
     else:
         project.logger.info("Retrieving distance matrix from cache")
 
+    project.max_distance = max_dist
     return cache["distance_matrix"]
 
 

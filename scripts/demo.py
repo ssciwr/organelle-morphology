@@ -16,6 +16,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from dask.base import compute
+from dask.distributed import LocalCluster, Client
 import organelle_morphology as om
 from organelle_morphology.util import color_delayed_trimesh_rgba, show
 
@@ -209,5 +210,24 @@ bmesh = Trimesh(vertices=verts, faces=faces)
 bmesh.show()
 
 # %%
-with open("/home/kriedmiller/test/mmesh_overlap.stl", "wb") as f:
-    f.write(trimesh.exchange.stl.export_stl(mmesh))
+# import tracemalloc
+# tracemalloc.start()
+cluster = LocalCluster(dashboard_address=":8789", memory_limit="8GiB", n_workers=6)
+client = Client(cluster)
+project_path = Path.cwd() / ".." / "example_analysis"
+p = Project(project_path, compression_level="s2", loglevel="DEBUG", clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)), client=client)
+p.add_source("../data/interphase_4T/mito_it00_b0_7_stitched.xml", "mito")
+s = p.sources["mito_it00_b0_7_stitched"]
+p.add_source("../data/interphase_4T/er_it00_b0_7_stitched.xml", "er")
+s = p.sources["er_it00_b0_7_stitched"]
+
+p.clear_caches(True)
+p.clipping = [[0.6,0.5,0.4],[0.8,1,0.5]]
+p.compression_level = "s1"
+p.max_distance = 0.05
+
+# snap1 = tracemalloc.take_snapshot()
+
+p.distance_matrix
+
+# snap2 = tracemalloc.take_snapshot()
