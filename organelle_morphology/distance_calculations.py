@@ -44,26 +44,6 @@ def delayed_domain_min_dists(args):
     return tasks
 
 
-def _process_overlaps_batch(batch_tasks, bbs):
-    """Process a batch of overlap check tasks to reduce dask computation overhead."""
-    results = []
-    for box in batch_tasks:
-        is_in = np.empty((len(bbs),), dtype=bool)
-        for i, org_bb in enumerate(bbs):
-            is_in[i] = boxes_overlap(box, org_bb)
-        results.append(is_in)
-    return results
-
-
-def _process_get_min_dist_batch(batch_tasks):
-    """Process a batch of get_min_dist tasks to reduce dask computation overhead."""
-    results = []
-    for task in batch_tasks:
-        result = get_min_dist(task)
-        results.append(result)
-    return results
-
-
 class MembraneContactSiteCalculator:
     def search_mcs(self, id_1, id_2, mesh_1, mesh_2):
         """
@@ -290,9 +270,6 @@ def generate_distance_matrix(
     ) or max_dist > max_cached:
         project.logger.info("Initializing distance matrix")
 
-        # project.logger.info("Loading meshes")
-        # project.calculate_meshes()
-
         organelles = np.array(project.organelles)
         organelles_ids = np.array(project.organelle_ids)
         meshes = []
@@ -300,9 +277,8 @@ def generate_distance_matrix(
         for organelle in organelles:
             meshes.append(organelle.mesh)
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
-        # meshes, bounding_boxes = compute(meshes, bounding_boxes)
         meshes = persist(*meshes)
-        # WHY is this single threaded??
+        # WHY is this single threaded?? maybe bad distribution between workers
         bounding_boxes = compute(bounding_boxes)[0]
         print(f"bounding_boxes {len(bounding_boxes)}")
 
