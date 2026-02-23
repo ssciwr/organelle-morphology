@@ -679,6 +679,13 @@ class DataSource:
 
                 self.logger.debug("Meshes saved in cache")
 
+                # For later operations, we reference the computed meshes, not the
+                # computation thereof
+                labels = self.cache["labels"]
+                self.logger.debug(f"{len(labels)} labels found in cache")
+                for label in labels:
+                    self._meshes[label] = _get_from_cache(label, self.cache)
+
         return self._meshes
 
     def calc_curvature(self, labels: Optional[int | list[int]] = None) -> dict:
