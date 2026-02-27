@@ -279,10 +279,10 @@ def test_mcs_dicts(project_with_sources):
 
     p.search_mcs(10)
     mcs_dicts = s.mcs_dicts
-    assert list(mcs_dicts.keys()) == ["0.0-10"]
-    assert len(mcs_dicts["0.0-10"]) == 10
-    assert len(mcs_dicts["0.0-10"]["mito_0019"]) == 2
+    assert list(mcs_dicts.keys()) == ["0.0-10,-"]
+    assert len(mcs_dicts["0.0-10,-"]) == 10
+    assert len(mcs_dicts["0.0-10,-"]["mito_0019"]) == 2
     assert all(
-        k in mcs_dicts["0.0-10"]["mito_0019"]["mito_0015"].keys()
+        k in mcs_dicts["0.0-10,-"]["mito_0019"]["mito_0015"].keys()
         for k in ["area", "distances", "vertices_index"]
     )

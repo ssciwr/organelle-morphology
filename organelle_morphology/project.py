@@ -65,6 +65,7 @@ class Project:
         self._project_path = Path(project_path)
         self.clear_memory_cache()
 
+        self.path.mkdir(exist_ok=True)
         self.logger = get_logger(self.path / "om2.log")
         self.set_loglevel(loglevel)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
@@ -86,9 +87,6 @@ class Project:
 
         # The compression level at which we operate
         self.compression_level = compression_level
-
-        # Max distance for distance calculations
-        self._max_compute_distance = 0.0
 
         # callables will be updated on demand
         self._cache_settings = {
@@ -627,7 +625,9 @@ class Project:
         self,
         max_distance: float,
         min_distance: float = 0.0,
-        ovewrite_mcs_label=False,
+        ids_filter_1: str = "*",
+        ids_filter_2: str = "*",
+        overwrite_mcs_label=False,
     ):
         """
         This function is used to search for membrane contact sites within a project.
@@ -635,19 +635,30 @@ class Project:
         the requested min and max distance.
 
         Args:
-            project (Project): The project object containing the distance matrix and organelles.
+            project (Project): The project object containing the distance
+                matrix and organelles.
             mcs_label (str): The label for the MCS pairs.
             max_distance (float): The maximum distance for the MCS pairs.
-            min_distance (float, optional): The minimum distance for the MCS pairs. Defaults to 0.
+            min_distance (float, optional): The minimum distance for the MCS
+                pairs. Defaults to 0.
+            ids_filter_1 (str, optional): Filter for the first set of
+                organelles using glob-style patterns. Defaults to "*".
+            ids_filter_2 (str, optional): Filter for the second set of
+                organelles using glob-style patterns. Defaults to "*".
+            overwrite_mcs_label (bool, optional): If the label exists, it
+                should be overwritten. Defaults to False.
 
         Returns:
             str: The label of this mcs search
         """
 
-        if max_distance > self.max_distance:
-            self.max_distance = max_distance
         return generate_mcs(
-            self, max_distance, min_distance, overwrite=ovewrite_mcs_label
+            self,
+            ids_filter_1=ids_filter_1,
+            ids_filter_2=ids_filter_2,
+            max_distance=max_distance,
+            min_distance=min_distance,
+            overwrite=overwrite_mcs_label,
         )
 
     @property
@@ -1144,6 +1155,7 @@ class Project:
         self._geometric_properties = {}
         self._curvature_map = {}
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
+        self._max_compute_distance = 0.0
         self._cache = None
 
     def clear_caches(self, clear_disk=False):
