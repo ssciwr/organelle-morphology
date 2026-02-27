@@ -595,98 +595,67 @@ class DataSource:
     @property
     def labels(self) -> list[int]:
         """Return the list of labels present in the data source."""
-        return list(self.meshes.keys())
+        return list(self.mesh_fragments[0].keys())
 
     @property
-    def meshes(self) -> dict[int, Delayed]:
-        @delayed(pure=False)
-        def _get_from_cache(key, cache):
-            verts, faces = cache[key]
-            return Trimesh(verts, faces)
-
+    def mesh_fragments(self):
         @delayed(pure=False)
         def _write_to_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
             name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
-            for key, mesh in key_values:
-                cache[key] = (mesh.vertices, mesh.faces)
+            for key, value in key_values:
+                cache[key] = value
 
-        # self.logger.debug("Requested meshes")
-        if self._meshes is None or (
-            self._computed_compression != self.project.compression_level
-        ):
-            self.logger.debug(f"Meshes not loaded: {self.org_name}")
-            self._meshes = {}
-            labels = None
+        @delayed(pure=False)
+        def _get_from_cache(key, cache):
+            return cache[key]
 
-            if "labels" in self.cache:
-                self.logger.debug("Meshes in cache, reading labels..")
-                labels = self.cache["labels"]
-                self.logger.debug(f"{len(labels)} labels found in cache")
+        if "ids_to_chunks" not in self.cache:
+            ids_to_chunks, meshes_chunked_d = self.calculate_mesh()
 
-                for label in labels:
-                    self._meshes[label] = _get_from_cache(label, self.cache)
+            self.cache["ids_to_chunks"] = ids_to_chunks
+            self.cache["chunks_shape"] = meshes_chunked_d.shape
 
-                # keep meshes in distributed memory, gc previously computed meshes
-                # self._storage["ref_meshes"] = persist(*self._meshes.values())
-                self._meshes = persist(self._meshes)[0]
+            cs = self.project.cache_settings.copy()
+            cs["source"] = self.xml_path.stem
 
-                if self.project.clipping is not None:
-                    assert "clipping_data" in self.cache, (
-                        "clipping_data missing in cache!"
+            delayed_saves = []
+            batch_size = 1  # TODO: check optimal batch size over chunks
+
+            tasks = []
+            for idx, meshes_in_chunk in np.ndenumerate(meshes_chunked_d):
+                tasks.append((f"fragment_{idx}", meshes_in_chunk))
+
+            for i in range(0, len(tasks), batch_size):
+                to_save = tasks[i : i + batch_size]
+                delayed_save = _write_to_cache_batch(to_save, cs)
+                delayed_saves.append(delayed_save)
+
+            self.logger.debug(f"Saving {len(delayed_saves)} batches of mesh fragments")
+            compute(*delayed_saves, traverse=False)
+            self.logger.debug("Mesh fragments saved to cache")
+
+        else:
+            meshes_chunked_d = np.empty(self.cache["chunks_shape"], dtype=object)
+            try:
+                for idx, _ in np.ndenumerate(meshes_chunked_d):
+                    meshes_chunked_d[idx] = _get_from_cache(
+                        f"fragment_{idx}", self.cache
                     )
-                    assert "clipping_scaled" in self.cache, (
-                        "clipping_scaled missing in cache!"
-                    )
-                    self.clipping_corners = self.cache["clipping_scaled"]
-                    self.clipping_corners_data = self.cache["clipping_data"]
-                    self._scaling_factors = self.cache["scaling"]
 
-                self._computed_compression = self.project.compression_level
-                self.logger.debug(f"Meshes {self.org_name} loaded from cache")
+            except KeyError as e:
+                self.logger.warning(
+                    f"Could not load mesh fragment from cache, recomputing..\n{e}"
+                )
+                del self.cache["ids_to_chunks"]
+                raise NotImplementedError()
 
-            else:
-                self.logger.info(f"Meshes {self.org_name} not in cache, calculating..")
-                self.calculate_mesh()
-                self.logger.debug("Saving meshes to cache..")
+        return self.cache["ids_to_chunks"], meshes_chunked_d
 
-                self.cache["labels"] = list(self._meshes.keys())
-
-                if self.project.clipping is not None:
-                    self.cache["clipping_scaled"] = self.clipping_corners
-                    self.cache["clipping_data"] = self.clipping_corners_data
-                    self.cache["scaling"] = self._scaling_factors
-
-                cs = self.project.cache_settings.copy()
-                cs["source"] = self.xml_path.stem
-
-                # Batch the mesh saving operations to reduce overhead
-                # Group meshes into batches to minimize scheduling overhead
-                batch_size = 500  # Adjust based on your system
-                delayed_saves = []
-
-                # Convert to list to allow indexing
-                mesh_items = list(self._meshes.items())
-
-                for i in range(0, len(mesh_items), batch_size):
-                    batch = mesh_items[i : i + batch_size]
-                    delayed_save = _write_to_cache_batch(batch, cs)
-                    delayed_saves.append(delayed_save)
-
-                self.logger.debug(f"Saving {len(delayed_saves)} batches of meshes")
-                compute(*delayed_saves, traverse=False)
-
-                self.logger.debug("Meshes saved in cache")
-
-                # For later operations, we reference the computed meshes, not the
-                # computation thereof
-                labels = self.cache["labels"]
-                self.logger.debug(f"{len(labels)} labels found in cache")
-                for label in labels:
-                    self._meshes[label] = _get_from_cache(label, self.cache)
-
-        return self._meshes
+    @property
+    def meshes(self):
+        return self.merge_fragments_into_meshes(*self.mesh_fragments)
 
     def calc_curvature(self, labels: Optional[int | list[int]] = None) -> dict:
         """Calculate the curvature on vertices.
@@ -764,14 +733,11 @@ class DataSource:
         self,
         reduction_factor=0,
         overlap=True,
-        simplify: Optional[float] = None,
         debug_color: Optional[int] = None,
     ):
         """Compute meshes for this source.
 
         Meshes crossing chunks are merged.
-        Populates following fields:
-         * self._meshes
 
         Respects the set compression and clipping of the project.
         Computation is done in parallel using the dask client of the project.
@@ -791,12 +757,6 @@ class DataSource:
 
             return dict(res)
 
-        @delayed
-        def simplify_mesh(mesh, factor=0.1):
-            """Simplify a trimesh object"""
-            mesh = mesh.simplify_quadric_decimation(factor, aggression=1)
-            return mesh
-
         if overlap:
             overlapped = da.overlap.overlap(
                 self.data, depth={0: 2, 1: 2, 2: 2}, boundary="reflect"
@@ -806,7 +766,7 @@ class DataSource:
         else:
             chunks = self.data.chunks
             d_data = self.data.to_delayed()
-        _meshes_chunked = np.empty_like(d_data)
+        meshes_chunked = np.empty_like(d_data)
         ids_chunked = np.empty_like(d_data)
         assert self._clip_low_corner_data is not None
 
@@ -834,7 +794,7 @@ class DataSource:
                 debug_color=debug_color,
                 scaling_factors=self._scaling_factors,
             )
-            _meshes_chunked[index] = meshes_chunk
+            meshes_chunked[index] = meshes_chunk
             ids_chunked[index] = ids_chunk
 
         # flatten the ids and delayed meshes
@@ -842,7 +802,7 @@ class DataSource:
         indices = []
         d_meshes = []
         for index, ids_chunk in np.ndenumerate(ids_chunked):
-            mesh = _meshes_chunked[index]
+            mesh = meshes_chunked[index]
             d_ids.append(ids_chunk)
             indices.append(index)
             d_meshes.append(mesh)
@@ -850,12 +810,26 @@ class DataSource:
         # calculate meshes and keep references to make mesh persistend on workers
         # self._storage["ref_meshes"] = persist(*(d_meshes + d_ids))
 
-        _ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
-        assert _ids_to_chunks is not None  # for linter
+        ids_to_chunks = build_chunk_lookup(d_ids, indices).compute()
+        assert ids_to_chunks is not None  # for linter
+
+        return ids_to_chunks, meshes_chunked
+
+    def merge_fragments_into_meshes(
+        self,
+        ids_to_chunks: dict,
+        meshes_chunked: np.ndarray,
+        simplify: Optional[float] = None,
+    ):
+        @delayed
+        def simplify_mesh(mesh, factor=0.1):
+            """Simplify a trimesh object"""
+            mesh = mesh.simplify_quadric_decimation(factor, aggression=1)
+            return mesh
 
         # get some statistics
-        all_chunks = list(_ids_to_chunks.values())
-        all_ids = np.array(list(_ids_to_chunks.keys()))
+        all_chunks = list(ids_to_chunks.values())
+        all_ids = np.array(list(ids_to_chunks.keys()))
         id_amounts = np.array([len(idxs) for idxs in all_chunks])
         amounts, inverse, freqs = np.unique(
             id_amounts, return_counts=True, return_inverse=True
@@ -864,28 +838,32 @@ class DataSource:
             self.logger.info(f"{frq} labels in {amount} chunks")
 
         # Cleanup: Merge meshes crossing chunks
-        self._meshes = {}
+        meshes = {}
         duplicate_ids = all_ids[np.nonzero(id_amounts > 1)]
         for ind in duplicate_ids:
-            chunk_idxs = _ids_to_chunks[ind]
-            meshes = [_meshes_chunked[idx][ind] for idx in chunk_idxs]
-            merged_mesh = merge_meshes(meshes, color=0)
+            chunk_idxs = ids_to_chunks[ind]
+            loc_meshes = [meshes_chunked[idx][ind] for idx in chunk_idxs]
+            merged_mesh = merge_meshes(loc_meshes, color=0)
             if simplify:
                 merged_mesh = simplify_mesh(merged_mesh, simplify)
-            self._meshes[ind] = merged_mesh
+            meshes[ind] = merged_mesh
 
         unique_ids = all_ids[np.nonzero(id_amounts == 1)]
         for ind in unique_ids:
-            mesh = _meshes_chunked[_ids_to_chunks[ind][0]][ind]
+            mesh = meshes_chunked[ids_to_chunks[ind][0]][ind]
             if simplify:
                 mesh = simplify_mesh(mesh, simplify)
-            self._meshes[ind] = mesh
+            meshes[ind] = mesh
 
         # keep references to make simplified meshes persistent, gc raw meshes
-        # self._storage["ref_meshes"] = persist(*self._meshes.values())
-        self._meshes = persist(self._meshes)[0]
+        # self._storage["ref_meshes"] = persist(*meshes.values())
+        # meshes = persist(meshes)[0]
 
         self._computed_compression = self.project.compression_level
+        self.logger.debug(
+            f"finished merging fragments (delayed) for source {self.org_name}"
+        )
+        return meshes
 
     def clear_memory_cache(self):
         """Invalidates memory caches.
