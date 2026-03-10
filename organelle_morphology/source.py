@@ -1,4 +1,5 @@
 from collections import defaultdict
+from time import time
 from typing import Optional
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import trimesh
 import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
 
-from dask.base import persist, compute
+from dask.base import compute
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
@@ -598,7 +599,25 @@ class DataSource:
         return list(self.mesh_fragments[0].keys())
 
     @property
-    def mesh_fragments(self):
+    def mesh_fragments(self) -> tuple[dict[int, list[tuple[int]]], np.ndarray]:
+        """Get the mesh fragments from cache, or calculate them.
+
+        The mesh fragments are delayed read from the source.cache, so reads
+        are cached in memory.
+
+        Returns:
+            dict[int, list[tuple[int]]]: dict to translate mesh ids to a list of chunk
+                indices to find all chunks containing parts of this mesh.
+            np.ndarray: Array containing the delayed chunks.
+                Shape matches storage on disk, after applying the clipping.
+        """
+        return self._get_mesh_fragments()
+
+    def _get_mesh_fragments(self, recursed=False):
+        """Private implementation of `mesh_fragments`.
+        This is a separate function because of the recursion fail-safe.
+        """
+
         @delayed(pure=False)
         def _write_to_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
@@ -611,50 +630,109 @@ class DataSource:
         def _get_from_cache(key, cache):
             return cache[key]
 
-        if "ids_to_chunks" not in self.cache:
-            ids_to_chunks, meshes_chunked_d = self.calculate_mesh()
+        if self._fragments_chunked is None:
+            if "ids_to_chunks" not in self.cache:
+                ids_to_chunks, meshes_chunked_d = self.calculate_mesh()
 
-            self.cache["ids_to_chunks"] = ids_to_chunks
-            self.cache["chunks_shape"] = meshes_chunked_d.shape
+                self.cache["ids_to_chunks"] = ids_to_chunks
+                self.cache["chunks_shape"] = meshes_chunked_d.shape
 
-            cs = self.project.cache_settings.copy()
-            cs["source"] = self.xml_path.stem
+                cs = self.project.cache_settings.copy()
+                cs["source"] = self.xml_path.stem
 
-            delayed_saves = []
-            batch_size = 1  # TODO: check optimal batch size over chunks
+                delayed_saves = []
+                batch_size = 1  # TODO: check optimal batch size over chunks
 
-            tasks = []
-            for idx, meshes_in_chunk in np.ndenumerate(meshes_chunked_d):
-                tasks.append((f"fragment_{idx}", meshes_in_chunk))
+                tasks = []
+                for idx, meshes_in_chunk in np.ndenumerate(meshes_chunked_d):
+                    tasks.append((f"fragment_{idx}", meshes_in_chunk))
 
-            for i in range(0, len(tasks), batch_size):
-                to_save = tasks[i : i + batch_size]
-                delayed_save = _write_to_cache_batch(to_save, cs)
-                delayed_saves.append(delayed_save)
+                for i in range(0, len(tasks), batch_size):
+                    to_save = tasks[i : i + batch_size]
+                    delayed_save = _write_to_cache_batch(to_save, cs)
+                    delayed_saves.append(delayed_save)
 
-            self.logger.debug(f"Saving {len(delayed_saves)} batches of mesh fragments")
-            compute(*delayed_saves, traverse=False)
-            self.logger.debug("Mesh fragments saved to cache")
+                self.logger.debug(
+                    f"Saving {len(delayed_saves)} batches of mesh fragments"
+                )
+                compute(*delayed_saves, traverse=False)
+                self.logger.debug("Mesh fragments saved to cache")
 
-        else:
-            meshes_chunked_d = np.empty(self.cache["chunks_shape"], dtype=object)
-            try:
-                for idx, _ in np.ndenumerate(meshes_chunked_d):
-                    meshes_chunked_d[idx] = _get_from_cache(
-                        f"fragment_{idx}", self.cache
+            else:
+                meshes_chunked_d = np.empty(self.cache["chunks_shape"], dtype=object)
+                try:
+                    t0 = time()
+                    for idx, _ in np.ndenumerate(meshes_chunked_d):
+                        meshes_chunked_d[idx] = _get_from_cache(
+                            f"fragment_{idx}", self.cache
+                        )
+                    self.logger.debug(
+                        f"Setup delayed fragm get_from_cache: {time() - t0}"
                     )
 
-            except KeyError as e:
-                self.logger.warning(
-                    f"Could not load mesh fragment from cache, recomputing..\n{e}"
-                )
-                del self.cache["ids_to_chunks"]
-                raise NotImplementedError()
+                except KeyError as e:
+                    self.logger.warning(
+                        f"Could not load mesh fragment from cache, recomputing..\n{e}"
+                    )
+                    del self.cache["ids_to_chunks"]
+                    if not recursed:
+                        return self._get_mesh_fragments(recursed=True)
+                    raise RuntimeError(
+                        "Error: Could not compute mesh fragments after two attempts!"
+                    )
+            self._fragments_chunked = meshes_chunked_d
 
-        return self.cache["ids_to_chunks"], meshes_chunked_d
+        return self.cache["ids_to_chunks"], self._fragments_chunked
 
     @property
     def meshes(self):
+        @delayed(pure=False)
+        def _write_to_cache_batch(key_values, cs):
+            """Write multiple meshes to cache in a single operation"""
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
+            for key, value in key_values:
+                cache[key] = value
+
+        @delayed(pure=False)
+        def _get_from_cache(key, cache):
+            return cache[key]
+
+        if self.project._cache_settings["cache_meshes"]:
+            if "mesh_ids" not in self.cache:
+                cs = self.project.cache_settings.copy()
+                cs["source"] = self.xml_path.stem
+
+                delayed_saves = []
+                batch_size = 1000  # TODO: check optimal batch size over chunks
+
+                tasks = []
+                ids = []
+                for idx, mesh in self.merge_fragments_into_meshes(
+                    *self.mesh_fragments
+                ).items():
+                    ids.append(idx)
+                    tasks.append((f"mesh_{idx}", mesh))
+
+                for i in range(0, len(tasks), batch_size):
+                    to_save = tasks[i : i + batch_size]
+                    delayed_save = _write_to_cache_batch(to_save, cs)
+                    delayed_saves.append(delayed_save)
+
+                self.logger.debug(f"Saving {len(delayed_saves)} batches of meshes")
+
+                compute(*delayed_saves, traverse=False)
+                self.cache["mesh_ids"] = ids
+                self.logger.debug("Meshes saved to cache")
+
+            if self._meshes is None:
+                self._meshes = {}
+                t0 = time()
+                for idx in self.cache["mesh_ids"]:
+                    self._meshes[idx] = _get_from_cache(f"mesh_{idx}", self.cache)
+                self.logger.debug(f"Setup delayed mesh get_from_cache: {time() - t0}")
+            return self._meshes
+
         return self.merge_fragments_into_meshes(*self.mesh_fragments)
 
     def calc_curvature(self, labels: Optional[int | list[int]] = None) -> dict:
@@ -734,7 +812,7 @@ class DataSource:
         reduction_factor=0,
         overlap=True,
         debug_color: Optional[int] = None,
-    ):
+    ) -> tuple[dict[int, list[tuple[int]]], np.ndarray]:
         """Compute meshes for this source.
 
         Meshes crossing chunks are merged.
@@ -820,7 +898,7 @@ class DataSource:
         ids_to_chunks: dict,
         meshes_chunked: np.ndarray,
         simplify: Optional[float] = None,
-    ):
+    ) -> dict[int, Delayed]:
         @delayed
         def simplify_mesh(mesh, factor=0.1):
             """Simplify a trimesh object"""
@@ -876,6 +954,8 @@ class DataSource:
         self._curvature_map = {}
         self._storage = {}
         self._cache = None
+        self._meshes = None
+        self._fragments_chunked = None
         self._organelles = None
         self._clip_low_corner = None
         self._clip_high_corner = None
