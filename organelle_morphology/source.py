@@ -619,7 +619,7 @@ class DataSource:
         """
 
         @delayed(pure=False)
-        def _write_to_cache_batch(key_values, cs):
+        def _write_frag_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
             name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
@@ -627,7 +627,7 @@ class DataSource:
                 cache[key] = value
 
         @delayed(pure=False)
-        def _get_from_cache(key, cache):
+        def _get_fragment_cache(key, cache):
             return cache[key]
 
         if self._fragments_chunked is None:
@@ -649,7 +649,7 @@ class DataSource:
 
                 for i in range(0, len(tasks), batch_size):
                     to_save = tasks[i : i + batch_size]
-                    delayed_save = _write_to_cache_batch(to_save, cs)
+                    delayed_save = _write_frag_cache_batch(to_save, cs)
                     delayed_saves.append(delayed_save)
 
                 self.logger.debug(
@@ -663,7 +663,7 @@ class DataSource:
                 try:
                     t0 = time()
                     for idx, _ in np.ndenumerate(meshes_chunked_d):
-                        meshes_chunked_d[idx] = _get_from_cache(
+                        meshes_chunked_d[idx] = _get_fragment_cache(
                             f"fragment_{idx}", self.cache
                         )
                     self.logger.debug(
@@ -687,7 +687,7 @@ class DataSource:
     @property
     def meshes(self):
         @delayed(pure=False)
-        def _write_to_cache_batch(key_values, cs):
+        def _write_mesh_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
             name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
@@ -695,7 +695,7 @@ class DataSource:
                 cache[key] = value
 
         @delayed(pure=False)
-        def _get_from_cache(key, cache):
+        def _get_mesh_cache(key, cache):
             return cache[key]
 
         if self.project._cache_settings["cache_meshes"]:
@@ -716,7 +716,7 @@ class DataSource:
 
                 for i in range(0, len(tasks), batch_size):
                     to_save = tasks[i : i + batch_size]
-                    delayed_save = _write_to_cache_batch(to_save, cs)
+                    delayed_save = _write_mesh_cache_batch(to_save, cs)
                     delayed_saves.append(delayed_save)
 
                 self.logger.debug(f"Saving {len(delayed_saves)} batches of meshes")
@@ -729,7 +729,7 @@ class DataSource:
                 self._meshes = {}
                 t0 = time()
                 for idx in self.cache["mesh_ids"]:
-                    self._meshes[idx] = _get_from_cache(f"mesh_{idx}", self.cache)
+                    self._meshes[idx] = _get_mesh_cache(f"mesh_{idx}", self.cache)
                 self.logger.debug(f"Setup delayed mesh get_from_cache: {time() - t0}")
             return self._meshes
 
@@ -932,10 +932,6 @@ class DataSource:
             if simplify:
                 mesh = simplify_mesh(mesh, simplify)
             meshes[ind] = mesh
-
-        # keep references to make simplified meshes persistent, gc raw meshes
-        # self._storage["ref_meshes"] = persist(*meshes.values())
-        # meshes = persist(meshes)[0]
 
         self._computed_compression = self.project.compression_level
         self.logger.debug(

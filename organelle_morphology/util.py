@@ -295,16 +295,11 @@ def merge_meshes(
     if color or transp:
         meshes = [color_delayed_trimesh(m, color, transp) for m in meshes]
 
-    # if len(meshes) > 50:
-    #     return merge_delayed_trimeshes(meshes)
-
     batch_size = 1000
     while len(meshes) > 1:
         if len(meshes) <= batch_size:
-            # For small batches, merge all at once
             return merge_delayed_trimeshes(meshes)
         else:
-            # Process in batches to avoid deep recursion
             new_meshes = []
             for i in range(0, len(meshes), batch_size):
                 batch = meshes[i : i + batch_size]
@@ -314,18 +309,6 @@ def merge_meshes(
                     merged = merge_delayed_trimeshes(batch)
                     new_meshes.append(merged)
             meshes = new_meshes
-
-    # while (length := len(meshes)) > 1:
-    #     merged = []
-    #     for i, _ in enumerate(meshes[::2]):
-    #         j = length - (i + 1)
-    #         # odd-length: indices meet in the middle
-    #         if i == j:
-    #             merged.append(meshes[i])
-    #             break
-    #         merged.append(merge_delayed_trimeshes([meshes[i], meshes[j]]))
-    #     meshes = merged
-
     return meshes[0]
 
 

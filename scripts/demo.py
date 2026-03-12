@@ -50,7 +50,7 @@ c = p.get_caches()
 
 # %% benchmark
 p.clear_caches(True)
-p.clipping = [[0.6,0.2,0], [1,1,1]]
+p.clipping = [[0.6,0.5,0], [1,1,1]]
 p.compression_level = "s3"
 t0 = time()
 merge_meshes(list(s.meshes.values())).compute()
@@ -131,10 +131,15 @@ o.mesh_properties
 o.geometric_data
 
 # %% mcs
+p.clear_caches(True)
+# %% mcs
+%%time
 p.clipping = [[0.5,0.6,0.4], [0.6,0.7,1]]
-p.compression_level = "s2"
-
+p.compression_level = "s1"
 p.search_mcs(0.1)
+
+# %%
+
 o = s.organelles[0]
 mesh = o.get_mesh_mcs_colored("0.0-0.1")
 mesh.compute().show()
