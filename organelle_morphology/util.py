@@ -32,13 +32,13 @@ class Disk_Store:
             pickle.dump(value, f)
 
     def __getitem__(self, key):
-        if (self.path / str(key)).exists():
+        try:
             with open(self.path / str(key), "rb") as f:
                 value = pickle.load(f)
             self.mem_cache[key] = value
             return value
-        else:
-            raise KeyError(f"Key: {key} not found in {self.path}!")
+        except FileNotFoundError as e:
+            raise KeyError(f"Key: {key} not found in {self.path}!\n{e}")
 
     def __contains__(self, key):
         return (self.path / str(key)).exists()
@@ -98,8 +98,10 @@ class Cache:
 
     def __getitem__(self, key):
         for store in self.stores:
-            if key in store:
+            try:
                 return store[key]
+            except KeyError:
+                pass
         raise KeyError(f"Key {key} not in cache!")
 
     def __contains__(self, key):
