@@ -1,3 +1,4 @@
+import logging
 from dask import delayed
 from scipy.spatial import KDTree
 import trimesh
@@ -12,6 +13,8 @@ import organelle_morphology
 from dask.base import compute, persist
 
 from organelle_morphology.util import bounding_box_delayed, boxes_overlap
+
+logger = logging.getLogger(__name__)
 
 
 def get_min_dist(args):
@@ -259,7 +262,7 @@ def generate_distance_matrix(
         raise ValueError("No sources loaded! Can't calculate distances.")
     if max_dist == 0:
         max_dist = source.resolution[0] * 10
-        project.logger.warning(
+        logger.warning(
             f"No max distance set, calculating distance matrix up to {max_dist}"
         )
 

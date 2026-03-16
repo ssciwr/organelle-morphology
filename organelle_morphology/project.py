@@ -1,5 +1,7 @@
 from typing import Optional
 
+from organelle_morphology.util import setup_logging
+import logging
 from dask.base import compute
 from dask.delayed import Delayed
 from trimesh import Trimesh
@@ -8,9 +10,7 @@ from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
-    clear_loggers,
     corners_to_edges,
-    get_logger,
     merge_meshes,
     show,
 )
@@ -66,8 +66,11 @@ class Project:
         self.clear_memory_cache()
 
         self.path.mkdir(exist_ok=True)
-        self.logger = get_logger(self.path / "om2.log")
-        self.set_loglevel(loglevel)
+
+        log_file = self.path / "om2.log"
+        setup_logging(loglevel or "INFO", log_file)
+
+        self.logger = logging.getLogger(__name__)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         if not self.path.exists():
@@ -112,12 +115,10 @@ class Project:
     def __str__(self):
         return f"Project at {self.path}"
 
-    def __del__(self):
-        clear_loggers()
-
     def set_loglevel(self, loglevel: Optional[str]):
         if loglevel:
-            self.logger.handlers[0].setLevel(loglevel)
+            root_logger = logging.getLogger()
+            root_logger.setLevel(getattr(logging, loglevel.upper()))
             self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property

@@ -429,36 +429,37 @@ class FrequencyFilter(logging.Filter):
 frequency_filter = FrequencyFilter(threshold=103, burst_threshold=3, window_size=2)
 
 
-def get_logger(file: Path):
-    logger = logging.getLogger(file.stem)
-    logger.setLevel(logging.DEBUG)  # Set logger's level to INFO
-    logger.propagate = False
-    c_handler = logging.StreamHandler()
-    f_handler = logging.FileHandler(file)
+def setup_logging(loglevel: str = "INFO", log_file: Optional[Path] = None):
+    """Configure the root logger for the entire application
 
-    # Set levels - INFO for console, DEBUG for file
-    c_handler.setLevel(logging.INFO)
-    f_handler.setLevel(logging.DEBUG)
+    Args:
+        loglevel: The logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_file: Optional path to log file. If None, logs only to console.
+    """
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, loglevel.upper()))
+    root_logger.handlers.clear()
 
-    # Create formatters and add it to handlers
-    c_format = logging.Formatter("%(levelname)s - %(message)s")
-    f_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    c_handler.setFormatter(c_format)
-    f_handler.setFormatter(f_format)
+    # Create formatters
+    console_formatter = logging.Formatter("%(levelname)s - %(message)s")
+    file_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
-    # frequency filtering
-    c_handler.addFilter(frequency_filter)
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(getattr(logging, loglevel.upper()))
+    console_handler.setFormatter(console_formatter)
+    console_handler.addFilter(frequency_filter)
 
-    # Add handlers to the logger
-    logger.addHandler(c_handler)
-    logger.addHandler(f_handler)
-    return logger
+    root_logger.addHandler(console_handler)
 
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(file_formatter)
+        root_logger.addHandler(file_handler)
 
-def clear_loggers():
-    """Remove handlers from all loggers"""
-    loggers = [logging.getLogger()] + list(logging.Logger.manager.loggerDict.values())
-    for logger in loggers:
-        handlers = getattr(logger, "handlers", [])
-        for handler in handlers:
-            logger.removeHandler(handler)
+    # Controll other loggers
+    logging.getLogger("asyncio").setLevel(logging.WARNING)

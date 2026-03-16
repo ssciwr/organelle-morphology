@@ -1,4 +1,5 @@
 from collections import defaultdict
+import logging
 from time import time
 from typing import Optional
 from pathlib import Path
@@ -24,7 +25,6 @@ from skimage.measure import regionprops
 from dataclasses import dataclass, field
 import z5py
 
-import warnings
 
 from organelle_morphology.util import (
     Cache,
@@ -34,9 +34,6 @@ from organelle_morphology.util import (
     measure_gaussian_curvature_delayed,
     sample_skeleton,
 )
-
-
-warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
 
 @delayed(nout=2)
@@ -250,11 +247,11 @@ class DataSource:
         :type organelle: str
         """
 
+        self.logger = logging.getLogger(__name__)
         self.project: "organelle_morphology.Project" = project
         self.xml_path = xml_path
         self.org_name = organelle
         self.background_label = background_label
-        self.logger = self.project.logger
 
         # if not organelle_registry.get(self.org_name):
         #     raise ValueError(f"Unknown organelle class {self.org_name}")
@@ -273,10 +270,10 @@ class DataSource:
     def load_n5(self, n5: Path) -> dict[str, Timepoint]:
         f = z5py.File(n5, "r")
         timepoints = {}
-        self.project.logger.debug(f"Start loading {n5}, metadata structure:")
+        self.logger.debug(f"Start loading {n5}, metadata structure:")
 
         def _meta_finder(name: str, obj):
-            self.project.logger.debug(
+            self.logger.debug(
                 name + ": " + str(obj.__class__) + str(list(obj.attrs.items()))
             )
 
@@ -370,7 +367,7 @@ class DataSource:
 
         timepoints = self.load_n5(self.xml_path.parent / filename)
         if len(timepoints) != 1:
-            self.project.logger.warning(
+            self.logger.warning(
                 "Only single timepoints supported, ignoring all but the first!"
             )
 
