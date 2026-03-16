@@ -169,8 +169,8 @@ def test_calculate_mesh(project_with_sources, mocker, chunksize):
     mock_data = mocker.patch("organelle_morphology.source.da.from_array")
     mock_data.return_value = data
 
-    s.calculate_mesh()
-    assert len(list(s._meshes.keys())) == 342
+    ids_to_chunks, meshes_chunked = s.calculate_mesh()
+    assert len(ids_to_chunks) == 342
 
 
 @pytest.mark.parametrize("chunksize", range(0, 7))
@@ -187,8 +187,8 @@ def test_calculate_mesh_clipped(project_with_sources, mocker, chunksize):
     mock_data = mocker.patch("organelle_morphology.source.da.from_array")
     mock_data.return_value = data
 
-    s.calculate_mesh()
-    assert len(list(s._meshes.keys())) == 343
+    ids_to_chunks, meshes_chunked = s.calculate_mesh()
+    assert len(ids_to_chunks) == 343
 
 
 @pytest.mark.parametrize("rep", range(20))
@@ -210,11 +210,10 @@ def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
     #
     # dask.config.set(scheduler="synchronous")
     #
-    s.calculate_mesh(debug_color=0)
 
-    mesh = list(s._meshes.values())[0].compute()
+    mesh = list(s.meshes.values())[0].compute()
     assert mesh.is_watertight
-    assert len(list(s._meshes.keys())) == 1
+    assert len(list(s.meshes.keys())) == 1
     assert (
         np.count_nonzero(np.unique(mesh.vertices, axis=0, return_counts=True)[1] != 1)
         == 0
@@ -253,13 +252,14 @@ def test_calc_curvature(project_with_sources, mocker):
 
     assert ret is s._curvature_map
     assert len(s._curvature_map) == 19
-    mock_compute.assert_called_once()
+    mock_compute.assert_called()
 
+    mock_compute.reset_mock()
     mock_logger.debug.reset_mock()
 
     s.calc_curvature(labels=s.labels[5])
 
-    mock_compute.assert_called_once()  # not called again
+    mock_compute.assert_not_called()
     mock_logger.debug.assert_called_with("All curvatures already calculated.")
 
     mock_logger.debug.reset_mock()

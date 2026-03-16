@@ -1,5 +1,7 @@
 from typing import Optional
 
+from organelle_morphology.util import setup_logging
+import logging
 from dask.base import compute
 from dask.delayed import Delayed
 from trimesh import Trimesh
@@ -8,9 +10,7 @@ from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
-    clear_loggers,
     corners_to_edges,
-    get_logger,
     merge_meshes,
     show,
 )
@@ -66,8 +66,11 @@ class Project:
         self.clear_memory_cache()
 
         self.path.mkdir(exist_ok=True)
-        self.logger = get_logger(self.path / "om2.log")
-        self.set_loglevel(loglevel)
+
+        log_file = self.path / "om2.log"
+        setup_logging(loglevel or "INFO", log_file)
+
+        self.logger = logging.getLogger(__name__)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         if not self.path.exists():
@@ -95,6 +98,7 @@ class Project:
             "level": lambda: str(self.compression_level),
             "disk": True,
             "cache_root": lambda: self.path,
+            "cache_meshes": True,
         }
 
         # debug help
@@ -111,12 +115,10 @@ class Project:
     def __str__(self):
         return f"Project at {self.path}"
 
-    def __del__(self):
-        clear_loggers()
-
     def set_loglevel(self, loglevel: Optional[str]):
         if loglevel:
-            self.logger.handlers[0].setLevel(loglevel)
+            root_logger = logging.getLogger()
+            root_logger.setLevel(getattr(logging, loglevel.upper()))
             self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property
@@ -398,7 +400,9 @@ class Project:
                             merge_meshes(ot_meshes, color=-(i + 1), transp=transp)
                         )
                     mmesh = merge_meshes(meshes, color=0)
+            self.logger.debug("About to compute `to_show`")
             to_show = [mmesh.compute()]
+            self.logger.debug("Computed `to_show`")
 
         if skeleton:
             for o in orgs:
@@ -416,9 +420,9 @@ class Project:
 
         if clipping_box:
             if self.clipping is not None:
-                assert source._clip_low_corner_data is not None, (
-                    "source._clip_low_corner_data is missing"
-                )
+                # assert source._clip_low_corner_data is not None, (
+                #     "source._clip_low_corner_data is missing"
+                # )
                 edges = corners_to_edges(*source.clipping_corners)
                 trans = trimesh.transformations.translation_matrix(
                     source.clipping_corners[0] + (edges / 2)

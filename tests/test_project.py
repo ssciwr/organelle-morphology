@@ -249,7 +249,7 @@ def test_project_str(project):
 
 
 def test_set_loglevel(project):
-    with pytest.raises(ValueError):
+    with pytest.raises(AttributeError):
         project.set_loglevel("a")
     project.set_loglevel("CRITICAL")
 

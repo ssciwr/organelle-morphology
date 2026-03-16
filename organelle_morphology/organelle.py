@@ -1,3 +1,4 @@
+import logging
 from dask.delayed import Delayed
 import numpy as np
 import plotly.graph_objects as go
@@ -25,6 +26,7 @@ def organelle_types() -> list[str]:
 
 class Organelle:
     _name = "organelle_name"
+    logger = logging.getLogger(__name__)
 
     def __init__(self, source: "organelle_morphology.DataSource", label: int):
         """The organelle base class
@@ -47,8 +49,6 @@ class Organelle:
         self._skeleton_info = {}
         self._mcs = defaultdict(dict)
         self._mcs_dict = defaultdict(dict)
-
-        self.logger = self.source.project.logger
 
     @classmethod
     def construct(cls, source, labels: list[int]):

@@ -1,3 +1,5 @@
+import logging
+from dask import delayed
 from scipy.spatial import KDTree
 import trimesh
 
@@ -11,6 +13,8 @@ import organelle_morphology
 from dask.base import compute, persist
 
 from organelle_morphology.util import bounding_box_delayed, boxes_overlap
+
+logger = logging.getLogger(__name__)
 
 
 def get_min_dist(args):
@@ -28,9 +32,9 @@ def _check_overlap(box, bounding_boxes):
     return is_in
 
 
+@delayed
 def delayed_domain_min_dists(args):
     local_meshes, local_ids = args
-    local_meshes = compute(local_meshes)[0]
     tasks = []
 
     for i in range(len(local_meshes)):
@@ -258,7 +262,7 @@ def generate_distance_matrix(
         raise ValueError("No sources loaded! Can't calculate distances.")
     if max_dist == 0:
         max_dist = source.resolution[0] * 10
-        project.logger.warning(
+        logger.warning(
             f"No max distance set, calculating distance matrix up to {max_dist}"
         )
 
@@ -292,6 +296,7 @@ def generate_distance_matrix(
             columns=organelles_ids,
         )
 
+        # TODO: Better use data chunks instead of our own boxes
         if domain_decomposition:
             # domain decomposition into chunks of
             # size = size of clipped data in units of the resolution
@@ -363,9 +368,8 @@ def generate_distance_matrix(
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
-        results = project.client.gather(
-            project.client.map(delayed_domain_min_dists, tasks, batch_size=200)
-        )
+        results = map(delayed_domain_min_dists, tasks)
+        results = compute(results)[0]
         results = [r for res in results for r in res]
 
         for res in tqdm(results, "gathering distances"):
@@ -433,39 +437,44 @@ def generate_mcs(
     # generate the pairs of organelles
     pairs = set()
     for i, j in zip(rows, columns):
-        org_1_label = distance_matrix.index[i]
-        org_2_label = distance_matrix.columns[j]
+        org_1_id = distance_matrix.index[i]
+        org_2_id = distance_matrix.columns[j]
 
-        if org_1_label == org_2_label:
+        if org_1_id == org_2_id:
             continue
 
-        if org_1_label not in ids_1 or org_2_label not in ids_2:
+        if org_1_id not in ids_1 or org_2_id not in ids_2:
             continue
 
-        pairs.add(tuple(sorted([org_1_label, org_2_label])))
+        pairs.add(tuple(sorted([org_1_id, org_2_id])))
 
     project.logger.info(f"Found {len(pairs)} pairs of organelles to calculate MCS")
 
     meshes = {}
-    for labels in pairs:
-        for label in labels:
-            if label not in meshes:
-                meshes[label] = project.get_organelles(label)[0].mesh
-    meshes = compute(meshes)[0]
+    for ids in pairs:
+        for ind in ids:
+            if ind not in meshes:
+                meshes[ind] = project.get_organelles(ind)[0].mesh
 
-    for org_1_label, org_2_label in tqdm(pairs, "mcs calculation"):
-        org1 = project.get_organelles(org_1_label)[0]
-        org2 = project.get_organelles(org_2_label)[0]
-        mcs_calculator = MembraneContactSiteCalculator()
-        mcs_calculator.search_mcs(
-            org_1_label, org_2_label, meshes[org_1_label], meshes[org_2_label]
+    tasks = {}
+    for id_1, id_2 in tqdm(pairs, "mcs calculation"):
+        mcs_calc_delayed = calc_mcs_delayed(
+            mcs_label,
+            id_1,
+            id_2,
+            meshes[id_1],
+            meshes[id_2],
+            max_distance,
+            min_distance,
         )
-        mcs_calculator.analyze_mcs(
-            mcs_label, max_distance=max_distance, min_distance=min_distance
-        )
+        tasks[id_1 + id_2] = mcs_calc_delayed
+    results = compute(tasks)[0]
 
-        mcs_source = mcs_calculator.mcs_source
-        mcs_target = mcs_calculator.mcs_target
+    for id_1, id_2 in tqdm(pairs, "mcs calculation"):
+        org1 = project.get_organelles(id_1)[0]
+        org2 = project.get_organelles(id_2)[0]
+
+        mcs_source, mcs_target = results[id_1 + id_2]
 
         # add mcs to organelle
         if org1.id == mcs_source["self_id"]:
@@ -489,3 +498,22 @@ def generate_mcs(
         "organelles": org_ids,
     }
     return mcs_label
+
+
+@delayed
+def calc_mcs_delayed(
+    mcs_label,
+    id_1,
+    id_2,
+    mesh_1,
+    mesh_2,
+    max_dist,
+    min_dist,
+):
+    mcs_calculator = MembraneContactSiteCalculator()
+    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2)
+    mcs_calculator.analyze_mcs(mcs_label, max_distance=max_dist, min_distance=min_dist)
+
+    mcs_source = mcs_calculator.mcs_source
+    mcs_target = mcs_calculator.mcs_target
+    return mcs_source, mcs_target
