@@ -32,9 +32,9 @@ def _check_overlap(box, bounding_boxes):
     return is_in
 
 
+@delayed
 def delayed_domain_min_dists(args):
     local_meshes, local_ids = args
-    local_meshes = compute(local_meshes)[0]
     tasks = []
 
     for i in range(len(local_meshes)):
@@ -368,9 +368,8 @@ def generate_distance_matrix(
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
-        results = project.client.gather(
-            project.client.map(delayed_domain_min_dists, tasks, batch_size=200)
-        )
+        results = map(delayed_domain_min_dists, tasks)
+        results = compute(results)[0]
         results = [r for res in results for r in res]
 
         for res in tqdm(results, "gathering distances"):
