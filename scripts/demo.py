@@ -29,7 +29,7 @@ p = Project(
     compression_level="s2",
     loglevel="DEBUG",
     clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)),
-    n_workers=12,
+    n_workers=4,
 )
 p.add_source("../data/old_cebraEM/Interphase_4T/mito_it00_b0_7_stitched.xml", "mito")
 s = p.sources["mito_it00_b0_7_stitched"]
@@ -159,6 +159,11 @@ p.get_mcs_overview()
 # %%
 p.clipping = None
 p.compression_level = "s3"
+p.search_mcs(0.05, ids_filter_1="mito*", ids_filter_2="er*")
+
+# %% benchmark mcs
+p.clipping = [[0.5,0.6,0.5], [1,1,1]]
+p.compression_level = "s2"
 p.search_mcs(0.05, ids_filter_1="mito*", ids_filter_2="er*")
 
 # %% Curvature

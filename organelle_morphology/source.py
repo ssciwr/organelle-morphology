@@ -592,7 +592,17 @@ class DataSource:
     @property
     def labels(self) -> list[int]:
         """Return the list of labels present in the data source."""
-        return list(self.mesh_fragments[0].keys())
+        return list(self.ids_to_chunks.keys())
+
+    @property
+    def ids_to_chunks(self):
+        try:
+            ids_to_chunks = self.cache["ids_to_chunks"]
+            return ids_to_chunks
+        except KeyError:
+            self.mesh_fragments
+            ids_to_chunks = self.cache["ids_to_chunks"]
+            return ids_to_chunks
 
     @property
     def mesh_fragments(self) -> tuple[dict[int, list[tuple[int]]], np.ndarray]:
@@ -623,7 +633,9 @@ class DataSource:
                 cache[key] = value
 
         @delayed(pure=False)
-        def _get_fragment_cache(key, cache):
+        def _get_fragment_cache(key, cs):
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             return cache[key]
 
         if self._fragments_chunked is None:
@@ -656,10 +668,12 @@ class DataSource:
 
             else:
                 meshes_chunked_d = np.empty(self.cache["chunks_shape"], dtype=object)
+                cs = self.project.cache_settings.copy()
+                cs["source"] = self.xml_path.stem
                 try:
                     for idx, _ in np.ndenumerate(meshes_chunked_d):
                         meshes_chunked_d[idx] = _get_fragment_cache(
-                            f"fragment_{idx}", self.cache
+                            f"fragment_{idx}", cs
                         )
 
                 except KeyError as e:
@@ -686,8 +700,16 @@ class DataSource:
             for key, value in key_values:
                 cache[key] = value
 
-        @delayed(pure=False)
-        def _get_mesh_cache(key, cache):
+        def _write_mesh_cache(key_value, cs):
+            """Write multiple meshes to cache in a single operation"""
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
+            cache[key_value[0]] = compute(key_value[1])[0]
+
+        @delayed(pure=True)
+        def _get_mesh_cache(key, cs):
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             return cache[key]
 
         if self.project._cache_settings["cache_meshes"]:
@@ -695,8 +717,26 @@ class DataSource:
                 cs = self.project.cache_settings.copy()
                 cs["source"] = self.xml_path.stem
 
+                # # None batched variant
+                # tasks = []
+                # ids = []
+                #
+                # for idx, mesh in self.merge_fragments_into_meshes(
+                #     *self.mesh_fragments
+                # ).items():
+                #     ids.append(idx)
+                #     tasks.append((f"mesh_{idx}", mesh))
+                #
+                # self.logger.debug(f"Saving {len(tasks)} meshes")
+                # self.project.client.gather(
+                #     self.project.client.map(_write_mesh_cache, tasks, cs=cs)
+                # )
+                #
+                # self.cache["mesh_ids"] = ids
+                # self.logger.debug("Meshes saved to cache")
+
                 delayed_saves = []
-                batch_size = 1000  # TODO: check optimal batch size over chunks
+                batch_size = 10  # TODO: check optimal batch size over chunks
 
                 tasks = []
                 ids = []
@@ -711,16 +751,43 @@ class DataSource:
                     delayed_save = _write_mesh_cache_batch(to_save, cs)
                     delayed_saves.append(delayed_save)
 
-                self.logger.debug(f"Saving {len(delayed_saves)} batches of meshes")
-
-                compute(*delayed_saves, traverse=False)
                 self.cache["mesh_ids"] = ids
+                self.logger.debug(f"Saving {len(delayed_saves)} batches of meshes")
+                compute(*delayed_saves, traverse=False)
                 self.logger.debug("Meshes saved to cache")
 
+                # # batched by chunk
+                # delayed_saves = []
+                #
+                # meshes = self.merge_fragments_into_meshes(*self.mesh_fragments)
+                #
+                # tasks = defaultdict(list)
+                #
+                # for ind, mesh in meshes.items():
+                #     chunk = self.ids_to_chunks[ind][0]
+                #     tasks[chunk].append((f"mesh_{ind}", mesh))
+                #
+                # stats = defaultdict(int)
+                # for batch in tasks.values():
+                #     stats[len(batch)] += 1
+                # self.logger.debug(f"Stats about saving mesh batches:\n{stats}")
+                #
+                # for to_save in tasks.values():
+                #     delayed_save = _write_mesh_cache_batch(to_save, cs)
+                #     delayed_saves.append(delayed_save)
+                #
+                # self.logger.debug(f"Saving {len(delayed_saves)} batches of meshes")
+                #
+                # compute(*delayed_saves, traverse=False)
+                # self.cache["mesh_ids"] = list(meshes.keys())
+                # self.logger.debug("Meshes saved to cache")
+
             if self._meshes is None:
+                cs = self.project.cache_settings.copy()
+                cs["source"] = self.xml_path.stem
                 self._meshes = {}
                 for idx in self.cache["mesh_ids"]:
-                    self._meshes[idx] = _get_mesh_cache(f"mesh_{idx}", self.cache)
+                    self._meshes[idx] = _get_mesh_cache(f"mesh_{idx}", cs)
             return self._meshes
 
         return self.merge_fragments_into_meshes(*self.mesh_fragments)

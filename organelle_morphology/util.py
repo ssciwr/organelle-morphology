@@ -463,3 +463,6 @@ def setup_logging(loglevel: str = "INFO", log_file: Optional[Path] = None):
 
     # Controll other loggers
     logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("MARKDOWN").setLevel(logging.WARNING)
+    logging.getLogger("matplotlib").setLevel(logging.ERROR)
+    logging.getLogger("embreex").setLevel(logging.ERROR)
