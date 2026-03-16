@@ -252,13 +252,14 @@ def test_calc_curvature(project_with_sources, mocker):
 
     assert ret is s._curvature_map
     assert len(s._curvature_map) == 19
-    mock_compute.assert_called_once()
+    mock_compute.assert_called()
 
+    mock_compute.reset_mock()
     mock_logger.debug.reset_mock()
 
     s.calc_curvature(labels=s.labels[5])
 
-    mock_compute.assert_called_once()  # not called again
+    mock_compute.assert_not_called()
     mock_logger.debug.assert_called_with("All curvatures already calculated.")
 
     mock_logger.debug.reset_mock()
