@@ -632,7 +632,7 @@ class DataSource:
             for key, value in key_values:
                 cache[key] = value
 
-        @delayed(pure=False)
+        @delayed(pure=True)
         def _get_fragment_cache(key, cs):
             name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
