@@ -1,6 +1,5 @@
 from collections import defaultdict
 import logging
-from time import time
 from typing import Optional
 from pathlib import Path
 
@@ -658,14 +657,10 @@ class DataSource:
             else:
                 meshes_chunked_d = np.empty(self.cache["chunks_shape"], dtype=object)
                 try:
-                    t0 = time()
                     for idx, _ in np.ndenumerate(meshes_chunked_d):
                         meshes_chunked_d[idx] = _get_fragment_cache(
                             f"fragment_{idx}", self.cache
                         )
-                    self.logger.debug(
-                        f"Setup delayed fragm get_from_cache: {time() - t0}"
-                    )
 
                 except KeyError as e:
                     self.logger.warning(
@@ -724,10 +719,8 @@ class DataSource:
 
             if self._meshes is None:
                 self._meshes = {}
-                t0 = time()
                 for idx in self.cache["mesh_ids"]:
                     self._meshes[idx] = _get_mesh_cache(f"mesh_{idx}", self.cache)
-                self.logger.debug(f"Setup delayed mesh get_from_cache: {time() - t0}")
             return self._meshes
 
         return self.merge_fragments_into_meshes(*self.mesh_fragments)
