@@ -1,5 +1,5 @@
 import logging
-from dask import delayed
+from dask.distributed import span, delayed
 from scipy.spatial import KDTree
 import trimesh
 
@@ -283,7 +283,12 @@ def generate_distance_matrix(
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
         meshes = persist(*meshes)
         # WHY is this single threaded?? maybe bad distribution between workers
-        bounding_boxes = compute(bounding_boxes)[0]
+        with span("dist_matrix_bounding_boxes"):
+            # bounding_boxes = compute(bounding_boxes)[0]
+            # with many meshes (20k) ~30% faster then computing directly:
+            bounding_boxes = project.client.gather(
+                project.client.map(lambda m: m.compute().bounding_box.bounds, meshes)
+            )
         print(f"bounding_boxes {len(bounding_boxes)}")
 
         project.logger.info("Calculating distance matrix")
@@ -368,9 +373,10 @@ def generate_distance_matrix(
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
-        results = map(delayed_domain_min_dists, tasks)
-        results = compute(results)[0]
-        results = [r for res in results for r in res]
+        with span("dist_matrix_min_dists"):
+            results = map(delayed_domain_min_dists, tasks)
+            results = compute(results)[0]
+            results = [r for res in results for r in res]
 
         for res in tqdm(results, "gathering distances"):
             distance_df.loc[res[0]] = res[1]
