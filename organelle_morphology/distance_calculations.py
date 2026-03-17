@@ -1,5 +1,6 @@
 import logging
-from dask.distributed import span, delayed
+from dask import delayed
+from dask.distributed import span
 from scipy.spatial import KDTree
 import trimesh
 
