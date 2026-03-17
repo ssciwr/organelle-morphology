@@ -32,9 +32,8 @@ class Statistics:
         """Returns a list of all available skeleton properties."""
         skeleton_properties = [
             "num_nodes",
-            "num_edges",
             "total_length",
-            "avg_edge_length",
+            "std_length",
             "num_branch_points",
             "end_points",
             "mean_length",
@@ -47,8 +46,8 @@ class Statistics:
     def get_geometry_properties(self) -> list[str]:
         """Returns a list of all available geometry properties."""
         geometry_properties = [
-            "solidity",
-            "extent",
+            "voxel_solidity",
+            "voxel_extent",
         ]
         return geometry_properties
 
@@ -101,9 +100,8 @@ class Statistics:
         skeleton_keys = set(self.get_skeleton_properties())
         to_extract = selected.intersection(skeleton_keys)
         
-        # If no keys selected OR skeleton hasn't been generated yet, skip
-        if not to_extract or organelle.skeleton is None:
-            return {}
+        # If no keys selected or skeleton hasn't been generated yet, skip
+        if not to_extract or organelle.skeleton is None: return {}
 
         res = {}
         # Use skeleton_info directly
@@ -122,12 +120,14 @@ class Statistics:
 
         res = {}
         try:
-            # Only trigger if voxel keys are requested
             # Assuming these keys exist in the organelle.geometric_data dictionary
             geo_data = organelle.geometric_data
             for p in selected:
                 if p in geo_data:
-                    res[p] = geo_data[p]
+                    val = geo_data[p]
+                    if hasattr(val, "compute"): # delayed / Dask array
+                        val = float(val.compute()) 
+                    res[p] = val
         except Exception:
             pass
         return res
