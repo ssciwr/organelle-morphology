@@ -469,4 +469,4 @@ def setup_logging(loglevel: str = "INFO", log_file: Optional[Path] = None):
     logging.getLogger("client").setLevel(logging.ERROR)
     logging.getLogger("charset_normalizer").setLevel(logging.ERROR)
     logging.getLogger("application").setLevel(logging.ERROR)
-    logging.getLogger("skeletor").setLevel(logging.ERROR)
+    logging.getLogger("trimesh").setLevel(logging.ERROR)
