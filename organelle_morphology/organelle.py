@@ -215,7 +215,7 @@ class Organelle:
         cm = plt.get_cmap("tab20")
         colored = self.mesh
         if mcs_label is None:
-            labels = list(self.source.project.mcs_labels.keys())
+            labels = list(self.source.project.mcs_labels)
             if len(labels) == 0:
                 self.logger.warning("No mcs data, first run project.search_mcs")
                 return colored

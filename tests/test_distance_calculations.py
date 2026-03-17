@@ -199,7 +199,7 @@ def test_generate_mcs(project_with_sources):
     p = project_with_sources
 
     generate_mcs(p, "*", "*", max_distance=90, min_distance=0)
-    assert list(p.mcs_labels.keys())[0] == "0-90,-"
+    assert list(p.mcs_labels)[0] == "0-90,-"
     org = p.get_organelles("mito_0007")[0]
     assert "0-90,-" in org.mcs.keys()
     assert "0-90,-" in org.mcs_dict.keys()
