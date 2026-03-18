@@ -462,7 +462,7 @@ def generate_mcs(
                 meshes[ind] = project.get_organelles(ind)[0].mesh
 
     tasks = {}
-    for id_1, id_2 in tqdm(pairs, "mcs calculation"):
+    for id_1, id_2 in pairs:
         mcs_calc_delayed = calc_mcs_delayed(
             mcs_label,
             id_1,
@@ -473,11 +473,17 @@ def generate_mcs(
             min_distance,
         )
         tasks[id_1 + id_2] = mcs_calc_delayed
-    results = compute(tasks)[0]
 
-    for id_1, id_2 in tqdm(pairs, "mcs calculation"):
+    logger.debug(f"Running {len(tasks)} mcs calculations..")
+    results = compute(tasks)[0]
+    logger.debug("Finished mcs calculations")
+
+    org_ids = set()
+    for id_1, id_2 in pairs:
         org1 = project.get_organelles(id_1)[0]
         org2 = project.get_organelles(id_2)[0]
+        org_ids.add(id_1)
+        org_ids.add(id_2)
 
         mcs_source, mcs_target = results[id_1 + id_2]
 
@@ -489,13 +495,10 @@ def generate_mcs(
             org1.add_mcs(mcs_target)
             org2.add_mcs(mcs_source)
 
-    org_ids = set()
-    for o1, o2 in pairs:
-        org_ids.add(o1)
-        org_ids.add(o2)
     for org_id in org_ids:
         org = project.get_organelles(org_id)[0]
         org.calc_mcs_dict_entry(mcs_label)
+    logger.debug("Transfered mcs to organelles")
 
     project._mcs_labels[mcs_label] = {
         "max_distance": max_distance,

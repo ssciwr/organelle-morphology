@@ -50,13 +50,35 @@ c = p.get_caches()
 
 # %% benchmark
 p.clear_caches(True)
-p.clipping = [[0.6,0.5,0], [1,1,1]]
-p.compression_level = "s3"
+p.clipping = [[0.6,0.5,0.5], [1,1,1]]
+p.compression_level = "s2"
 t0 = time()
 merge_meshes(list(s.meshes.values())).compute()
 print("Done in: ", time() - t0)
 
 
+# %% benchmark
+p.clear_caches(True)
+p.clipping = [[0.6,0.5,0.5], [1,1,1]]
+p.compression_level = "s2"
+p.calculate_meshes()
+t0 = time()
+compute(list(s.meshes.values()))
+print("First: ", t1:=time() - t0)
+t0 = time()
+compute(list(s.meshes.values()))
+print("Second: ", t2:=time() - t0)
+t0 = time()
+compute(list(s.meshes.values()))
+print("Third: ", t3:=time() - t0)
+
+t0 = time()
+p.search_mcs(0.05, ids_filter_1="mito*", ids_filter_2="er*")
+print("mcs: ", t4:=time() - t0)
+print("\n", t1)
+print(t2)
+print(t3)
+print(t4)
 
 # %% change compression
 p.clipping = None
@@ -140,8 +162,8 @@ p.search_mcs(0.1)
 
 # %%
 
-o = s.organelles[0]
-mesh = o.get_mesh_mcs_colored("0.0-0.1")
+o = s.organelles[100]
+mesh = o.get_mesh_mcs_colored("0.0-0.1,-")
 mesh.compute().show()
 
 p.show(mcs_max=0.02)

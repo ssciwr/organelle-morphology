@@ -786,6 +786,7 @@ class Project:
 
     def get_mcs_properties(self, ids="*", mcs_labels: Optional[list] = None):
         """The properties of the MCS between organelles
+        Gathers data from all the organelles into one dataframe
 
         Args:
             ids: Glob-style filter pattern for organelles, defaults to "*"
@@ -797,23 +798,13 @@ class Project:
 
         orgs = self.get_organelles(ids=ids)
 
-        default_columns = {
-            "n_contacts": 0,
-            "total_area": 0,
-            "mean_area": 0,
-            "std_area": 0,
-            "mean_dist": 0,
-            "std_dist": 0,
-        }
         mcs_properties = {}
         for org in orgs:
             for label in self.mcs_labels:
                 if mcs_labels and label not in mcs_labels:
-                    mcs_properties[(label, org.id)] = default_columns.copy()
+                    continue
                 elif label in org.mcs_dict:
                     mcs_properties[(label, org.id)] = org.mcs_dict[label]
-                else:
-                    mcs_properties[(label, org.id)] = default_columns.copy()
 
         mcs_df = pd.DataFrame(mcs_properties).T
         mcs_df.sort_index(inplace=True)
@@ -882,6 +873,12 @@ class Project:
         overview = mcs_df.groupby(level=0).apply(_weighted_stats)
         overview.sort_index(axis=1, inplace=True)
         return overview.T
+
+    def n_oranelles(self) -> dict[str, int]:
+        counts = {}
+        for s in self.sources.values():
+            counts[s.org_name] = len(self.get_organelles(s.org_name + "*"))
+        return counts
 
     @property
     def skeleton_info(self):
