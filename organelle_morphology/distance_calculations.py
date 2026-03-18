@@ -11,7 +11,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import organelle_morphology
-from dask.base import compute, persist
+from dask.base import compute
 
 from organelle_morphology.util import bounding_box_delayed, boxes_overlap
 
@@ -282,8 +282,6 @@ def generate_distance_matrix(
         for organelle in organelles:
             meshes.append(organelle.mesh)
             bounding_boxes.append(bounding_box_delayed(organelle.mesh))
-        meshes = persist(*meshes)
-        # WHY is this single threaded?? maybe bad distribution between workers
         with span("dist_matrix_bounding_boxes"):
             # bounding_boxes = compute(bounding_boxes)[0]
             # with many meshes (20k) ~30% faster then computing directly:
