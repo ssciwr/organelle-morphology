@@ -558,8 +558,31 @@ def table_display_cell(filtered_distance_results, of_run_button):
             selection=None,
             pagination=False,
             max_height=400,
-            )
+        )
     table_display
+    return
+
+
+@app.cell
+def mcs_calc_ui_cell(sources):
+    mo.stop(len(sources) < 1, "")
+    mcs_distance_ui = mo.ui.number(value=10.0, label="Distance threshold")
+    run_mcs_btn = mo.ui.run_button(label="Calculate MCS")
+    mcs_calc_ui_layout = mo.vstack([
+        mo.md("## Membrane Contact Sites (MCS)"),
+        mcs_distance_ui,
+        run_mcs_btn
+    ])
+    mcs_calc_ui_layout
+    return mcs_distance_ui, run_mcs_btn
+
+
+@app.cell
+def mcs_execute_cell(mcs_dist_ui, mcs_distance_ui, project, run_mcs_btn):
+    mo.stop(not run_mcs_btn.value, mo.md(""))
+    project.search_mcs(mcs_distance_ui.value) # Calculate the contact sites
+    mcs_execute_status = mo.md(f"MCS successfully calculated for distance {mcs_distance_ui.value}.")
+    mcs_execute_status
     return
 
 
@@ -697,7 +720,8 @@ def plot_display_cell(df_data, plot_property_ui):
     mo.stop(not pd.api.types.is_numeric_dtype(valid_data), mo.md("Data is not numeric."))
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.hist(valid_data, bins=10)
+    counts, bins, patches = ax.hist(valid_data, bins=10, edgecolor='white', linewidth=1.2)
+    ax.set_xticks(bins) # one tick at every bin edge
     ax.set_title(f"Distribution of {prop}", fontsize=14, pad=15)
     ax.set_xlabel(prop, fontsize=12)
     ax.set_ylabel("Frequency", fontsize=12)
