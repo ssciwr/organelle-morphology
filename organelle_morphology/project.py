@@ -1,5 +1,7 @@
 from typing import Optional
 
+from organelle_morphology.util import setup_logging
+import logging
 from dask.base import compute
 from dask.delayed import Delayed
 from trimesh import Trimesh
@@ -8,9 +10,7 @@ from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
-    clear_loggers,
     corners_to_edges,
-    get_logger,
     merge_meshes,
     show,
 )
@@ -65,8 +65,12 @@ class Project:
         self._project_path = Path(project_path)
         self.clear_memory_cache()
 
-        self.logger = get_logger(self.path / "om2.log")
-        self.set_loglevel(loglevel)
+        self.path.mkdir(exist_ok=True)
+
+        log_file = self.path / "om2.log"
+        setup_logging(loglevel or "INFO", log_file)
+
+        self.logger = logging.getLogger(__name__)
         self.logger.info(f"\n ---- New Project {self.path} loaded ----\n")
 
         if not self.path.exists():
@@ -87,9 +91,6 @@ class Project:
         # The compression level at which we operate
         self.compression_level = compression_level
 
-        # Max distance for distance calculations
-        self._max_compute_distance = 0.0
-
         # callables will be updated on demand
         self._cache_settings = {
             "project_name": lambda: self.path.name,
@@ -97,6 +98,7 @@ class Project:
             "level": lambda: str(self.compression_level),
             "disk": True,
             "cache_root": lambda: self.path,
+            "cache_meshes": True,
         }
 
         # debug help
@@ -113,12 +115,10 @@ class Project:
     def __str__(self):
         return f"Project at {self.path}"
 
-    def __del__(self):
-        clear_loggers()
-
     def set_loglevel(self, loglevel: Optional[str]):
         if loglevel:
-            self.logger.handlers[0].setLevel(loglevel)
+            root_logger = logging.getLogger()
+            root_logger.setLevel(getattr(logging, loglevel.upper()))
             self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property
@@ -400,7 +400,9 @@ class Project:
                             merge_meshes(ot_meshes, color=-(i + 1), transp=transp)
                         )
                     mmesh = merge_meshes(meshes, color=0)
+            self.logger.debug("About to compute `to_show`")
             to_show = [mmesh.compute()]
+            self.logger.debug("Computed `to_show`")
 
         if skeleton:
             for o in orgs:
@@ -418,9 +420,9 @@ class Project:
 
         if clipping_box:
             if self.clipping is not None:
-                assert source._clip_low_corner_data is not None, (
-                    "source._clip_low_corner_data is missing"
-                )
+                # assert source._clip_low_corner_data is not None, (
+                #     "source._clip_low_corner_data is missing"
+                # )
                 edges = corners_to_edges(*source.clipping_corners)
                 trans = trimesh.transformations.translation_matrix(
                     source.clipping_corners[0] + (edges / 2)
@@ -627,7 +629,9 @@ class Project:
         self,
         max_distance: float,
         min_distance: float = 0.0,
-        ovewrite_mcs_label=False,
+        ids_filter_1: str = "*",
+        ids_filter_2: str = "*",
+        overwrite_mcs_label=False,
     ):
         """
         This function is used to search for membrane contact sites within a project.
@@ -635,19 +639,30 @@ class Project:
         the requested min and max distance.
 
         Args:
-            project (Project): The project object containing the distance matrix and organelles.
+            project (Project): The project object containing the distance
+                matrix and organelles.
             mcs_label (str): The label for the MCS pairs.
             max_distance (float): The maximum distance for the MCS pairs.
-            min_distance (float, optional): The minimum distance for the MCS pairs. Defaults to 0.
+            min_distance (float, optional): The minimum distance for the MCS
+                pairs. Defaults to 0.
+            ids_filter_1 (str, optional): Filter for the first set of
+                organelles using glob-style patterns. Defaults to "*".
+            ids_filter_2 (str, optional): Filter for the second set of
+                organelles using glob-style patterns. Defaults to "*".
+            overwrite_mcs_label (bool, optional): If the label exists, it
+                should be overwritten. Defaults to False.
 
         Returns:
             str: The label of this mcs search
         """
 
-        if max_distance > self.max_distance:
-            self.max_distance = max_distance
         return generate_mcs(
-            self, max_distance, min_distance, overwrite=ovewrite_mcs_label
+            self,
+            ids_filter_1=ids_filter_1,
+            ids_filter_2=ids_filter_2,
+            max_distance=max_distance,
+            min_distance=min_distance,
+            overwrite=overwrite_mcs_label,
         )
 
     @property
@@ -1167,6 +1182,7 @@ class Project:
         self._geometric_properties = {}
         self._curvature_map = {}
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
+        self._max_compute_distance = 0.0
         self._cache = None
 
     def clear_caches(self, clear_disk=False):

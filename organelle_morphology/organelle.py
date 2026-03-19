@@ -1,3 +1,4 @@
+import logging
 from dask.delayed import Delayed
 import numpy as np
 import plotly.graph_objects as go
@@ -25,6 +26,7 @@ def organelle_types() -> list[str]:
 
 class Organelle:
     _name = "organelle_name"
+    logger = logging.getLogger(__name__)
 
     def __init__(self, source: "organelle_morphology.DataSource", label: int):
         """The organelle base class
@@ -48,8 +50,6 @@ class Organelle:
         self._mcs = defaultdict(dict)
         self._mcs_dict = defaultdict(dict)
         self._geometric_data = {}
-
-        self.logger = self.source.project.logger
 
     @classmethod
     def construct(cls, source, labels: list[int]):
@@ -342,15 +342,15 @@ class Organelle:
             )
             return
 
-        _mcs_dict[(mcs_label)]["n_contacts"] = len(len_dist_list)
+        _mcs_dict[mcs_label]["n_contacts"] = len(len_dist_list)
 
-        _mcs_dict[(mcs_label)]["total_area"] = np.sum(entries["area"])
-        _mcs_dict[(mcs_label)]["mean_area"] = np.mean(area_list)
+        _mcs_dict[mcs_label]["total_area"] = np.sum(entries["area"])
+        _mcs_dict[mcs_label]["mean_area"] = np.mean(area_list)
 
         if len(area_list) == 1:
-            _mcs_dict[(mcs_label)]["std_area"] = 0
+            _mcs_dict[mcs_label]["std_area"] = 0
         else:
-            _mcs_dict[(mcs_label)]["std_area"] = np.std(area_list)
+            _mcs_dict[mcs_label]["std_area"] = np.std(area_list)
 
         # calculate the mean and std from the sub_mean and std values for each mcs partner
         try:
@@ -367,13 +367,13 @@ class Organelle:
             overall_var = 0
         overall_std = np.sqrt(overall_var)
 
-        _mcs_dict[(mcs_label)]["mean_dist"] = overall_mean
-        _mcs_dict[(mcs_label)]["std_dist"] = overall_std
+        _mcs_dict[mcs_label]["mean_dist"] = overall_mean
+        _mcs_dict[mcs_label]["std_dist"] = overall_std
 
         self._mcs_dict = _mcs_dict
 
     @property
-    def mcs(self) -> defaultdict:
+    def mcs(self) -> dict:
         return self._mcs
 
     @property

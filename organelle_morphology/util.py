@@ -32,13 +32,13 @@ class Disk_Store:
             pickle.dump(value, f)
 
     def __getitem__(self, key):
-        if (self.path / str(key)).exists():
+        try:
             with open(self.path / str(key), "rb") as f:
                 value = pickle.load(f)
             self.mem_cache[key] = value
             return value
-        else:
-            raise KeyError(f"Key: {key} not found in {self.path}!")
+        except FileNotFoundError as e:
+            raise KeyError(f"Key: {key} not found in {self.path}!\n{e}")
 
     def __contains__(self, key):
         return (self.path / str(key)).exists()
@@ -98,8 +98,10 @@ class Cache:
 
     def __getitem__(self, key):
         for store in self.stores:
-            if key in store:
-                return store.get(key)
+            try:
+                return store[key]
+            except KeyError:
+                pass
         raise KeyError(f"Key {key} not in cache!")
 
     def __contains__(self, key):
@@ -295,17 +297,20 @@ def merge_meshes(
     if color or transp:
         meshes = [color_delayed_trimesh(m, color, transp) for m in meshes]
 
-    while (length := len(meshes)) > 1:
-        merged = []
-        for i, _ in enumerate(meshes[::2]):
-            j = length - (i + 1)
-            # odd-length: indices meet in the middle
-            if i == j:
-                merged.append(meshes[i])
-                break
-            merged.append(merge_delayed_trimeshes([meshes[i], meshes[j]]))
-        meshes = merged
-
+    batch_size = 1000
+    while len(meshes) > 1:
+        if len(meshes) <= batch_size:
+            return merge_delayed_trimeshes(meshes)
+        else:
+            new_meshes = []
+            for i in range(0, len(meshes), batch_size):
+                batch = meshes[i : i + batch_size]
+                if len(batch) == 1:
+                    new_meshes.append(batch[0])
+                else:
+                    merged = merge_delayed_trimeshes(batch)
+                    new_meshes.append(merged)
+            meshes = new_meshes
     return meshes[0]
 
 
@@ -338,7 +343,9 @@ def show(meshes):
 
     if not isinstance(meshes, (list, tuple)):
         meshes = [meshes]
+    print("About to compute meshes in show")
     meshes = compute(*meshes, traverse=False)
+    print("Done")
 
     if len(meshes[0].vertices) > 0:
         scene.camera_transform = scene.camera.look_at(meshes[0].vertices[:200])
@@ -422,36 +429,44 @@ class FrequencyFilter(logging.Filter):
 frequency_filter = FrequencyFilter(threshold=103, burst_threshold=3, window_size=2)
 
 
-def get_logger(file: Path):
-    logger = logging.getLogger(file.stem)
-    logger.setLevel(logging.DEBUG)  # Set logger's level to INFO
-    logger.propagate = False
-    c_handler = logging.StreamHandler()
-    f_handler = logging.FileHandler(file)
+def setup_logging(loglevel: str = "INFO", log_file: Optional[Path] = None):
+    """Configure the root logger for the entire application
 
-    # Set levels - INFO for console, DEBUG for file
-    c_handler.setLevel(logging.INFO)
-    f_handler.setLevel(logging.DEBUG)
+    Args:
+        loglevel: The logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_file: Optional path to log file. If None, logs only to console.
+    """
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, loglevel.upper()))
+    root_logger.handlers.clear()
 
-    # Create formatters and add it to handlers
-    c_format = logging.Formatter("%(levelname)s - %(message)s")
-    f_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    c_handler.setFormatter(c_format)
-    f_handler.setFormatter(f_format)
+    # Create formatters
+    console_formatter = logging.Formatter("%(levelname)s - %(message)s")
+    file_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
-    # frequency filtering
-    c_handler.addFilter(frequency_filter)
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(getattr(logging, loglevel.upper()))
+    console_handler.setFormatter(console_formatter)
+    console_handler.addFilter(frequency_filter)
 
-    # Add handlers to the logger
-    logger.addHandler(c_handler)
-    logger.addHandler(f_handler)
-    return logger
+    root_logger.addHandler(console_handler)
 
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(file_formatter)
+        root_logger.addHandler(file_handler)
 
-def clear_loggers():
-    """Remove handlers from all loggers"""
-    loggers = [logging.getLogger()] + list(logging.Logger.manager.loggerDict.values())
-    for logger in loggers:
-        handlers = getattr(logger, "handlers", [])
-        for handler in handlers:
-            logger.removeHandler(handler)
+    # Controll other loggers
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("MARKDOWN").setLevel(logging.WARNING)
+    logging.getLogger("matplotlib").setLevel(logging.ERROR)
+    logging.getLogger("embreex").setLevel(logging.ERROR)
+    logging.getLogger("client").setLevel(logging.ERROR)
+    logging.getLogger("charset_normalizer").setLevel(logging.ERROR)
+    logging.getLogger("application").setLevel(logging.ERROR)
+    logging.getLogger("trimesh").setLevel(logging.ERROR)

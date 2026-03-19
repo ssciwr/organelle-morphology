@@ -112,7 +112,7 @@ def test_analyze_mcs(project_with_sources):
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", meshes[0], meshes[1])
 
-    calculator.analyze_mcs(90, 0)
+    calculator.analyze_mcs("test", 90, 0)
     assert np.all(calculator._distances < 90)
     assert np.all(calculator._distances > 88)
     assert calculator._distances.shape == (20,)
@@ -198,13 +198,13 @@ def test_search_mcs_watertight_meshes():
 def test_generate_mcs(project_with_sources):
     p = project_with_sources
 
-    generate_mcs(p, 90)
-    assert list(project_with_sources.mcs_labels.keys())[0] == "0-90"
-    org = project_with_sources.get_organelles("mito_0007")[0]
-    assert "0-90" in org.mcs.keys()
-    assert "0-90" in org.mcs_dict.keys()
-    mcs_d = org.mcs_dict["0-90"]
+    generate_mcs(p, "*", "*", max_distance=90, min_distance=0)
+    assert list(p.mcs_labels.keys())[0] == "0-90,-"
+    org = p.get_organelles("mito_0007")[0]
+    assert "0-90,-" in org.mcs.keys()
+    assert "0-90,-" in org.mcs_dict.keys()
+    mcs_d = org.mcs_dict["0-90,-"]
     # deviation due to mesh normals and subsequent filtering
     # -> different area on windows
-    np.testing.assert_almost_equal(mcs_d["mean_area"], 340.23860201, decimal=1)
-    assert mcs_d["n_contacts"] == 4
+    np.testing.assert_almost_equal(mcs_d["mean_area"], 240.6018779, decimal=1)
+    assert mcs_d["n_contacts"] == 7
