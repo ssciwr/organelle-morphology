@@ -17,6 +17,7 @@ with app.setup:
     import pandas as pd
     import traceback
     from organelle_morphology.statistics import Statistics
+    import matplotlib.pyplot as plt
 
 
 @app.cell
@@ -543,19 +544,21 @@ def calculation_cell(
     except Exception:
         calc_status = mo.md(f"Unable to run filter. Clear Cache and try again.\n\n```\n{traceback.format_exc()}\n```")
     calc_status
-    return filtered_distance_results
+    return (filtered_distance_results,)
 
 
 @app.cell
 def table_display_cell(filtered_distance_results, of_run_button):
     table_display = mo.md("Click on \"Run filter\" to see results here.")
-    if of_run_button.value :
+    if (of_run_button.value and not filtered_distance_results):
+        table_display = mo.md("No results. Change filter to see results here.")
+    elif (of_run_button.value):
         table_display= mo.ui.table(
             filtered_distance_results,
             selection=None,
             pagination=False,
             max_height=400,
-        )
+            )
     table_display
     return
 
@@ -586,8 +589,7 @@ def prop_selector_cell(project):
 
 
 @app.cell
-def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
-    # Standard prompt before the button is clicked
+def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
     stats_output = mo.md("Click on \"Calculate Statistics\" to compute geometry properties.")
 
     if calc_stats_btn.value:
@@ -595,9 +597,7 @@ def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
             display_stats = Statistics(project)
 
             # Get the list of internal keys from the checkbox dictionary
-            selected_properties = [
-                key for key, checked in prop_selector.value.items() if checked
-            ]
+            selected_properties = [ key for key, checked in prop_selector.value.items() if checked ]
 
             # Generate the raw data table
             df_data = display_stats.get_dataframe(
@@ -625,6 +625,14 @@ def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                 # Define formatting for the Raw Data Table
                 data_formats = {col: "{:.3f}".format for col in float_cols}
 
+                df_display = df_data.copy()
+                for col in float_cols:
+                    df_display[col] = df_display[col].replace([np.inf, -np.inf], np.nan)
+
+                for col in ["mesh_centroid", "mesh_inertia"]:
+                    if col in df_display.columns:
+                        df_display[col] = df_display[col].astype(str)
+
                 stats_output = mo.vstack([
                     mo.md("### Statistical Summary"),
                     mo.ui.table(
@@ -636,7 +644,7 @@ def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                     ),
                     mo.md(f"### Raw Organelle Data ({len(df_data)} items)"),
                     mo.ui.table(
-                        df_data,
+                        df_display,
                         selection=None,
                         pagination=False,
                         max_height=400,
@@ -651,6 +659,51 @@ def stats_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
             # Capture errors and display them
             stats_output = mo.md(f"## Unable to calculate statistics\n\n```\n{traceback.format_exc()}\n```")
     stats_output 
+    return (df_data,)
+
+
+@app.cell
+def plot_selector_cell(calc_stats_btn, df_data):
+    mo.stop(not calc_stats_btn.value, mo.md("Calculate statistics first to enable visualization."))
+
+    # Which properties can be plotted?
+    plotable_columns = [
+        col for col in df_data.columns 
+        if pd.api.types.is_numeric_dtype(df_data[col])
+    ]
+    mo.stop(not plotable_columns, mo.md("No properties selected for plotting."))
+
+    # Create the dropdown for the single property to plot
+    plot_property_ui = mo.ui.dropdown(
+        options=plotable_columns,
+        value=plotable_columns[0],
+        label="property:"
+    )
+
+    plot_selector_layout = mo.vstack([
+        mo.md("## Visualization"),
+        mo.md("Choose a property for the histogram:"),
+        plot_property_ui
+    ])
+    plot_selector_layout # show the layout
+    return (plot_property_ui,)
+
+
+@app.cell
+def plot_display_cell(df_data, plot_property_ui):
+    mo.stop(df_data is None or df_data.empty, mo.md("No data calculated yet."))
+    prop = plot_property_ui.value
+    valid_data = df_data[prop].replace([np.inf, -np.inf], np.nan).dropna() # can't display inf or NaN
+    mo.stop(not pd.api.types.is_numeric_dtype(valid_data), mo.md("Data is not numeric."))
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.hist(valid_data, bins=10)
+    ax.set_title(f"Distribution of {prop}", fontsize=14, pad=15)
+    ax.set_xlabel(prop, fontsize=12)
+    ax.set_ylabel("Frequency", fontsize=12)
+    ax.grid(axis='y', linestyle='--', alpha=0.4)
+    plt.tight_layout()
+    fig
     return
 
 
