@@ -759,12 +759,35 @@ class Project:
         "flatness_ratio": how cubic the mesh is (0-1)
 
         """
-        properties = {}
-        for source in self.sources.values():
-            source.basic_geometric_properties
+        orgs = self.get_organelles()
+        self.logger.info(f"Starting parallel geometry computation for {len(orgs)} organelles.")
+        
+        tasks = []
+        task_mapping = []
+        
+        # Gather uncomputed delayed objects
+        for org in orgs:
+            raw_data = org.geometric_data
+            for prop_name, val in raw_data.items():
+                if hasattr(val, "compute"):
+                    tasks.append(val)
+                    task_mapping.append((org, prop_name))
+                    
+        # parallel Dask compute
+        if tasks:
+            results = compute(*tasks)
+            
+            # Group results by organelle and cache them
+            updates = defaultdict(dict)
+            for (org, prop_name), computed_val in zip(task_mapping, results):
+                updates[org][prop_name] = float(computed_val)
+                
+            for org, computed_dict in updates.items():
+                org.cache_geometric_data(computed_dict)
 
-        for organelle in self.get_organelles():
-            # TODO: geometric data is expensive, and not parallel, necessary?
+        properties = {}
+
+        for organelle in orgs:
             properties[organelle.id] = (
                 organelle.mesh_properties | organelle.geometric_data
             )

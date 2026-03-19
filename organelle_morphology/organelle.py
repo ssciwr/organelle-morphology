@@ -47,6 +47,7 @@ class Organelle:
         self._skeleton_info = {}
         self._mcs = defaultdict(dict)
         self._mcs_dict = defaultdict(dict)
+        self._geometric_data = {}
 
         self.logger = self.source.project.logger
 
@@ -255,7 +256,16 @@ class Organelle:
         "voxel_solidity":ratio of pixels in the convex hull to those in the region
 
         """
+        if self._geometric_data: # if cached
+            return self._geometric_data
+        
         return self.source.basic_geometric_properties[self.id]
+    
+    def cache_geometric_data(self, computed_data: dict):
+        """Cache computed geometric properties to avoid re-evaluating Dask graphs."""
+        if not hasattr(self, "_geometric_data"):
+            self._geometric_data = {}
+        self._geometric_data.update(computed_data)
 
     @property
     def mesh_properties(self):

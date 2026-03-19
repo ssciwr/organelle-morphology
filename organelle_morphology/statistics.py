@@ -125,9 +125,8 @@ class Statistics:
             for p in selected:
                 if p in geo_data:
                     val = geo_data[p]
-                    if hasattr(val, "compute"): # delayed / Dask array
-                        val = float(val.compute()) 
-                    res[p] = val
+                    if not hasattr(val, "compute"): # Only add if delayed / Dask array is computed
+                        res[p] = val
         except Exception:
             pass
         return res

@@ -578,11 +578,33 @@ def mcs_calc_ui_cell(sources):
 
 
 @app.cell
-def mcs_execute_cell(mcs_dist_ui, mcs_distance_ui, project, run_mcs_btn):
+def mcs_execute_cell(mcs_distance_ui, project, run_mcs_btn):
     mo.stop(not run_mcs_btn.value, mo.md(""))
     project.search_mcs(mcs_distance_ui.value) # Calculate the contact sites
     mcs_execute_status = mo.md(f"MCS successfully calculated for distance {mcs_distance_ui.value}.")
     mcs_execute_status
+    return
+
+
+@app.cell
+def geo_calc_ui_cell(sources):
+    mo.stop(len(sources) < 1, "")
+    run_geo_btn = mo.ui.run_button(label="Calculate Geometry")
+    geo_calc_ui_layout = mo.vstack([
+        mo.md("## Geometry Properties"),
+        mo.md("Compute voxel-based geometric data (voxel_solidity, voxel_extent)."),
+        run_geo_btn
+    ])
+    geo_calc_ui_layout
+    return (run_geo_btn,)
+
+
+@app.cell
+def geo_execute_cell(mesh_id_filter, project, run_geo_btn):
+    mo.stop(not run_geo_btn.value, mo.md(""))
+    geo_df = project.geometric_properties # Accessing the property triggers the computation and caching
+    geo_execute_status = mo.md(f"Geometry properties computed for {len(geo_df)} organelles.")
+    geo_execute_status
     return
 
 
