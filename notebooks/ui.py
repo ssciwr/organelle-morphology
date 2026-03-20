@@ -600,7 +600,7 @@ def geo_calc_ui_cell(sources):
 
 
 @app.cell
-def geo_execute_cell(mesh_id_filter, project, run_geo_btn):
+def geo_execute_cell(project, run_geo_btn):
     mo.stop(not run_geo_btn.value, mo.md(""))
     geo_df = project.geometric_properties # Accessing the property triggers the computation and caching
     geo_execute_status = mo.md(f"Geometry properties computed for {len(geo_df)} organelles.")
@@ -635,7 +635,7 @@ def prop_selector_cell(project):
 
 @app.cell
 def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
-    stats_output = mo.md("Click on \"Calculate Statistics\" to compute geometry properties.")
+    stats_output = mo.md("Click on \"Calculate Statistics\" to show properties.")
 
     if calc_stats_btn.value:
         try:
@@ -718,36 +718,61 @@ def plot_selector_cell(calc_stats_btn, df_data):
     ]
     mo.stop(not plotable_columns, mo.md("No properties selected for plotting."))
 
-    # Create the dropdown for the single property to plot
+    # Create the dropdown for the property to plot
     plot_property_ui = mo.ui.dropdown(
         options=plotable_columns,
         value=plotable_columns[0],
         label="property:"
     )
 
+    # Create dropdown for secondary plot options (e.g., histogram or scatter with another property)
+    plot_selector_secondary_options = ["freq. (->histogram)"] + plotable_columns
+    plot_secondary_property_ui = mo.ui.dropdown(
+        options=plot_selector_secondary_options,
+        value="freq. (->histogram)",
+        label="Y-axis:"
+    )
+
     plot_selector_layout = mo.vstack([
         mo.md("## Visualization"),
-        mo.md("Choose a property for the histogram:"),
-        plot_property_ui
+        mo.md("Choose a property for the plot:"),
+        plot_property_ui,
+        plot_secondary_property_ui
     ])
     plot_selector_layout # show the layout
-    return (plot_property_ui,)
+    return plot_property_ui, plot_secondary_property_ui
 
 
 @app.cell
-def plot_display_cell(df_data, plot_property_ui):
+def plot_display_cell(df_data, plot_property_ui, plot_secondary_property_ui):
     mo.stop(df_data is None or df_data.empty, mo.md("No data calculated yet."))
-    prop = plot_property_ui.value
-    valid_data = df_data[prop].replace([np.inf, -np.inf], np.nan).dropna() # can't display inf or NaN
-    mo.stop(not pd.api.types.is_numeric_dtype(valid_data), mo.md("Data is not numeric."))
+
+    prop_x = plot_property_ui.value
+    prop_y = plot_secondary_property_ui.value
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    counts, bins, patches = ax.hist(valid_data, bins=10, edgecolor='white', linewidth=1.2)
-    ax.set_xticks(bins) # one tick at every bin edge
-    ax.set_title(f"Distribution of {prop}", fontsize=14, pad=15)
-    ax.set_xlabel(prop, fontsize=12)
-    ax.set_ylabel("Frequency", fontsize=12)
-    ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+    if prop_y == "freq. (->histogram)":
+        valid_data = df_data[prop_x].replace([np.inf, -np.inf], np.nan).dropna()
+        mo.stop(not pd.api.types.is_numeric_dtype(valid_data), mo.md("Data is not numeric."))
+
+        counts, bins, patches = ax.hist(valid_data, bins=10, edgecolor='white', linewidth=1.2)
+        ax.set_xticks(bins)
+        ax.set_title(f"Distribution of {prop_x}", fontsize=14, pad=15)
+        ax.set_xlabel(prop_x, fontsize=12)
+        ax.set_ylabel("Frequency", fontsize=12)
+        ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+    else:
+        valid_data = df_data[[prop_x, prop_y]].replace([np.inf, -np.inf], np.nan).dropna()
+        mo.stop(not pd.api.types.is_numeric_dtype(valid_data[prop_x]) or not pd.api.types.is_numeric_dtype(valid_data[prop_y]), mo.md("Data is not numeric."))
+
+        ax.scatter(valid_data[prop_x], valid_data[prop_y], alpha=0.7)
+        ax.set_title(f"{prop_y} vs {prop_x}", fontsize=14, pad=15)
+        ax.set_xlabel(prop_x, fontsize=12)
+        ax.set_ylabel(prop_y, fontsize=12)
+        ax.grid(axis='both', linestyle='--', alpha=0.4)
+
     plt.tight_layout()
     fig
     return
