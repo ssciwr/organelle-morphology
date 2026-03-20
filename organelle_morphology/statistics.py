@@ -90,8 +90,8 @@ class Statistics:
             for p in selected:
                 if p in props:
                     res[p] = props[p]
-        except Exception as e:
-            res["mesh_error"] = str(e)
+        except (KeyError, AttributeError, RuntimeError) as e:
+            self.project.logger.warning(f"Failed to retrieve mesh properties for {organelle.id}: {e}")
             
         return res
     
@@ -127,8 +127,8 @@ class Statistics:
                     val = geo_data[p]
                     if not hasattr(val, "compute"): # Only add if delayed / Dask array is computed
                         res[p] = val
-        except Exception:
-            pass
+        except (KeyError, AttributeError, RuntimeError) as e:
+            self.project.logger.warning(f"Failed to retrieve geometry stats for {organelle.id}: {e}")
         return res
     
     def get_contact_stats(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
@@ -158,7 +158,7 @@ class Statistics:
         """
         Returns a unified DataFrame with a user-defined selection of properties
         from mesh, skeleton, geometry, and contact sources.
-        check get_properties89 to see all potentially available properties.
+        check get_properties to see all potentially available properties.
 
         :param ids: Glob-style filter for organelles (e.g., "mito_*").
         :param properties: List of keys to include. If None, defaults to 
@@ -172,7 +172,8 @@ class Statistics:
 
         try:
             organelles = self.project.get_organelles(ids=ids)
-        except Exception:
+        except Exception as e:
+            self.project.logger.error(f"Failed to retrieve organelles for ids '{ids}': {e}")
             # If retrieval fails, return empty DF with correct columns
             return pd.DataFrame(columns=["ID"] + sorted(list(selected_set)))
 

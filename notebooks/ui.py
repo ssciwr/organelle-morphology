@@ -219,7 +219,7 @@ def _(sources):
     mo.stop(len(sources) < 1, "Add a source first!")
     run_show_mesh = mo.ui.run_button(label="Show Mesh")
     mesh_id_filter = mo.ui.text(value="*", label="Organelle id filter")
-    highlight_filter = mo.ui.text(value="", label="Highligh ids")
+    highlight_filter = mo.ui.text(value="", label="Highlight ids")
 
     box_dict = mo.ui.dictionary(
         {
@@ -611,7 +611,7 @@ def geo_execute_cell(mesh_id_filter, project, run_geo_btn):
 @app.cell
 def prop_selector_cell(project):
 
-    stats =Statistics(project)
+    stats = Statistics(project)
     available_properties = stats.get_properties()
 
     # Convert the list of available_properties keys into a dictionary of checkboxes
@@ -642,7 +642,7 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
             display_stats = Statistics(project)
 
             # Get the list of internal keys from the checkbox dictionary
-            selected_properties = [ key for key, checked in prop_selector.value.items() if checked ]
+            selected_properties = [key for key, checked in prop_selector.value.items() if checked]
 
             # Generate the raw data table
             df_data = display_stats.get_dataframe(
