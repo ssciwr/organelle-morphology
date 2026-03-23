@@ -592,7 +592,7 @@ def geo_calc_ui_cell(sources):
     run_geo_btn = mo.ui.run_button(label="Calculate Geometry")
     geo_calc_ui_layout = mo.vstack([
         mo.md("## Geometry Properties"),
-        mo.md("Compute voxel-based geometric data (voxel_solidity, voxel_extent)."),
+        mo.md("Compute voxel-based data (voxel_solidity, voxel_extent)."),
         run_geo_btn
     ])
     geo_calc_ui_layout
@@ -726,10 +726,11 @@ def plot_selector_cell(calc_stats_btn, df_data):
     )
 
     # Create dropdown for secondary plot options (e.g., histogram or scatter with another property)
-    plot_selector_secondary_options = ["freq. (->histogram)"] + plotable_columns
+    plot_selector_histogram = "freq. (->histogram)"
+    plot_selector_secondary_options = [plot_selector_histogram] + plotable_columns
     plot_secondary_property_ui = mo.ui.dropdown(
         options=plot_selector_secondary_options,
-        value="freq. (->histogram)",
+        value=plot_selector_histogram,
         label="Y-axis:"
     )
 
@@ -740,11 +741,11 @@ def plot_selector_cell(calc_stats_btn, df_data):
         plot_secondary_property_ui
     ])
     plot_selector_layout # show the layout
-    return plot_property_ui, plot_secondary_property_ui
+    return plot_property_ui, plot_secondary_property_ui,plot_selector_histogram
 
 
 @app.cell
-def plot_display_cell(df_data, plot_property_ui, plot_secondary_property_ui):
+def plot_display_cell(df_data, plot_property_ui, plot_secondary_property_ui,plot_selector_histogram):
     mo.stop(df_data is None or df_data.empty, mo.md("No data calculated yet."))
 
     prop_x = plot_property_ui.value
@@ -752,7 +753,7 @@ def plot_display_cell(df_data, plot_property_ui, plot_secondary_property_ui):
 
     fig, ax = plt.subplots(figsize=(8, 4))
 
-    if prop_y == "freq. (->histogram)":
+    if prop_y == plot_selector_histogram:
         valid_data = df_data[prop_x].replace([np.inf, -np.inf], np.nan).dropna()
         mo.stop(not pd.api.types.is_numeric_dtype(valid_data), mo.md("Data is not numeric."))
 
