@@ -44,22 +44,23 @@ def test_statistics_mcs_aggregation(project_with_sources, mocker):
     stats = Statistics(project_with_sources)
     org = project_with_sources.get_organelles("mito_0001")[0] # organelle to mock
     # Instead of running MembraneContactSiteCalculator, mock the mcs_dict property
-    test_mcs_data = {"contact_er": 150.5, "contact_nucleus": 42.0 }
+    test_mcs_data = {"0-0.01": {"total_area": 150.5, "mean_dist": 42.0}}
     mocker.patch.object(type(org), 'mcs_dict', new_callable=mocker.PropertyMock, return_value=test_mcs_data)
-    props = ["contact_er", "contact_nucleus", "mesh_volume"] # Request contact keys
+    props = ["total_area", "mean_dist", "mesh_volume"] # Request contact keys
     df = stats.get_dataframe(ids="mito_0001", properties=props)
-    assert df.iloc[0]["contact_er"] == 150.5 # Verify
-    assert df.iloc[0]["contact_nucleus"] == 42.0 # Verify
+    assert df.iloc[0]["0-0.01-total_area"] == 150.5 # Verify
+    assert df.iloc[0]["0-0.01-mean_dist"] == 42.0 # Verify
     
     summary_df = stats.get_summary_dataframe(df) # Verify the summary
     avg_row = summary_df[summary_df["Measure"] == "Average (or Share)"].iloc[0]
-    assert avg_row["contact_er"] == 150.5
+    assert avg_row["0-0.01-total_area"] == 150.5
 
 def test_statistics_integration(project_with_sources):
     """Integration test for the full statistics pipeline."""
     # assume project_with_sources contains meshes
     project_with_sources.skeletonize_wavefront()
     project_with_sources.search_mcs(10) # calc and add contact sites
+    _ = project_with_sources.geometric_properties # calc and add voxel based properties
     stats = Statistics(project_with_sources)
     stats_df = stats.get_dataframe(properties=stats.get_properties()) # all properties
     assert not stats_df.empty
