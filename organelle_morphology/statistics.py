@@ -125,8 +125,10 @@ class Statistics:
             for p in selected:
                 if p in geo_data:
                     val = geo_data[p]
-                    if not hasattr(val, "compute"): # Only add if delayed / Dask array is computed
-                        res[p] = val
+                    if hasattr(val, "compute"): # If it's a Dask/Delayed object,
+                        res[p] = val.compute() # compute it
+                    else:
+                        res[p] = val # otherwise, take it as is
         except (KeyError, AttributeError, RuntimeError) as e:
             self.project.logger.warning(f"Failed to retrieve geometry stats for {organelle.id}: {e}")
         return res

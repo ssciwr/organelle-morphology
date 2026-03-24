@@ -49,7 +49,6 @@ class Organelle:
         self._skeleton_info = {}
         self._mcs = defaultdict(dict)
         self._mcs_dict = defaultdict(dict)
-        self._geometric_data = {}
 
     @classmethod
     def construct(cls, source, labels: list[int]):
@@ -257,23 +256,6 @@ class Organelle:
 
         """
         return self.source.basic_geometric_properties[self.id]
-    
-    @geometric_data.setter
-    def geometric_data(self, computed_data: dict):
-        """Cache computed geometric properties in the source."""
-
-        if "basic_geo_props" not in self.source.cache:
-            geo_props = {} # Create a new cache dict
-        else:
-            geo_props = self.source.cache["basic_geo_props"] # or take existing one
-            
-        if self.id not in geo_props:
-            geo_props[self.id] = {}
-            
-        geo_props[self.id].update(computed_data)
-        
-        # Re-assign to source cache (trigger disk-save)
-        self.source.cache["basic_geo_props"] = geo_props
 
     @property
     def mesh_properties(self):
