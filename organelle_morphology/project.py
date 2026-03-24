@@ -798,7 +798,7 @@ class Project:
                 updates[org][prop_name] = float(computed_val)
                 
             for org, computed_dict in updates.items():
-                org.cache_geometric_data(computed_dict)
+                org.geometric_data = computed_dict
 
         properties = {}
 

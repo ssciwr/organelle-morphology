@@ -261,7 +261,8 @@ class Organelle:
         
         return self.source.basic_geometric_properties[self.id]
     
-    def cache_geometric_data(self, computed_data: dict):
+    @geometric_data.setter
+    def geometric_data(self, computed_data: dict):
         """Cache computed geometric properties to avoid re-evaluating Dask graphs."""
         if not hasattr(self, "_geometric_data"):
             self._geometric_data = {}
