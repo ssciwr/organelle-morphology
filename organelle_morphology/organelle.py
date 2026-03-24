@@ -256,17 +256,24 @@ class Organelle:
         "voxel_solidity":ratio of pixels in the convex hull to those in the region
 
         """
-        if self._geometric_data: # if cached
-            return self._geometric_data
-        
         return self.source.basic_geometric_properties[self.id]
     
     @geometric_data.setter
     def geometric_data(self, computed_data: dict):
-        """Cache computed geometric properties to avoid re-evaluating Dask graphs."""
-        if not hasattr(self, "_geometric_data"):
-            self._geometric_data = {}
-        self._geometric_data.update(computed_data)
+        """Cache computed geometric properties in the source."""
+
+        if "basic_geo_props" not in self.source.cache:
+            geo_props = {} # Create a new cache dict
+        else:
+            geo_props = self.source.cache["basic_geo_props"] # or take existing one
+            
+        if self.id not in geo_props:
+            geo_props[self.id] = {}
+            
+        geo_props[self.id].update(computed_data)
+        
+        # Re-assign to source cache (trigger disk-save)
+        self.source.cache["basic_geo_props"] = geo_props
 
     @property
     def mesh_properties(self):
