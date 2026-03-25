@@ -269,7 +269,7 @@ def test_mcs(project_with_sources):
     project_with_sources.search_mcs(10)
 
     props = project_with_sources.get_mcs_properties()
-    assert props.shape == (10, 6)
+    assert props.shape == (10, 10)
 
     overview = project_with_sources.get_mcs_overview()
     assert overview.shape == (10, 1)
