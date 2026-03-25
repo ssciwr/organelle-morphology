@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from organelle_morphology.project import Project
     from organelle_morphology.organelle import Organelle
 
+
 class Statistics:
     """
     Calculates and aggregates morphological statistics from a Project.
@@ -14,7 +15,7 @@ class Statistics:
 
     def __init__(self, project: Project):
         self.project = project
-    
+
     def get_mesh_properties(self) -> list[str]:
         """Returns a list of all available mesh properties."""
         mesh_properties = [
@@ -27,7 +28,7 @@ class Statistics:
             "mesh_inertia",
         ]
         return mesh_properties
-    
+
     def get_skeleton_properties(self) -> list[str]:
         """Returns a list of all available skeleton properties."""
         skeleton_properties = [
@@ -42,7 +43,7 @@ class Statistics:
             "std_radius",
         ]
         return skeleton_properties
-    
+
     def get_geometry_properties(self) -> list[str]:
         """Returns a list of all available geometry properties."""
         geometry_properties = [
@@ -62,18 +63,20 @@ class Statistics:
             "std_dist",
         ]
         return contact_properties
-    
+
     def get_properties(self) -> list[str]:
         """Returns a list of all available properties across mesh, skeleton, geometry, and contact sources."""
         all_properties = (
-            self.get_mesh_properties() +
-            self.get_skeleton_properties() +
-            self.get_geometry_properties() +
-            self.get_contact_properties()
+            self.get_mesh_properties()
+            + self.get_skeleton_properties()
+            + self.get_geometry_properties()
+            + self.get_contact_properties()
         )
         return sorted(all_properties)
 
-    def get_organelle_mesh_properties(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
+    def get_organelle_mesh_properties(
+        self, organelle: Organelle, selected: set[str]
+    ) -> dict[str, Any]:
         """
         Extracts only the requested mesh-based properties.
         """
@@ -81,27 +84,33 @@ class Statistics:
         # Define the keys that only the mesh property provides
         mesh_keys = set(self.get_mesh_properties())
         to_extract = selected.intersection(mesh_keys)
-        if not to_extract: return {}
+        if not to_extract:
+            return {}
 
         res = {}
         try:
             props = organelle.mesh_properties
-            
+
             for p in selected:
                 if p in props:
                     res[p] = props[p]
         except (KeyError, AttributeError, RuntimeError) as e:
-            self.project.logger.warning(f"Failed to retrieve mesh properties for {organelle.id}: {e}")
-            
+            self.project.logger.warning(
+                f"Failed to retrieve mesh properties for {organelle.id}: {e}"
+            )
+
         return res
-    
-    def get_skeleton_stats(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
+
+    def get_skeleton_stats(
+        self, organelle: Organelle, selected: set[str]
+    ) -> dict[str, Any]:
         """Extracts requested graph/skeleton metrics."""
         skeleton_keys = set(self.get_skeleton_properties())
         to_extract = selected.intersection(skeleton_keys)
-        
+
         # If no keys selected or skeleton hasn't been generated yet, skip
-        if not to_extract or organelle.skeleton is None: return {}
+        if not to_extract or organelle.skeleton is None:
+            return {}
 
         res = {}
         # Use skeleton_info directly
@@ -111,12 +120,17 @@ class Statistics:
                 res[p] = info[p]
         return res
 
-    def get_geometry_stats(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
+    def get_geometry_stats(
+        self, organelle: Organelle, selected: set[str]
+    ) -> dict[str, Any]:
         """Extracts requested voxel-based geometric data (solidity, extent, etc)."""
 
-        voxel_keys = set(self.get_geometry_properties())  # things that require voxel data
-        to_extract = selected.intersection(voxel_keys) # find intersection
-        if not to_extract: return {} # return early if no voxel keys are requested
+        voxel_keys = set(
+            self.get_geometry_properties()
+        )  # things that require voxel data
+        to_extract = selected.intersection(voxel_keys)  # find intersection
+        if not to_extract:
+            return {}  # return early if no voxel keys are requested
 
         res = {}
         try:
@@ -125,15 +139,19 @@ class Statistics:
             for p in selected:
                 if p in geo_data:
                     val = geo_data[p]
-                    if hasattr(val, "compute"): # If it's a Dask/Delayed object,
-                        res[p] = val.compute() # compute it
+                    if hasattr(val, "compute"):  # If it's a Dask/Delayed object,
+                        res[p] = val.compute()  # compute it
                     else:
-                        res[p] = val # otherwise, take it as is
+                        res[p] = val  # otherwise, take it as is
         except (KeyError, AttributeError, RuntimeError) as e:
-            self.project.logger.warning(f"Failed to retrieve geometry stats for {organelle.id}: {e}")
+            self.project.logger.warning(
+                f"Failed to retrieve geometry stats for {organelle.id}: {e}"
+            )
         return res
-    
-    def get_contact_stats(self, organelle: Organelle, selected: set[str]) -> dict[str, Any]:
+
+    def get_contact_stats(
+        self, organelle: Organelle, selected: set[str]
+    ) -> dict[str, Any]:
         """Extracts requested contact site (MCS) data."""
         contact_keys = set(self.get_contact_properties())
         to_extract = selected.intersection(contact_keys)
@@ -156,26 +174,30 @@ class Statistics:
 
         return res
 
-    def get_dataframe(self, ids: str = "*", properties: List[str] = None) -> pd.DataFrame:
+    def get_dataframe(
+        self, ids: str = "*", properties: List[str] = None
+    ) -> pd.DataFrame:
         """
         Returns a unified DataFrame with a user-defined selection of properties
         from mesh, skeleton, geometry, and contact sources.
         check get_properties to see all potentially available properties.
 
         :param ids: Glob-style filter for organelles (e.g., "mito_*").
-        :param properties: List of keys to include. If None, defaults to 
+        :param properties: List of keys to include. If None, defaults to
                            ['mesh_volume', 'sphericity', 'flatness_ratio'].
         """
 
         if properties is None:
             properties = ["mesh_volume", "sphericity", "flatness_ratio"]
-        
+
         selected_set = set(properties)
 
         try:
             organelles = self.project.get_organelles(ids=ids)
         except Exception as e:
-            self.project.logger.error(f"Failed to retrieve organelles for ids '{ids}': {e}")
+            self.project.logger.error(
+                f"Failed to retrieve organelles for ids '{ids}': {e}"
+            )
             # If retrieval fails, return empty DF with correct columns
             return pd.DataFrame(columns=["ID"] + sorted(list(selected_set)))
 
@@ -186,13 +208,13 @@ class Statistics:
         data_rows = []
         for org in organelles:
             row = {"ID": org.id}
-            
+
             # Aggregate properties from all specialized helper methods
             row.update(self.get_organelle_mesh_properties(org, selected_set))
             row.update(self.get_skeleton_stats(org, selected_set))
             row.update(self.get_geometry_stats(org, selected_set))
             row.update(self.get_contact_stats(org, selected_set))
-            
+
             data_rows.append(row)
 
         df = pd.DataFrame(data_rows)
@@ -220,7 +242,7 @@ class Statistics:
         """Calculates statistics. Booleans only contribute to the average/share."""
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         bool_cols = df.select_dtypes(include=[bool]).columns.tolist()
-        
+
         if not (numeric_cols or bool_cols):
             return pd.DataFrame()
 
@@ -230,7 +252,7 @@ class Statistics:
 
         stats_rows = {}
         stats_rows["Average (or Share)"] = calc_df[numeric_cols + bool_cols].mean()
-        
+
         numeric_df = calc_df[numeric_cols]
         if not numeric_df.empty:
             stats_rows["Std Dev"] = numeric_df.std()
@@ -239,7 +261,7 @@ class Statistics:
             stats_rows["Maximum"] = numeric_df.max()
             stats_rows["16th percentile"] = numeric_df.quantile(0.16)
             stats_rows["84th percentile"] = numeric_df.quantile(0.84)
-            
+
             stats_rows["Geometric Mean"] = numeric_df.apply(
                 lambda x: np.exp(np.log(x[x > 0]).mean()) if np.any(x > 0) else np.nan
             )
@@ -249,5 +271,5 @@ class Statistics:
         summary_df = summary_df.reindex(columns=target_order)
         summary_df.index.name = "Measure"
         summary_df = summary_df.reset_index()
-        
+
         return summary_df
