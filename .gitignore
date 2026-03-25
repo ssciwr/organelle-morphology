@@ -145,3 +145,10 @@ cython_debug/
 .vscode/settings.json
 
 notebooks/test*
+
+# IDEs and Editors
+.idea/
+.vscode/
+
+# Marimo (Ignore marimo cache directories)
+__marimo__/

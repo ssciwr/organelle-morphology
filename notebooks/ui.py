@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.7"
+__generated_with = "0.19.6"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -15,6 +15,9 @@ with app.setup:
     from organelle_morphology.util import bounding_box_delayed
     from dask.base import compute
     import pandas as pd
+    import traceback
+    from organelle_morphology.statistics import Statistics
+    import matplotlib.pyplot as plt
 
 
 @app.cell
@@ -32,12 +35,17 @@ def _():
         selection_mode="directory", multiple=False, label="Project directory"
     )
 
+    hint = mo.md(
+        "<small>(To select a folder, click on the &nbsp;::lucide:folder::&nbsp; icon.)</small>"
+    ).style(margin_top="-1.0rem") # adjust margin if the text ever disappears
+
     run_project = mo.ui.run_button(label="Load Project")
 
     mo.vstack(
         [
             mo.md("###Load/Create a Project"),
             path_ui,
+            hint,
             run_project,
         ]
     )
@@ -62,13 +70,14 @@ def _(project):
         entry = source_path_ui.value[0]
         print("entry:", entry, project)
         project.add_source(xml_path=entry.path, organelle=new_organelle_name_ui.value)
-        return
+        return True
 
     def get_source_header():
         sources = "<br>".join([s.xml_path.name for s in project.sources.values()])
         return mo.md(f"<h3>Current sources:</h3>{sources}")
 
     source_path_ui = mo.ui.file_browser(
+        initial_path=str(project.path),
         filetypes=[".xml"],
         selection_mode="file",
         label="Source xml",
@@ -210,7 +219,7 @@ def _(sources):
     mo.stop(len(sources) < 1, "Add a source first!")
     run_show_mesh = mo.ui.run_button(label="Show Mesh")
     mesh_id_filter = mo.ui.text(value="*", label="Organelle id filter")
-    highlight_filter = mo.ui.text(value="", label="Highligh ids")
+    highlight_filter = mo.ui.text(value="", label="Highlight ids")
 
     box_dict = mo.ui.dictionary(
         {
@@ -471,7 +480,7 @@ def _(box_dict, mesh_id_filter, project):
         first = [n.split("_")[0] for n in result]
         orgs, counts = np.unique(first, return_counts=True)
         orgs = " , ".join([o + r"_\*" for o in orgs])
-        output = mo.md(f"Organelles: {orgs}<br>Counts: {counts}"), pd.DataFrame(result)
+        output = mo.md(f"Organelles: {orgs}<br>Counts: {counts}"), pd.DataFrame(result, columns=["IDs"])
 
         mo.output.replace(output)
         return result
@@ -495,7 +504,7 @@ def _(sources):
 
     mo.vstack(
         [
-            mo.md("Filter Organelles"),
+            mo.md("Filter Organelles for distance-based calculations"),
             of_ids_source,
             of_ids_target,
             of_filter_dist,
@@ -513,7 +522,7 @@ def _(sources):
 
 
 @app.cell
-def _(
+def calculation_cell(
     of_attribute,
     of_filter_dist,
     of_ids_source,
@@ -521,25 +530,258 @@ def _(
     of_run_button,
     project,
 ):
+    calc_status = mo.md("Select filter settings and click 'Run filter'")
     mo.stop(not of_run_button.value, "Organelle filter results")
+    calc_status = mo.md("Calculating...")
+    try:
+        filtered_distance_results = project.distance_filtering(
+            of_ids_source.value,
+            of_ids_target.value,
+            of_filter_dist.value,
+            of_attribute.value,
+        )
+        calc_status = mo.md("Distance calculation is done.")
+    except Exception:
+        calc_status = mo.md(f"Unable to run filter. Clear Cache and try again.\n\n```\n{traceback.format_exc()}\n```")
+    calc_status
+    return (filtered_distance_results,)
 
-    project.distance_filtering(
-        of_ids_source.value,
-        of_ids_target.value,
-        of_filter_dist.value,
-        of_attribute.value,
+
+@app.cell
+def table_display_cell(filtered_distance_results, of_run_button):
+    table_display = mo.md("Click on \"Run filter\" to see results here.")
+    if (of_run_button.value and not filtered_distance_results):
+        table_display = mo.md("No results. Change filter to see results here.")
+    elif (of_run_button.value):
+        table_display= mo.ui.table(
+            filtered_distance_results,
+            selection=None,
+            pagination=False,
+            max_height=400,
+        )
+    table_display
+    return
+
+
+@app.cell
+def mcs_calc_ui_cell(sources):
+    mo.stop(len(sources) < 1, "")
+    mcs_distance_ui = mo.ui.number(value=10.0, label="Distance threshold")
+    run_mcs_btn = mo.ui.run_button(label="Calculate MCS")
+    mcs_calc_ui_layout = mo.vstack([
+        mo.md("## Membrane Contact Sites (MCS)"),
+        mcs_distance_ui,
+        run_mcs_btn
+    ])
+    mcs_calc_ui_layout
+    return mcs_distance_ui, run_mcs_btn
+
+
+@app.cell
+def mcs_execute_cell(mcs_distance_ui, project, run_mcs_btn):
+    mo.stop(not run_mcs_btn.value, mo.md(""))
+    project.search_mcs(mcs_distance_ui.value) # Calculate the contact sites
+    mcs_execute_status = mo.md(f"MCS successfully calculated for distance {mcs_distance_ui.value}.")
+    mcs_execute_status
+    return
+
+
+@app.cell
+def geo_calc_ui_cell(sources):
+    mo.stop(len(sources) < 1, "")
+    run_geo_btn = mo.ui.run_button(label="Calculate Geometry")
+    geo_calc_ui_layout = mo.vstack([
+        mo.md("## Geometry Properties"),
+        mo.md("Compute voxel-based data (voxel_solidity, voxel_extent)."),
+        run_geo_btn
+    ])
+    geo_calc_ui_layout
+    return (run_geo_btn,)
+
+
+@app.cell
+def geo_execute_cell(project, run_geo_btn):
+    mo.stop(not run_geo_btn.value, mo.md(""))
+    geo_df = project.geometric_properties # Accessing the property triggers the computation and caching
+    geo_execute_status = mo.md(f"Geometry properties computed for {len(geo_df)} organelles.")
+    geo_execute_status
+    return
+
+
+@app.cell
+def prop_selector_cell(project):
+
+    stats = Statistics(project)
+    available_properties = stats.get_properties()
+
+    # Convert the list of available_properties keys into a dictionary of checkboxes
+    properties_checkboxes = {}
+    for key in available_properties:
+        properties_checkboxes[key] = mo.ui.checkbox(value=True, label=f"{key}")
+
+
+    prop_selector = mo.ui.dictionary(properties_checkboxes)
+    calc_stats_btn = mo.ui.run_button(label="Calculate Statistics")
+
+    display = mo.vstack([
+        mo.md("## Select properties"),
+        prop_selector,
+        calc_stats_btn
+    ])
+
+    display
+    return calc_stats_btn, prop_selector
+
+
+@app.cell
+def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
+    stats_output = mo.md("Click on \"Calculate Statistics\" to show properties.")
+
+    if calc_stats_btn.value:
+        try:
+            display_stats = Statistics(project)
+
+            # Get the list of internal keys from the checkbox dictionary
+            selected_properties = [key for key, checked in prop_selector.value.items() if checked]
+
+            # Generate the raw data table
+            df_data = display_stats.get_dataframe(
+                ids=mesh_id_filter.value, 
+                properties=selected_properties
+            )
+
+            # Generate the statistical summary table
+            df_summary = display_stats.get_summary_dataframe(df_data)
+
+            if not df_data.empty:
+                # Identify column types for specialized formatting
+                bool_cols = df_data.select_dtypes(include=[bool]).columns.tolist()
+                float_cols = df_data.select_dtypes(include=['float', 'float64']).columns.tolist()
+
+                # Define formatting for the Summary Table
+                # Booleans show as percentage in 'Average' and '-' elsewhere
+                summary_formats = {}
+                for col in df_summary.columns:
+                    if col in bool_cols:
+                        summary_formats[col] = lambda x: f"{x*100:.1f}%" if pd.notnull(x) else "-"
+                    elif col in float_cols:
+                        summary_formats[col] = "{:.3f}".format
+
+                # Define formatting for the Raw Data Table
+                data_formats = {col: "{:.3f}".format for col in float_cols}
+
+                df_display = df_data.copy()
+                for col in float_cols:
+                    df_display[col] = df_display[col].replace([np.inf, -np.inf], np.nan)
+
+                for col in ["mesh_centroid", "mesh_inertia"]:
+                    if col in df_display.columns:
+                        df_display[col] = df_display[col].astype(str)
+
+                stats_output = mo.vstack([
+                    mo.md("### Statistical Summary"),
+                    mo.ui.table(
+                        df_summary,
+                        selection=None,
+                        pagination=False,
+                        format_mapping=summary_formats,
+                        text_justify_columns={col: "right" for col in (bool_cols + float_cols)},
+                    ),
+                    mo.md(f"### Raw Organelle Data ({len(df_data)} items)"),
+                    mo.ui.table(
+                        df_display,
+                        selection=None,
+                        pagination=False,
+                        max_height=400,
+                        format_mapping=data_formats,
+                        text_justify_columns={col: "right" for col in float_cols},
+                    ),
+                ])
+
+        except NameError:
+            stats_output = mo.md("## No Project was loaded.\n ## Please load a project first.")
+        except Exception:
+            # Capture errors and display them
+            stats_output = mo.md(f"## Unable to calculate statistics\n\n```\n{traceback.format_exc()}\n```")
+    stats_output 
+    return (df_data,)
+
+
+@app.cell
+def plot_selector_cell(calc_stats_btn, df_data):
+    mo.stop(not calc_stats_btn.value, mo.md("Calculate statistics first to enable visualization."))
+
+    # Which properties can be plotted?
+    plotable_columns = [
+        col for col in df_data.columns 
+        if pd.api.types.is_numeric_dtype(df_data[col])
+    ]
+    mo.stop(not plotable_columns, mo.md("No properties selected for plotting."))
+
+    # Create the dropdown for the property to plot
+    plot_property_ui = mo.ui.dropdown(
+        options=plotable_columns,
+        value=plotable_columns[0],
+        label="property:"
     )
+
+    # Create dropdown for secondary plot options (e.g., histogram or scatter with another property)
+    plot_selector_histogram = "freq. (->histogram)"
+    plot_selector_secondary_options = [plot_selector_histogram] + plotable_columns
+    plot_secondary_property_ui = mo.ui.dropdown(
+        options=plot_selector_secondary_options,
+        value=plot_selector_histogram,
+        label="Y-axis:"
+    )
+
+    plot_selector_layout = mo.vstack([
+        mo.md("## Visualization"),
+        mo.md("Choose a property for the plot:"),
+        plot_property_ui,
+        plot_secondary_property_ui
+    ])
+    plot_selector_layout # show the layout
+    return plot_property_ui, plot_secondary_property_ui,plot_selector_histogram
+
+
+@app.cell
+def plot_display_cell(df_data, plot_property_ui, plot_secondary_property_ui,plot_selector_histogram):
+    mo.stop(df_data is None or df_data.empty, mo.md("No data calculated yet."))
+
+    prop_x = plot_property_ui.value
+    prop_y = plot_secondary_property_ui.value
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    if prop_y == plot_selector_histogram:
+        valid_data = df_data[prop_x].replace([np.inf, -np.inf], np.nan).dropna()
+        mo.stop(not pd.api.types.is_numeric_dtype(valid_data), mo.md("Data is not numeric."))
+
+        counts, bins, patches = ax.hist(valid_data, bins=10, edgecolor='white', linewidth=1.2)
+        ax.set_xticks(bins)
+        ax.set_title(f"Distribution of {prop_x}", fontsize=14, pad=15)
+        ax.set_xlabel(prop_x, fontsize=12)
+        ax.set_ylabel("Frequency", fontsize=12)
+        ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+    else:
+        valid_data = df_data[[prop_x, prop_y]].replace([np.inf, -np.inf], np.nan).dropna()
+        mo.stop(not pd.api.types.is_numeric_dtype(valid_data[prop_x]) or not pd.api.types.is_numeric_dtype(valid_data[prop_y]), mo.md("Data is not numeric."))
+
+        ax.scatter(valid_data[prop_x], valid_data[prop_y], alpha=0.7)
+        ax.set_title(f"{prop_y} vs {prop_x}", fontsize=14, pad=15)
+        ax.set_xlabel(prop_x, fontsize=12)
+        ax.set_ylabel(prop_y, fontsize=12)
+        ax.grid(axis='both', linestyle='--', alpha=0.4)
+
+    plt.tight_layout()
+    fig
     return
 
 
 @app.cell
 def _(sources):
     mo.stop(len(sources) < 1, "Add a source first!")
-    return
-
-
-@app.cell
-def _():
     return
 
 
