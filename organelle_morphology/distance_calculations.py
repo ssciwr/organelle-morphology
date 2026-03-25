@@ -13,7 +13,7 @@ from tqdm import tqdm
 import organelle_morphology
 from dask.base import compute
 
-from organelle_morphology.util import bounding_box_delayed, boxes_overlap
+from organelle_morphology.util import boxes_overlap
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +281,7 @@ def generate_distance_matrix(
         bounding_boxes = []
         for organelle in organelles:
             meshes.append(organelle.mesh)
-            bounding_boxes.append(bounding_box_delayed(organelle.mesh))
+            # bounding_boxes.append(bounding_box_delayed(organelle.mesh))
         with span("dist_matrix_bounding_boxes"):
             # bounding_boxes = compute(bounding_boxes)[0]
             # with many meshes (20k) ~30% faster then computing directly:
