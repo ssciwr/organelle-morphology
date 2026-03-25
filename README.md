@@ -6,3 +6,27 @@
 [![codecov](https://codecov.io/gh/ssciwr/organelle-morphology/branch/main/graph/badge.svg)](https://codecov.io/gh/ssciwr/organelle-morphology)
 
 **This project is currently under construction**
+
+## Installation
+To get started, clone the repository and set up the Conda environment:
+
+```bash
+git clone https://github.com/ssciwr/organelle-morphology.git
+cd organelle-morphology
+conda env create -f environment-dev.yml
+conda activate morph
+```
+
+### Interactive UI
+To start the graphical user interface, run:
+
+```bash
+marimo run notebooks/ui.py
+```
+Click on the displayed link or navigate to http://localhost:2718 in your web browser.
+
+### Tests
+The test suite can be run using pytest:
+```bash
+python -m pytest
+```
