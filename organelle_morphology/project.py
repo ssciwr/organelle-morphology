@@ -797,6 +797,8 @@ class Project:
         """
 
         orgs = self.get_organelles(ids=ids)
+        if len(self.mcs_labels) == 0:
+            raise RuntimeError("No mcs labels found, run a mcs search first!")
 
         mcs_properties = {}
         for org in orgs:
