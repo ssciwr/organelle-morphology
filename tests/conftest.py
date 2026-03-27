@@ -131,7 +131,9 @@ def synthetic_data(_synthetic_data, tmp_path: Path):
     """
     project_path, original_meshes = _synthetic_data
     new_project = tmp_path / project_path.name
-    new_project.symlink_to(project_path)
+    new_project.mkdir()
+    for item in project_path.iterdir():
+        (new_project / item.name).symlink_to(item)
 
     return (new_project, original_meshes)
 

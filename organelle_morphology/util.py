@@ -15,6 +15,7 @@ import time
 import numpy as np
 
 
+logger = logging.getLogger(__name__)
 CACHE_DIR = xdg.xdg_cache_home() / "organelle_morphology"
 
 
@@ -52,11 +53,14 @@ class Disk_Store:
     def clear(self):
         for f in self.path.iterdir():
             f.unlink()
-        self.path.rmdir()
+        if self.path.exists():
+            logger.debug(f"Removing cachedir: {self.path}")
+            self.path.rmdir()
         for dir in self.path.parents:
             if dir == self.cache_root:
                 break
             try:
+                logger.debug(f"Trying to remove cacheparent: {dir}")
                 dir.rmdir()
             except OSError:
                 break
@@ -97,12 +101,14 @@ class Cache:
             store[key] = value
 
     def __getitem__(self, key):
+        error = None
         for store in self.stores:
             try:
                 return store[key]
-            except KeyError:
+            except KeyError as e:
+                error = e
                 pass
-        raise KeyError(f"Key {key} not in cache!")
+        raise KeyError(f"Key {key} not in cache! {error}")
 
     def __contains__(self, key):
         for store in self.stores:

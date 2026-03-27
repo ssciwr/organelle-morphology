@@ -277,6 +277,8 @@ def test_mcs_dicts(project_with_sources):
     p = project_with_sources
     s = list(project_with_sources.sources.values())[0]
 
+    if len(ps := list(p.path.glob("cache*"))):
+        raise RuntimeError(f"Existing caches found!!\n{ps}")
     p.search_mcs(10)
     mcs_dicts = s.mcs_dicts
     assert list(mcs_dicts.keys()) == ["0.0-10,-"]
