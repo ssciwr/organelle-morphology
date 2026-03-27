@@ -417,7 +417,6 @@ class DataSource:
             geometric_properties = regionprops(
                 self.data, spacing=self.resolution, cache=False
             )
-            geometric_properties = compute(geometric_properties)[0]
 
             # filter region props for useful properties
             # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
