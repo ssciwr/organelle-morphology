@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import matplotlib.pyplot as plt
 
-from organelle_morphology.analysis import (
+from organelle_morphology.mcs_analysis import (
     plot_mcs_hist,
     stats_contacts_a_b,
     stats_global,

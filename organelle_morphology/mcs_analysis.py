@@ -1,3 +1,8 @@
+"""Temporary MCS analysis
+
+Should be merged with new statistics.py
+"""
+
 from dask.base import compute
 import matplotlib.pyplot as plt
 import seaborn as sns
