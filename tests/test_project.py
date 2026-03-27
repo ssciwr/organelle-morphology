@@ -265,7 +265,10 @@ def test_cache_settings(project_with_sources):
     assert isinstance(cs, dict)
 
 
-def test_mcs(project_with_sources):
+@pytest.mark.parametrize("rep", range(2))
+def test_mcs(project_with_sources, rep):
+    if len(ps := list(project_with_sources.path.glob("cache*"))):
+        raise RuntimeError(f"Existing caches found!!\n{ps}")
     project_with_sources.search_mcs(10)
 
     props = project_with_sources.get_mcs_properties()

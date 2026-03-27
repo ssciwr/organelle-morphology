@@ -2,7 +2,14 @@ from functools import reduce
 from pathlib import Path
 from typing import Optional
 
-from dask.distributed import LocalCluster
+
+from distributed.utils_test import (
+    client,  # noqa: F401
+    loop,  # noqa: F401
+    cluster_fixture,  # noqa: F401
+    loop_in_thread,  # noqa: F401
+    cleanup,  # noqa: F401
+)
 from organelle_morphology import Project
 
 import numpy as np
@@ -138,16 +145,6 @@ def synthetic_data(_synthetic_data, tmp_path: Path):
     return (new_project, original_meshes)
 
 
-@pytest.fixture(scope="session")
-def client():
-    if resource is not None:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (10000, 10000))
-
-    cluster = LocalCluster(dashboard_address=None)
-    yield cluster.get_client()
-    cluster.close()
-
-
 @pytest.fixture()
 def project_path(synthetic_data):
     """Returns a path that conains a valid project"""
@@ -155,7 +152,7 @@ def project_path(synthetic_data):
 
 
 @pytest.fixture
-def project(project_path, client):
+def project(project_path, client):  # noqa
     """A fixture for a valid project instance"""
     project = Project(project_path, client=client)
     yield project
