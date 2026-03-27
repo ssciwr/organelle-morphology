@@ -1,4 +1,5 @@
 from functools import reduce
+from pathlib import Path
 from typing import Optional
 
 from dask.distributed import LocalCluster
@@ -112,7 +113,7 @@ def voxels_random(size=30, n_points=5):
 
 
 @pytest.fixture(scope="session")
-def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
+def _synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
     """A fixture for a synthetic dataset"""
     project_path, original_meshes = generate_synthetic_dataset(
         n_objects=n_objects,
@@ -121,6 +122,18 @@ def synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
         seed=seed,
     )
     return (project_path, original_meshes)
+
+
+@pytest.fixture(scope="function")
+def synthetic_data(_synthetic_data, tmp_path: Path):
+    """Creating symlink in separate dir for each function call
+    Necessary so projects don't share caches.
+    """
+    project_path, original_meshes = _synthetic_data
+    new_project = tmp_path / project_path.name
+    new_project.symlink_to(project_path)
+
+    return (new_project, original_meshes)
 
 
 @pytest.fixture(scope="session")
