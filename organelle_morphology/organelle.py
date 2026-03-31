@@ -1,5 +1,6 @@
 import logging
 from dask.delayed import Delayed
+from dask.base import compute
 import numpy as np
 import plotly.graph_objects as go
 import dask.array as da
@@ -215,7 +216,7 @@ class Organelle:
         cm = plt.get_cmap("tab20")
         colored = self.mesh
         if mcs_label is None:
-            labels = list(self.source.project.mcs_labels.keys())
+            labels = list(self.source.project.mcs_labels)
             if len(labels) == 0:
                 self.logger.warning("No mcs data, first run project.search_mcs")
                 return colored
@@ -292,6 +293,11 @@ class Organelle:
         return self.source.get_meshes_curvature_colored(labels=self.label)[0]
 
     def add_mcs(self, mcs_dict):
+        """Add mcs information to this organelle.
+
+        Args:
+            mcs_dict (dict): mcs_dict created by the MembraneContactSiteCalculator
+        """
         mcs_target = mcs_dict["partner_id"]
         mcs_label = mcs_dict["mcs_label"]
 
@@ -309,7 +315,10 @@ class Organelle:
 
         """
 
-        _mcs_dict = self.mcs_dict
+        mcs_dict = self.mcs_dict[mcs_label]
+        surface = self.mesh.area
+        volume = self.mesh.volume
+        surface, volume = compute(surface, volume)
 
         len_dist_list = []
         mean_dist_list = []
@@ -332,15 +341,15 @@ class Organelle:
             )
             return
 
-        _mcs_dict[mcs_label]["n_contacts"] = len(len_dist_list)
+        mcs_dict["n_contacts"] = len(len_dist_list)
 
-        _mcs_dict[mcs_label]["total_area"] = np.sum(entries["area"])
-        _mcs_dict[mcs_label]["mean_area"] = np.mean(area_list)
+        mcs_dict["total_area"] = np.sum(entries["area"])
+        mcs_dict["mean_area"] = np.mean(area_list)
 
         if len(area_list) == 1:
-            _mcs_dict[mcs_label]["std_area"] = 0
+            mcs_dict["std_area"] = 0
         else:
-            _mcs_dict[mcs_label]["std_area"] = np.std(area_list)
+            mcs_dict["std_area"] = np.std(area_list)
 
         # calculate the mean and std from the sub_mean and std values for each mcs partner
         try:
@@ -357,10 +366,14 @@ class Organelle:
             overall_var = 0
         overall_std = np.sqrt(overall_var)
 
-        _mcs_dict[mcs_label]["mean_dist"] = overall_mean
-        _mcs_dict[mcs_label]["std_dist"] = overall_std
+        mcs_dict["mean_dist"] = overall_mean
+        mcs_dict["std_dist"] = overall_std
 
-        self._mcs_dict = _mcs_dict
+        mcs_dict["n_contacts_per_area"] = mcs_dict["n_contacts"] / surface
+        mcs_dict["n_contacts_per_volume"] = mcs_dict["n_contacts"] / volume
+
+        mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
+        mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
 
     @property
     def mcs(self) -> dict:

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, List, Any
+from typing import TYPE_CHECKING, List, Any, Optional
 import pandas as pd
 import numpy as np
 
@@ -53,7 +53,9 @@ class Statistics:
         return geometry_properties
 
     def get_contact_properties(self) -> list[str]:
-        """Returns a list of all available contact properties."""
+        """Returns a list of all available possible MCS properties
+        calculated on each Organelle.
+        """
         contact_properties = [
             "n_contacts",
             "total_area",
@@ -61,6 +63,10 @@ class Statistics:
             "std_area",
             "mean_dist",
             "std_dist",
+            "n_contacts_per_area",
+            "n_contacts_per_volume",
+            "area_per_area",
+            "area_per_volume",
         ]
         return contact_properties
 
@@ -175,7 +181,7 @@ class Statistics:
         return res
 
     def get_dataframe(
-        self, ids: str = "*", properties: List[str] = None
+        self, ids: str = "*", properties: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """
         Returns a unified DataFrame with a user-defined selection of properties

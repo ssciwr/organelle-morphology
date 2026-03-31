@@ -9,7 +9,7 @@ import trimesh
 import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
 
-from dask.base import compute
+from dask.base import compute, persist
 import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
@@ -231,19 +231,19 @@ class DataSource:
     ):
         """Initialize a data source.
 
-        This method initializes a data source for organelle morphology analysis.
+        Initialize a data source for organelle morphology analysis.
         The data source is linked to a CebraEM/Mobie project and contains information
         about a single organelle data source.
 
-        :param project:
-            The CebraEM/Mobie project this data source is linked to.
-        :type project: organelle_morphology.Project
-        :param xml_path:
-            The path to the XML file describing the source data.
-        :type source_path: pathlib.Path
-        :param organelle:
-            The name of the organelle being analyzed.
-        :type organelle: str
+        Args:
+            project:
+                The CebraEM/Mobie project this data source is linked to.
+            xml_path:
+                The path to the XML file describing the source data.
+            organelle:
+                The name of the organelle being analyzed.
+            background_label:
+                The label used for background pixels.
         """
 
         self.logger = logging.getLogger(__name__)
@@ -417,7 +417,6 @@ class DataSource:
             geometric_properties = regionprops(
                 self.data, spacing=self.resolution, cache=False
             )
-            geometric_properties = compute(geometric_properties)[0]
 
             # filter region props for useful properties
             # https://scikit-image.org/docs/stable/api/skimage.measure.html#skimage.measure.regionprops
@@ -667,10 +666,12 @@ class DataSource:
                 self.logger.debug("Mesh fragments saved to cache")
 
             else:
-                meshes_chunked_d = np.empty(self.cache["chunks_shape"], dtype=object)
-                cs = self.project.cache_settings.copy()
-                cs["source"] = self.xml_path.stem
                 try:
+                    meshes_chunked_d = np.empty(
+                        self.cache["chunks_shape"], dtype=object
+                    )
+                    cs = self.project.cache_settings.copy()
+                    cs["source"] = self.xml_path.stem
                     for idx, _ in np.ndenumerate(meshes_chunked_d):
                         meshes_chunked_d[idx] = _get_fragment_cache(
                             f"fragment_{idx}", cs
@@ -787,7 +788,7 @@ class DataSource:
                 cs["source"] = self.xml_path.stem
                 self._meshes = {}
                 for idx in self.cache["mesh_ids"]:
-                    self._meshes[idx] = _get_mesh_cache(f"mesh_{idx}", cs)
+                    self._meshes[idx] = persist(_get_mesh_cache(f"mesh_{idx}", cs))[0]
             return self._meshes
 
         return self.merge_fragments_into_meshes(*self.mesh_fragments)

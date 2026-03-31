@@ -320,7 +320,7 @@ class Project:
             if mcs_min is None:
                 mcs_min = 0.0
             mcs_label = self.search_mcs(max_distance=mcs_max, min_distance=mcs_min)
-            mcs_orgs = self.mcs_labels[mcs_label]["organelles"]
+            mcs_orgs = self.mcs_queries[mcs_label]["organelles"]
             meshes = []
             for org in orgs:
                 if org.id in mcs_orgs:
@@ -667,13 +667,10 @@ class Project:
 
     @property
     def mcs_labels(self):
-        mcs_str = ""
-        for key, value in self._mcs_labels.items():
-            mcs_str += (
-                f"  {key}: {value['min_distance']}um - {value['max_distance']}um\n"
-            )
+        return self._mcs_labels.keys()
 
-        self.logger.debug("Available MCS labels and their search radius: \n%s", mcs_str)
+    @property
+    def mcs_queries(self):
         return self._mcs_labels
 
     def hist_distance_matrix(
@@ -787,34 +784,37 @@ class Project:
         df = pd.DataFrame(properties).T
         return df
 
-    def get_mcs_properties(self, ids="*", mcs_filter=None):
+    def get_mcs_properties(self, ids="*", mcs_labels: Optional[list] = None):
         """The properties of the MCS between organelles
+        Gathers data from all the organelles into one dataframe
 
         Args:
             ids: Glob-style filter pattern for organelles, defaults to "*"
+            mcs_labels: Filter the MCS calculations, defaults to None
 
-            mcs_filter: Filter the MCS properties by the given mcs_filter,
-                defaults to None
         Returns:
             pd.DataFrame
         """
 
         orgs = self.get_organelles(ids=ids)
+        if len(self.mcs_labels) == 0:
+            raise RuntimeError("No mcs labels found, run a mcs search first!")
 
         mcs_properties = {}
         for org in orgs:
-            org_mcs_data = org.mcs_dict
-            for mcs_label, value in org_mcs_data.items():
-                if mcs_filter and mcs_label not in mcs_filter:
+            for label in self.mcs_labels:
+                if mcs_labels and label not in mcs_labels:
                     continue
-                mcs_properties[(mcs_label, org.id)] = value
+                elif label in org.mcs_dict:
+                    mcs_properties[(label, org.id)] = org.mcs_dict[label]
 
         mcs_df = pd.DataFrame(mcs_properties).T
         mcs_df.sort_index(inplace=True)
+        mcs_df.index.names = ["mcs_label", "organelle"]
 
         return mcs_df
 
-    def get_mcs_overview(self, ids="*", mcs_filter=None):
+    def get_mcs_overview(self, ids="*", mcs_labels: Optional[list] = None):
         def _weighted_stats(x):
             # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
             mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
@@ -870,11 +870,17 @@ class Project:
                 index=new_index,
             )
 
-        mcs_df = self.get_mcs_properties(ids=ids, mcs_filter=mcs_filter)
+        mcs_df = self.get_mcs_properties(ids=ids, mcs_labels=mcs_labels)
 
         overview = mcs_df.groupby(level=0).apply(_weighted_stats)
         overview.sort_index(axis=1, inplace=True)
         return overview.T
+
+    def n_oranelles(self) -> dict[str, int]:
+        counts = {}
+        for s in self.sources.values():
+            counts[s.org_name] = len(self.get_organelles(s.org_name + "*"))
+        return counts
 
     @property
     def skeleton_info(self):

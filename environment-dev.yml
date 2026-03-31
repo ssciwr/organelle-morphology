@@ -8,6 +8,8 @@ dependencies:
   - nbval
   - pip
   - plotly
+  - matplotlib
+  - seaborn
   - pytest
   - pytest-cov
   - pytest-mock
