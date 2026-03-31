@@ -50,6 +50,17 @@ class Data_level:
     data: z5py.dataset.Dataset
 
 
+@dataclass
+class SourceMeta:
+    data_root: Path
+    downsampling: list[list[int]]
+    levels: list[str]
+    size: tuple[int, ...]
+    resolution: list[float]
+    name: str
+    coarse_level: str
+
+
 class DataSource:
     def __init__(
         self,
@@ -137,8 +148,6 @@ class DataSource:
         return timepoints
 
     def load_metadata(self):
-        self._metadata = {}
-
         # Read the XML file
         tree = ET.parse(self.xml_path)
         xmldata = tree.getroot()
@@ -165,7 +174,7 @@ class DataSource:
                 .find("name")
                 .text
             )
-            resolution: str = (
+            _resolution: str = (
                 xmldata.find("SequenceDescription")
                 .find("ViewSetups")
                 .find("ViewSetup")
@@ -173,7 +182,7 @@ class DataSource:
                 .find("size")
                 .text
             )
-            resolution = list((float(i) for i in resolution.split(" ")))
+            resolution = list((float(i) for i in _resolution.split(" ")))
             first_timepoint = int(
                 xmldata.find("SequenceDescription")
                 .find("Timepoints")
@@ -208,17 +217,18 @@ class DataSource:
             if int(level[-1]) > int(coarse_level[-1]):
                 coarse_level = level
 
-        # Store the metadata
-        self._metadata["data_root"] = self.xml_path / filename
-        self._metadata["downsampling"] = self.timepoint.downsamplingFactors
-        self._metadata["levels"] = self.timepoint.levels
-        self._metadata["size"] = tuple([int(i) for i in size.split(" ")][::-1])
-        self._metadata["resolution"] = resolution
-        self._metadata["name"] = name
-        self._metadata["coarse_level"] = coarse_level
+        self._metadata = SourceMeta(
+            data_root=self.xml_path / filename,
+            downsampling=self.timepoint.downsamplingFactors,
+            levels=self.timepoint.levels,
+            size=tuple([int(i) for i in size.split(" ")][::-1]),
+            resolution=resolution,
+            name=name,
+            coarse_level=coarse_level,
+        )
 
     @property
-    def metadata(self) -> dict:
+    def metadata(self) -> SourceMeta:
         """Return the metadata of this source. Loads the metadata, if necessary
 
         coarse_level: coarsest level available
@@ -341,7 +351,7 @@ class DataSource:
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
 
-        _idx = np.nonzero(np.array(self.metadata["levels"]) == level)[0][0]
+        _idx = np.nonzero(np.array(self.metadata.levels) == level)[0][0]
 
         cube_slice = (slice(None), slice(None), slice(None))
 
@@ -358,7 +368,6 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        # self._scaling_factors = self.metadata["downsampling"][_idx]
         self._scaling_factors = self.resolution
         self.clipping_corners_data = (c_low_d, c_high_d)
         self.clipping_corners = (
@@ -376,13 +385,13 @@ class DataSource:
         on the data resolution and should be fast.
         """
 
-        return self.get_data(self.metadata["coarse_level"])
+        return self.get_data(self.metadata.coarse_level)
 
     @property
-    def data_resolution(self) -> tuple[float]:
+    def data_resolution(self) -> list[float]:
         """Return the resolution in micrometers at which the data is stored."""
 
-        return self.metadata["resolution"]
+        return self.metadata.resolution
 
     @property
     def resolution(self) -> tuple[float]:

@@ -429,6 +429,12 @@ def generate_mcs(
     mcs_label = f"{min_distance}-{max_distance},{label_1}-{label_2}"
     if project._mcs_labels.get(mcs_label) and not overwrite:
         return mcs_label
+    mcs_meta = {
+        "ids_filter_1": ids_filter_1,
+        "ids_filter_2": ids_filter_2,
+        "min_distance": min_distance,
+        "max_distance": max_distance,
+    }
 
     ids_1 = project.get_organelle_ids(ids_filter_1)
     ids_2 = project.get_organelle_ids(ids_filter_2)
@@ -489,11 +495,11 @@ def generate_mcs(
 
         # add mcs to organelle
         if org1.id == mcs_source["self_id"]:
-            org1.add_mcs(mcs_source)
-            org2.add_mcs(mcs_target)
+            org1.add_mcs(mcs_source, mcs_meta)
+            org2.add_mcs(mcs_target, mcs_meta)
         else:
-            org1.add_mcs(mcs_target)
-            org2.add_mcs(mcs_source)
+            org1.add_mcs(mcs_target, mcs_meta)
+            org2.add_mcs(mcs_source, mcs_meta)
 
     for org_id in org_ids:
         org = project.get_organelles(org_id)[0]

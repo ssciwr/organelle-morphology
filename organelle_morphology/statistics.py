@@ -1,11 +1,44 @@
 from __future__ import annotations
+from abc import ABC
+from dataclasses import fields
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Any, Optional
 import pandas as pd
 import numpy as np
+import yaml
 
 if TYPE_CHECKING:
     from organelle_morphology.project import Project
     from organelle_morphology.organelle import Organelle
+
+
+class Stats:
+    """Stats class to collect statistical data together with metadata
+    throughout the project.
+
+    Attributes:
+        data: Dataclass holding the data
+        meta: Dataclass holding the metadata
+        name: name of data
+    """
+
+    def __init__(self, data, meta):
+        self.data: Properties = data
+        self.meta = meta
+        self.name = type(data).__name__
+
+    def to_dict(self):
+        return self.data.to_dict()
+
+    def save_yaml(self, filename: Path):
+        to_save = self.to_dict()
+        with open(filename, "w") as f:
+            yaml.dump(to_save, f)
+
+
+class Properties(ABC):
+    def to_dict(self):
+        return {field.name: getattr(self, field.name) for field in fields(self)}
 
 
 class Statistics:

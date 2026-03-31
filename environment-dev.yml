@@ -15,6 +15,7 @@ dependencies:
   - pytest-mock
   - pre-commit
   - python-elf
+  - pyyaml
   - rich
   - scipy
   - scikit-image

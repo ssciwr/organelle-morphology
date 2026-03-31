@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Optional
 
 from organelle_morphology.util import setup_logging
@@ -6,7 +7,7 @@ from dask.base import compute
 from dask.delayed import Delayed
 from trimesh import Trimesh
 import trimesh
-from organelle_morphology.organelle import Organelle
+from organelle_morphology.organelle import McsProperties, Organelle
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
@@ -32,6 +33,17 @@ import plotly.graph_objects as go
 clipping_type = (
     tuple[tuple[float, float, float], tuple[float, float, float]] | list[list[float]]
 )
+
+
+@dataclass
+class ProjectMeta:
+    path: Path
+    name: str
+    clipping: Optional[np.ndarray]
+    compression: str
+    sources: list[str]
+    blacklist: list[str]
+    whitelist: list[str]
 
 
 class Project:
@@ -122,6 +134,18 @@ class Project:
             self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property
+    def metadata(self):
+        return ProjectMeta(
+            path=self.path,
+            name=self.path.name,
+            clipping=self.clipping,
+            compression=self.compression_level,
+            sources=list(self.sources.keys()),
+            blacklist=self.permanent_blacklist,
+            whitelist=self.permanent_whitelist,
+        )
+
+    @property
     def path(self) -> Path:
         return self._project_path.resolve()
 
@@ -204,14 +228,14 @@ class Project:
             background_label,
         )
 
-        self.logger.info(f"Adding source {source_obj.metadata['name']}")
+        self.logger.info(f"Adding source {source_obj.metadata.name}")
 
         # Double-check that it provides the current compression level
-        if self.compression_level not in source_obj.metadata["levels"]:
+        if self.compression_level not in source_obj.metadata.levels:
             raise ValueError(
                 f"Compression level {self.compression_level} is not available "
-                f"for source {source_obj.metadata['name']}.\n Available levels:"
-                f"{source_obj.metadata['levels']}"
+                f"for source {source_obj.metadata.name}.\n Available levels:"
+                f"{source_obj.metadata.levels}"
             )
         self.sources[xml_path.stem] = source_obj
         return source_obj
@@ -410,7 +434,7 @@ class Project:
                     to_show.append(o.skeleton.skeleton)
 
         if domain_box:
-            size = np.array(source.metadata["size"]) * source.data_resolution
+            size = np.array(source.metadata.size) * source.data_resolution
             domain_box = trimesh.path.creation.box_outline(
                 extents=size,
                 transform=trimesh.transformations.translation_matrix(size / 2),
@@ -437,7 +461,7 @@ class Project:
         if box:
             npbox = np.array(box)
             if np.all(npbox <= 1.0):
-                npbox = npbox * source.metadata["size"] * source.data_resolution
+                npbox = npbox * source.metadata.size * source.data_resolution
             edges = corners_to_edges(*npbox)
             trans = trimesh.transformations.translation_matrix(npbox[0] + (edges / 2))
 
@@ -735,10 +759,10 @@ class Project:
     @compression_level.setter
     def compression_level(self, level: str):
         for s_name, s in self.sources.items():
-            if level not in s.metadata["levels"]:
+            if level not in s.metadata.levels:
                 raise ValueError(
                     f"Requested level {level} not available in source {s_name}!\n"
-                    f"Levels in source: {s.metadata['levels']}"
+                    f"Levels in source: {s.metadata.levels}"
                 )
         if getattr(self, "_compression_level", None) != level:
             self.clear_caches()
@@ -796,17 +820,24 @@ class Project:
             pd.DataFrame
         """
 
-        orgs = self.get_organelles(ids=ids)
         if len(self.mcs_labels) == 0:
             raise RuntimeError("No mcs labels found, run a mcs search first!")
 
         mcs_properties = {}
-        for org in orgs:
+
+        for stat in self.stats:
+            if not isinstance(stat.data, McsProperties):
+                continue
             for label in self.mcs_labels:
-                if mcs_labels and label not in mcs_labels:
+                if mcs_labels and (label not in mcs_labels):
                     continue
-                elif label in org.mcs_dict:
-                    mcs_properties[(label, org.id)] = org.mcs_dict[label]
+                elif label == stat.meta.mcs_label:
+                    mcs_properties[(label, stat.meta.organelle_id)] = stat.to_dict()
+
+        if len(mcs_properties) == 0:
+            raise RuntimeError(
+                "No matching mcs labels found, adjust your filter settings!"
+            )
 
         mcs_df = pd.DataFrame(mcs_properties).T
         mcs_df.sort_index(inplace=True)
@@ -1157,6 +1188,32 @@ class Project:
         self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
         return caches
 
+    def add_stat(self, stat):
+        self._stats.append(stat)
+
+    @property
+    def stats(self):
+        return self._stats
+
+    def get_stat_stats(self):
+        """Generate some meta statistics
+        about the already calculated statistics objects
+
+        Returns:
+            dict: Number of each statistics type available.
+        """
+        desc = "Collected statistics:\n"
+        stat_count = defaultdict(int)
+        desc += f"{'number of stats':<20}: {len(self.stats)}\n"
+
+        for stat in self.stats:
+            stat_count[stat.name] += 1
+        for stat, count in stat_count.items():
+            desc += f"{stat:<18}: {count}\n"
+
+        self.logger.info(desc)
+        return stat_count
+
     def clear_memory_cache(self):
         """(Re)initialize project-level storage."""
 
@@ -1167,6 +1224,7 @@ class Project:
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
         self._max_compute_distance = 0.0
         self._cache = None
+        self._stats = []
 
     def clear_caches(self, clear_disk=False):
         """Clear all caches related to this project, optionally also from disk"""

@@ -1,14 +1,17 @@
+from dataclasses import dataclass, fields
 import logging
-from dask.delayed import Delayed
-from dask.base import compute
+from pathlib import Path
+from dask.delayed import Delayed, delayed
 import numpy as np
 import plotly.graph_objects as go
 import dask.array as da
 from collections import defaultdict
 import matplotlib.pyplot as plt
+from trimesh import Trimesh
 
 
 import organelle_morphology
+from organelle_morphology.statistics import Properties, Stats
 from organelle_morphology.util import (
     bounding_box_delayed,
     color_delayed_trimesh_vertices,
@@ -23,6 +26,56 @@ def organelle_types() -> list[str]:
     various APIs when referring to a specific organelle.
     """
     return list(organelle_registry.keys())
+
+
+@dataclass
+class OrganelleMeta:
+    source: Path
+    label: int
+    id: str
+
+
+@dataclass
+class McsMeta:
+    organelle_meta: OrganelleMeta
+    mcs_label: str
+    max_dist: float
+    min_dist: float = 0.0
+    filter_1: str = "*"
+    filter_2: str = "*"
+
+    def __post_init__(self):
+        for field in fields(self.organelle_meta):
+            setattr(
+                self,
+                "organelle_" + field.name,
+                getattr(self.organelle_meta, field.name),
+            )
+
+
+@dataclass
+class MeshProperties(Properties):
+    volume: float
+    area: float
+    centroid: np.ndarray
+    inertia: np.ndarray
+    water_tight: bool
+    sphericity: float
+    flatness_ratio: float
+
+
+@dataclass
+class McsProperties(Properties):
+    n_contacts: int
+    total_area: float
+    mean_area: float
+    std_area: float
+    mean_dist: float
+    std_dist: float
+    n_contacts_per_area: float
+    n_contacts_per_volume: float
+    area_per_area: float
+    area_per_volume: float
 
 
 class Organelle:
@@ -42,14 +95,15 @@ class Organelle:
             label: label used in the original data for this organelle.
         """
         self.source = source
+        self.project = source.project
         self.label = label
         self._organelle_id = f"{self._name}_{str(label).zfill(4)}"
-        self._mesh_properties = {}
+        self._mesh_properties = None
         self._skeleton = None
         self._sampled_skeleton = None
         self._skeleton_info = {}
         self._mcs = defaultdict(dict)
-        self._mcs_dict = defaultdict(dict)
+        self._mcs_dict = {}
 
     @classmethod
     def construct(cls, source, labels: list[int]):
@@ -68,6 +122,12 @@ class Organelle:
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self._organelle_id})"
+
+    @property
+    def metadata(self) -> OrganelleMeta:
+        return OrganelleMeta(
+            source=self.source.xml_path, label=self.label, id=self._organelle_id
+        )
 
     def plotly_skeleton(self):
         if self._skeleton is None:
@@ -259,29 +319,14 @@ class Organelle:
         return self.source.basic_geometric_properties[self.id]
 
     @property
-    def mesh_properties(self):
-        """Get the mesh data for this organelle"""
-        comp_level = self.source.project.compression_level
-
-        if comp_level not in self._mesh_properties:
-            mesh = self.mesh.compute()
-            self._mesh_properties[comp_level] = {}
-
-            self._mesh_properties[comp_level]["mesh_volume"] = mesh.volume
-            self._mesh_properties[comp_level]["mesh_area"] = mesh.area
-            self._mesh_properties[comp_level]["mesh_centroid"] = mesh.centroid
-            self._mesh_properties[comp_level]["mesh_inertia"] = mesh.moment_inertia
-
-            self._mesh_properties[comp_level]["water_tight"] = mesh.is_watertight
-            self._mesh_properties[comp_level]["sphericity"] = (
-                36 * np.pi * mesh.volume**2
-            ) ** (1 / 3) / mesh.area
-            dimensions = mesh.bounding_box_oriented.extents
-            self._mesh_properties[comp_level]["flatness_ratio"] = min(dimensions) / max(
-                dimensions
-            )
-
-        return self._mesh_properties[comp_level]
+    def mesh_properties(self) -> MeshProperties:
+        """Get properties of the mesh for this organelle
+        Causes a compute call, if you need this for many organelles,
+        use `get_mesh_properties_delayed`
+        """
+        if self._mesh_properties is None:
+            self._mesh_properties = get_mesh_properties_delayed(self.mesh).compute()
+        return self._mesh_properties
 
     @property
     def curvature_map(self) -> np.ndarray:
@@ -292,7 +337,7 @@ class Organelle:
     def curvature_mesh(self) -> Delayed:
         return self.source.get_meshes_curvature_colored(labels=self.label)[0]
 
-    def add_mcs(self, mcs_dict):
+    def add_mcs(self, mcs_dict, mcs_meta):
         """Add mcs information to this organelle.
 
         Args:
@@ -305,6 +350,7 @@ class Organelle:
             "vertices_index": mcs_dict["vertices_index"],
             "distances": mcs_dict["distances"],
             "area": mcs_dict["area"],
+            "meta": mcs_meta,
         }
 
         self._mcs[mcs_label][mcs_target] = mcs_entry
@@ -315,10 +361,9 @@ class Organelle:
 
         """
 
-        mcs_dict = self.mcs_dict[mcs_label]
-        surface = self.mesh.area
-        volume = self.mesh.volume
-        surface, volume = compute(surface, volume)
+        mcs_dict = {}
+        volume = self.mesh_properties.volume
+        surface = self.mesh_properties.area
 
         len_dist_list = []
         mean_dist_list = []
@@ -340,6 +385,7 @@ class Organelle:
                 "No distributions found for mcs %s in organelle %s", mcs_label, self
             )
             return
+        assert entries
 
         mcs_dict["n_contacts"] = len(len_dist_list)
 
@@ -374,6 +420,17 @@ class Organelle:
 
         mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
         mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
+
+        mcs_props = McsProperties(**mcs_dict)
+        mcs_meta = McsMeta(
+            organelle_meta=self.metadata,
+            mcs_label=mcs_label,
+            min_dist=entries["meta"]["min_distance"],
+            max_dist=entries["meta"]["max_distance"],
+        )
+        stat = Stats(mcs_props, mcs_meta)
+        self.mcs_dict[mcs_label] = stat
+        self.project.add_stat(stat)
 
     @property
     def mcs(self) -> dict:
@@ -413,3 +470,30 @@ class AutoFillDict(dict):
 organelle_registry: dict[str, "Organelle"] = AutoFillDict()
 organelle_registry["mito"] = Mitochondrium
 organelle_registry["er"] = EndoplasmicReticulum
+
+
+@delayed
+def get_mesh_properties_delayed(mesh: Trimesh) -> MeshProperties:
+    """Extract mesh properties from a trimesh object and return as dict.
+
+    This function is designed to be called on delayed mesh objects to
+    compute mesh properties on the worker nodes rather than transferring
+    the mesh to the main node.
+
+    Args:
+        mesh: A trimesh object (delayed)
+
+    Returns:
+        dict: Dictionary containing mesh properties that can be used to
+            construct a mesh_properties dataclass
+    """
+    return MeshProperties(
+        volume=mesh.volume,
+        area=mesh.area,
+        centroid=mesh.centroid,
+        inertia=mesh.moment_inertia,
+        water_tight=mesh.is_watertight,
+        sphericity=(36 * np.pi * mesh.volume**2) ** (1 / 3) / mesh.area,
+        flatness_ratio=min(mesh.bounding_box_oriented.extents)
+        / max(mesh.bounding_box_oriented.extents),
+    )
