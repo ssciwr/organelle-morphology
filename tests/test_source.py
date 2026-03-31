@@ -1,5 +1,6 @@
 import pytest
-from organelle_morphology import source
+from organelle_morphology.block_mesher import block_mesher
+
 import numpy as np
 from dask.base import compute
 import dask.array as da
@@ -10,7 +11,7 @@ import matplotlib as mpl
 def test_block_mesher_c_in_c(voxels_c_in_c):
     voxels = voxels_c_in_c
     meshes, ids = compute(
-        *source._block_mesher(
+        *block_mesher(
             block=voxels,
             space_offset=(0, 0, 0),
             debug_color=0,
@@ -24,7 +25,7 @@ def test_block_mesher_c_in_c(voxels_c_in_c):
 def test_block_mesher_c_through_c(voxels_c_through_c):
     voxels = voxels_c_through_c
     meshes, ids = compute(
-        *source._block_mesher(
+        *block_mesher(
             block=voxels,
             space_offset=(0, 0, 0),
             debug_color=0,
@@ -38,7 +39,7 @@ def test_block_mesher_c_through_c(voxels_c_through_c):
 def test_block_mesher_c_on_edge(voxels_c_on_edge):
     voxels = voxels_c_on_edge
     meshes, ids = compute(
-        *source._block_mesher(
+        *block_mesher(
             block=voxels,
             space_offset=(0, 0, 0),
             debug_color=0,
@@ -52,7 +53,7 @@ def test_block_mesher_c_on_edge(voxels_c_on_edge):
 def test_block_mesher_solid():
     voxels = np.ones((10, 10, 10))
     meshes, ids = compute(
-        *source._block_mesher(
+        *block_mesher(
             block=voxels,
             space_offset=(0, 0, 0),
             debug_color=0,
@@ -88,7 +89,7 @@ def test_block_mesher_random_no_offset(voxels_random, repeat):
         ]
     ).shape[0]
     meshes, ids = compute(
-        *source._block_mesher(
+        *block_mesher(
             block=voxels,
             space_offset=(0, 0, 0),
             debug_color=0,
@@ -113,7 +114,7 @@ def test_block_mesher_random_offset(voxels_random, repeat):
         ]
     ).shape[0]
     meshes, ids = compute(
-        *source._block_mesher(
+        *block_mesher(
             block=voxels,
             space_offset=[10, 20, 30],
             debug_color=0,
@@ -141,7 +142,7 @@ def test_block_mesher_debug_colors(voxels_random, debug_color):
         ]
     ).shape[0]
     meshes, ids = compute(
-        *source._block_mesher(
+        *block_mesher(
             block=voxels,
             space_offset=[10, 20, 30],
             debug_color=debug_color,
