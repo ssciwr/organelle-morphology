@@ -49,3 +49,27 @@ def test_calculate_random_profiles(project_with_sources):
     expected = [31.36676084, 52.20270082, 32.24204422, 22.81741491, 30.23820865]
 
     np.testing.assert_almost_equal(perimeters, expected, decimal=5)
+
+
+def test_calculate_skeleton_profiles(project_with_sources):
+    """Regression-Test the 2D profile length with skeleton profiles."""
+    # Generate the skeleton first
+    project_with_sources.skeletonize_wavefront(ids="mito_0007")
+
+    calculator = ProfileCalculator(project_with_sources)
+    results = calculator.calculate_skeleton_profiles(ids="mito_0007")
+
+    profile_data = results["mito_0007"]
+
+    assert profile_data.axis_used == "skeleton"
+    assert len(profile_data.perimeters) > 0
+    assert len(profile_data.perimeters) == len(profile_data.widths)
+
+    # Check only the first three slices
+    expected_perimeters = [24.21223, 23.64194, 23.06106]
+    expected_widths = [8.09431, 7.98912, 7.91002]
+
+    np.testing.assert_almost_equal(
+        profile_data.perimeters[:3], expected_perimeters, decimal=5
+    )
+    np.testing.assert_almost_equal(profile_data.widths[:3], expected_widths, decimal=5)
