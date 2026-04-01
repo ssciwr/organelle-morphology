@@ -1,6 +1,7 @@
-from dataclasses import dataclass, fields
+from dataclasses import InitVar, dataclass, fields
 import logging
 from pathlib import Path
+from typing import Optional
 from dask.delayed import Delayed, delayed
 import numpy as np
 import plotly.graph_objects as go
@@ -8,13 +9,14 @@ import dask.array as da
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from trimesh import Trimesh
-
+import yaml
 
 import organelle_morphology
 from organelle_morphology.statistics import Properties, Stats
 from organelle_morphology.util import (
     bounding_box_delayed,
     color_delayed_trimesh_vertices,
+    numpy_to_python,
     reset_color_delayed,
 )
 
@@ -29,36 +31,40 @@ def organelle_types() -> list[str]:
 
 
 @dataclass
-class OrganelleMeta:
+class OrganelleMeta(Properties):
     source: Path
     label: int
     id: str
 
 
 @dataclass
-class McsMeta:
-    organelle_meta: OrganelleMeta
+class McsMeta(Properties):
     mcs_label: str
     max_dist: float
     min_dist: float = 0.0
     filter_1: str = "*"
     filter_2: str = "*"
+    organelle_source: Optional[Path] = None
+    organelle_label: Optional[int] = None
+    organelle_id: Optional[str] = None
+    organelle_meta: InitVar[Optional[OrganelleMeta]] = None
 
-    def __post_init__(self):
-        for field in fields(self.organelle_meta):
-            setattr(
-                self,
-                "organelle_" + field.name,
-                getattr(self.organelle_meta, field.name),
-            )
+    def __post_init__(self, organelle_meta: Optional[OrganelleMeta]):
+        if organelle_meta is not None:
+            for f in fields(organelle_meta):
+                setattr(
+                    self,
+                    "organelle_" + f.name,
+                    getattr(organelle_meta, f.name),
+                )
 
 
 @dataclass
 class MeshProperties(Properties):
     volume: float
     area: float
-    centroid: np.ndarray
-    inertia: np.ndarray
+    centroid: list[float]
+    inertia: list[float]
     water_tight: bool
     sphericity: float
     flatness_ratio: float
@@ -76,6 +82,20 @@ class McsProperties(Properties):
     n_contacts_per_volume: float
     area_per_area: float
     area_per_volume: float
+
+
+yaml.add_constructor(
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsProperties",
+    lambda loader, node: Properties.yaml_constructor(loader, node, McsProperties),
+    Loader=yaml.SafeLoader,
+)
+
+
+yaml.add_constructor(
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMeta",
+    lambda loader, node: Properties.yaml_constructor(loader, node, McsMeta),
+    Loader=yaml.SafeLoader,
+)
 
 
 class Organelle:
@@ -421,7 +441,7 @@ class Organelle:
         mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
         mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
 
-        mcs_props = McsProperties(**mcs_dict)
+        mcs_props = McsProperties(**numpy_to_python(mcs_dict))
         mcs_meta = McsMeta(
             organelle_meta=self.metadata,
             mcs_label=mcs_label,
@@ -488,12 +508,14 @@ def get_mesh_properties_delayed(mesh: Trimesh) -> MeshProperties:
             construct a mesh_properties dataclass
     """
     return MeshProperties(
-        volume=mesh.volume,
-        area=mesh.area,
-        centroid=mesh.centroid,
-        inertia=mesh.moment_inertia,
+        volume=(mesh.volume).item(),
+        area=(mesh.area).item(),
+        centroid=(mesh.centroid).tolist(),
+        inertia=(mesh.moment_inertia).tolist(),
         water_tight=mesh.is_watertight,
-        sphericity=(36 * np.pi * mesh.volume**2) ** (1 / 3) / mesh.area,
-        flatness_ratio=min(mesh.bounding_box_oriented.extents)
-        / max(mesh.bounding_box_oriented.extents),
+        sphericity=((36 * np.pi * mesh.volume**2) ** (1 / 3) / mesh.area).item(),
+        flatness_ratio=(
+            min(mesh.bounding_box_oriented.extents)
+            / max(mesh.bounding_box_oriented.extents)
+        ).item(),
     )

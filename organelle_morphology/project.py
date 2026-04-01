@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from organelle_morphology.statistics import Properties
 from organelle_morphology.util import setup_logging
 import logging
 from dask.base import compute
 from dask.delayed import Delayed
 from trimesh import Trimesh
 import trimesh
-from organelle_morphology.organelle import McsProperties, Organelle
+from organelle_morphology.organelle import Organelle
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
@@ -36,7 +37,7 @@ clipping_type = (
 
 
 @dataclass
-class ProjectMeta:
+class ProjectMeta(Properties):
     path: Path
     name: str
     clipping: Optional[np.ndarray]
@@ -807,105 +808,6 @@ class Project:
 
         df = pd.DataFrame(properties).T
         return df
-
-    def get_mcs_properties(self, ids="*", mcs_labels: Optional[list] = None):
-        """The properties of the MCS between organelles
-        Gathers data from all the organelles into one dataframe
-
-        Args:
-            ids: Glob-style filter pattern for organelles, defaults to "*"
-            mcs_labels: Filter the MCS calculations, defaults to None
-
-        Returns:
-            pd.DataFrame
-        """
-
-        if len(self.mcs_labels) == 0:
-            raise RuntimeError("No mcs labels found, run a mcs search first!")
-
-        mcs_properties = {}
-
-        for stat in self.stats:
-            if not isinstance(stat.data, McsProperties):
-                continue
-            for label in self.mcs_labels:
-                if mcs_labels and (label not in mcs_labels):
-                    continue
-                elif label == stat.meta.mcs_label:
-                    mcs_properties[(label, stat.meta.organelle_id)] = stat.to_dict()
-
-        if len(mcs_properties) == 0:
-            raise RuntimeError(
-                "No matching mcs labels found, adjust your filter settings!"
-            )
-
-        mcs_df = pd.DataFrame(mcs_properties).T
-        mcs_df.sort_index(inplace=True)
-        mcs_df.index.names = ["mcs_label", "organelle"]
-
-        return mcs_df
-
-    def get_mcs_overview(self, ids="*", mcs_labels: Optional[list] = None):
-        def _weighted_stats(x):
-            # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
-            mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
-            std_area = np.sqrt(
-                np.average(
-                    (x["std_area"] ** 2 + (x["mean_area"] - mean_area) ** 2),
-                    weights=x["n_contacts"],
-                )
-            )
-            mean_dist = np.average(x["mean_dist"], weights=x["n_contacts"])
-            std_dist = np.sqrt(
-                np.average(
-                    (x["std_dist"] ** 2 + (x["mean_dist"] - mean_dist) ** 2),
-                    weights=x["n_contacts"],
-                )
-            )
-
-            # Calculate the sum, mean, and standard deviation for 'n_contacts' and 'total_area'
-            total_contacts = x["n_contacts"].sum()
-            mean_n_contacts = x["n_contacts"].mean()
-            std_n_contacts = x["n_contacts"].std()
-            total_area = x["total_area"].sum()
-            mean_total_area = x["total_area"].mean()
-            std_total_area = x["total_area"].std()
-
-            new_columns = [
-                ("overall", "total_contacts"),
-                ("overall", "total_area"),
-                ("per organelle", "mean_n_contacts"),
-                ("per organelle", "std_n_contacts"),
-                ("per organelle", "mean_total_area"),
-                ("per organelle", "std_area"),
-                ("per mcs", "mean_area"),
-                ("per mcs", "std_area"),
-                ("per mcs", "mean_dist"),
-                ("per mcs", "std_dist"),
-            ]
-            new_index = pd.MultiIndex.from_tuples(new_columns)
-
-            return pd.Series(
-                [
-                    total_contacts,
-                    total_area,
-                    mean_n_contacts,
-                    std_n_contacts,
-                    mean_total_area,
-                    std_total_area,
-                    mean_area,
-                    std_area,
-                    mean_dist,
-                    std_dist,
-                ],
-                index=new_index,
-            )
-
-        mcs_df = self.get_mcs_properties(ids=ids, mcs_labels=mcs_labels)
-
-        overview = mcs_df.groupby(level=0).apply(_weighted_stats)
-        overview.sort_index(axis=1, inplace=True)
-        return overview.T
 
     def n_oranelles(self) -> dict[str, int]:
         counts = {}
