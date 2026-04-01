@@ -21,21 +21,14 @@ class ProfileData:
 
     @property
     def mean_perimeter(self) -> float:
-        if not self.perimeters:
-            return np.nan
-        return float(np.mean(self.perimeters))
+        return float(np.mean(self.perimeters)) if self.perimeters else np.nan
 
 
 @delayed
-def _slice_and_perimeter(
-    mesh: trimesh.Trimesh, plane_origin: np.ndarray, plane_normal: np.ndarray
-):
-    """
-    Slices a mesh with a plane and returns the sum of perimeters of the resulting 2D cross-sections.
-    """
-    # mesh_plane returns intersecting line segments in 3D: (n, 2, 3)
+def _slice_and_perimeter(mesh: trimesh.Trimesh, origin: np.ndarray, normal: np.ndarray):
+    """Slices a mesh with a plane and returns the total perimeter."""
     try:
-        lines = mesh_plane(mesh, plane_normal=plane_normal, plane_origin=plane_origin)
+        lines = mesh_plane(mesh, plane_normal=normal, plane_origin=origin)
     except Exception as e:
         logger.debug(f"Mesh slicing failed: {e}")
         return np.nan
@@ -43,14 +36,7 @@ def _slice_and_perimeter(
     if len(lines) == 0:
         return np.nan
 
-    # Calculate lengths of all line segments
-    # lines shape is (n, 2, 3), representing n segments defined by 2 points in 3D space
-    segment_vectors = lines[:, 1, :] - lines[:, 0, :]
-    segment_lengths = np.linalg.norm(segment_vectors, axis=1)
-
-    # Total perimeter is the sum of all segment lengths in this slice
-    total_perimeter = np.sum(segment_lengths)
-    return total_perimeter
+    return np.sum(np.linalg.norm(lines[:, 1, :] - lines[:, 0, :], axis=1))
 
 
 class ProfileCalculator:
@@ -59,93 +45,106 @@ class ProfileCalculator:
     def __init__(self, project):
         self.project = project
 
+    def _get_bounds(self, org):
+        """Helper to extract bounding box limits."""
+        geo = org.geometric_data
+        if "voxel_bbox" not in geo:
+            self.project.logger.warning(f"Missing voxel_bbox for {org.id}. Skipping.")
+            return None, None
+
+        # bbox is (min_row, min_col, min_depth, max_row, max_col, max_depth)
+        res = org.source.resolution
+        return np.array(geo["voxel_bbox"][:3]) * res, np.array(
+            geo["voxel_bbox"][3:]
+        ) * res
+
+    def _parse_axis(self, axis):
+        """Helper to parse string aliases (default is z) or vectors."""
+        if isinstance(axis, str):
+            return np.array(
+                {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0]}.get(
+                    axis.lower(), [0.0, 0.0, 1.0]
+                )
+            )
+        vec = np.array(axis)
+        return vec / np.linalg.norm(vec)
+
+    def _compute_and_format(
+        self, all_tasks, axis_record, num_slices
+    ) -> Dict[str, ProfileData]:
+        """Helper to compute Dask tasks and package them into ProfileData."""
+        results = {}
+        for org_id, tasks in all_tasks.items():
+            perimeters = [p for p in compute(*tasks) if not np.isnan(p)]
+            results[org_id] = ProfileData(org_id, axis_record, num_slices, perimeters)
+        return results
+
     def calculate_profile_lengths(
         self, ids="er_*", axis="z", num_slices=20
     ) -> Dict[str, ProfileData]:
-        """
-        Calculates 2D profile perimeters for specified organelles along a given axis.
-
-        Args:
-            ids: Glob pattern for the organelles to analyze.
-            axis: String ('x', 'y', 'z') or a 3D numpy array representing the plane normal.
-            num_slices: Number of slices to take across the bounding box of the organelle.
-
-        Returns:
-            A dictionary mapping organelle IDs to ProfileData instances.
-        """
+        """Calculates 2D profile perimeters along a given axis."""
         organelles = self.project.get_organelles(ids=ids)
-
-        # Define the normal vector based on the chosen axis
-        axis_map = {
-            "x": np.array([1.0, 0.0, 0.0]),
-            "y": np.array([0.0, 1.0, 0.0]),
-            "z": np.array([0.0, 0.0, 1.0]),
-        }
-
-        if isinstance(axis, str):
-            plane_normal = axis_map.get(axis.lower(), np.array([0.0, 0.0, 1.0]))
-        else:
-            plane_normal = np.array(axis)
-            plane_normal = plane_normal / np.linalg.norm(plane_normal)
-
+        plane_normal = self._parse_axis(axis)
         all_tasks = {}
 
         self.project.logger.info(
-            f"Generating {num_slices} {axis}-axis slicing planes for {len(organelles)} organelles..."
+            f"Generating {num_slices} {axis}-axis slices for {len(organelles)} organelles..."
         )
 
         for org in organelles:
-            # Fetch pre-calculated basic geometric properties to get the bounding box bounds
-            # This avoids computing the full mesh just to find where to put the planes
-            geo_data = org.geometric_data
-
-            if "voxel_bbox" not in geo_data:
-                self.project.logger.warning(
-                    f"Missing voxel_bbox for {org.id}. Skipping."
-                )
+            min_b, max_b = self._get_bounds(org)
+            if min_b is None:
                 continue
 
-            # skimage bbox is (min_row, min_col, min_depth, max_row, max_col, max_depth)
-            bbox = geo_data["voxel_bbox"]
-            min_bound = np.array([bbox[0], bbox[1], bbox[2]]) * org.source.resolution
-            max_bound = np.array([bbox[3], bbox[4], bbox[5]]) * org.source.resolution
-
-            # Project bounds onto the normal vector to find extents along the axis
-            min_proj = np.dot(min_bound, plane_normal)
-            max_proj = np.dot(max_bound, plane_normal)
-
-            if min_proj > max_proj:
-                min_proj, max_proj = max_proj, min_proj
-
-            # Generate origins (skip the absolute edges to ensure good cuts)
+            # Project bounds onto normal and sort to find limits
+            min_proj, max_proj = sorted(
+                [np.dot(min_b, plane_normal), np.dot(max_b, plane_normal)]
+            )
             steps = np.linspace(min_proj, max_proj, num_slices + 2)[1:-1]
 
-            org_tasks = []
-            for step in steps:
-                # Origin is the step distance along the normal vector
-                origin = step * plane_normal
+            all_tasks[org.id] = [
+                _slice_and_perimeter(org.mesh, step * plane_normal, plane_normal)
+                for step in steps
+            ]
 
-                # Pass the delayed mesh to our delayed slicing function
-                task = _slice_and_perimeter(org.mesh, origin, plane_normal)
-                org_tasks.append(task)
+        axis_record = axis if isinstance(axis, str) else tuple(axis)
+        return self._compute_and_format(all_tasks, axis_record, num_slices)
+
+    def calculate_random_profiles(
+        self, ids="er_*", num_planes=20, seed=None
+    ) -> Dict[str, ProfileData]:
+        """Calculates 2D profile perimeters using randomly oriented planes."""
+        organelles = self.project.get_organelles(ids=ids)
+        rng = np.random.default_rng(seed=seed)
+        all_tasks = {}
+
+        self.project.logger.info(
+            f"Generating {num_planes} random slices for {len(organelles)} organelles..."
+        )
+
+        for org in organelles:
+            min_b, max_b = self._get_bounds(org)
+            if min_b is None:
+                continue
+
+            org_tasks = []
+            for _ in range(num_planes):
+                # Generate random normalized vector
+                vec = rng.standard_normal(3)
+                plane_normal = vec / np.linalg.norm(vec)
+
+                min_proj, max_proj = sorted(
+                    [np.dot(min_b, plane_normal), np.dot(max_b, plane_normal)]
+                )
+
+                # Random origin, minus 5% of edges to avoid misses
+                margin = (max_proj - min_proj) * 0.05
+                origin = (
+                    rng.uniform(min_proj + margin, max_proj - margin) * plane_normal
+                )
+
+                org_tasks.append(_slice_and_perimeter(org.mesh, origin, plane_normal))
 
             all_tasks[org.id] = org_tasks
 
-        # Compute all perimeters in parallel
-        results = {}
-        for org_id, tasks in all_tasks.items():
-            perimeters = compute(*tasks)
-            # Filter out NaNs (slices that missed the mesh completely)
-            valid_perimeters = [p for p in perimeters if not np.isnan(p)]
-
-            # Format axis cleanly for the dataclass attribute
-            axis_record = axis if isinstance(axis, str) else tuple(axis)
-
-            results[org_id] = ProfileData(
-                organelle_id=org_id,
-                axis_used=axis_record,
-                num_slices_attempted=num_slices,
-                perimeters=valid_perimeters,
-            )
-
-        return results
+        return self._compute_and_format(all_tasks, "random", num_planes)

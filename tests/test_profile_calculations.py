@@ -3,7 +3,7 @@ from organelle_morphology.profile_calculations import ProfileCalculator, Profile
 
 
 def test_calculate_profile_lengths(project_with_sources):
-    """Test the 2D profile length calculation pipeline."""
+    """Regression-Test the 2D profile length calculation pipeline."""
     # Initialize the calculator with the project
     calculator = ProfileCalculator(project_with_sources)
 
@@ -35,3 +35,17 @@ def test_calculate_profile_lengths(project_with_sources):
     np.testing.assert_almost_equal(
         profile_data.mean_perimeter, expected_mean, decimal=5
     )
+
+
+def test_calculate_random_profiles(project_with_sources):
+    """Regression-Test the 2D profile length with random planes."""
+
+    calculator = ProfileCalculator(project_with_sources)
+    results = calculator.calculate_random_profiles(
+        ids="mito_0007", num_planes=5, seed=42
+    )
+
+    perimeters = results["mito_0007"].perimeters
+    expected = [31.36676084, 52.20270082, 32.24204422, 22.81741491, 30.23820865]
+
+    np.testing.assert_almost_equal(perimeters, expected, decimal=5)
