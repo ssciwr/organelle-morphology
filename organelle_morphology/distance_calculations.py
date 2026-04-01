@@ -1,4 +1,5 @@
 import logging
+from time import time
 from dask.delayed import delayed
 from dask.distributed import span
 from scipy.spatial import KDTree
@@ -485,6 +486,7 @@ def generate_mcs(
     logger.debug("Finished mcs calculations")
 
     org_ids = set()
+    t0 = time()
     for id_1, id_2 in pairs:
         org1 = project.get_organelles(id_1)[0]
         org2 = project.get_organelles(id_2)[0]
@@ -504,7 +506,7 @@ def generate_mcs(
     for org_id in org_ids:
         org = project.get_organelles(org_id)[0]
         org.calc_mcs_dict_entry(mcs_label)
-    logger.debug("Transfered mcs to organelles")
+    logger.debug(f"Transfered mcs to organelles in {time() - t0}")
 
     project._mcs_labels[mcs_label] = {
         "max_distance": max_distance,

@@ -89,6 +89,8 @@ class Stats:
 
 
 class Properties(ABC):
+    """Base class for (Meta)Data containers"""
+
     def to_dict(self):
         return {field.name: getattr(self, field.name) for field in fields(self)}
 
