@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, Any, List, Optional
 import numpy as np
 import pandas as pd
 
-from organelle_morphology.organelle import McsProperties
-from organelle_morphology.statistics import Properties, Stats
+from organelle_morphology.statistics import Properties
 
 if TYPE_CHECKING:
     from organelle_morphology.organelle import Organelle
@@ -35,9 +34,10 @@ class Analysis(ABC):
     def get_dataframe(self) -> pd.DataFrame:
         raise NotImplementedError
 
-    def get_summary_dataframe(self) -> pd.DataFrame:
+    def get_summary_dataframe(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """Calculates statistics. Booleans only contribute to the average/share."""
-        df = self.get_dataframe()
+        if df is None:  # if no filtered dataframe provided, use the full one
+            df = self.get_dataframe()
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         bool_cols = df.select_dtypes(include=[bool]).columns.tolist()
 
@@ -197,13 +197,13 @@ class Misc_Analysis(Analysis):
     def get_mesh_properties(self) -> list[str]:
         """Returns a list of all available mesh properties."""
         mesh_properties = [
-            "mesh_volume",
+            "volume",
             "sphericity",
             "flatness_ratio",
             "water_tight",
-            "mesh_area",
-            "mesh_centroid",
-            "mesh_inertia",
+            "area",
+            "centroid",
+            "inertia",
         ]
         return mesh_properties
 
@@ -266,8 +266,8 @@ class Misc_Analysis(Analysis):
             props = organelle.mesh_properties
 
             for p in selected:
-                if p in props:
-                    res[p] = props[p]
+                if hasattr(props, p):
+                    res[p] = getattr(props, p)
         except (KeyError, AttributeError, RuntimeError) as e:
             self.project.logger.warning(
                 f"Failed to retrieve mesh properties for {organelle.id}: {e}"
@@ -282,16 +282,17 @@ class Misc_Analysis(Analysis):
         skeleton_keys = set(self.get_skeleton_properties())
         to_extract = selected.intersection(skeleton_keys)
 
-        # If no keys selected or skeleton hasn't been generated yet, skip
-        if not to_extract or organelle.skeleton is None:
+        # If no skeleton keys are requested, skip the loop entirely
+        if not to_extract:
             return {}
 
         res = {}
         # Use skeleton_info directly
         info = organelle.skeleton_info
-        for p in to_extract:
-            if p in info:
-                res[p] = info[p]
+        if info:
+            for p in to_extract:
+                if p in info:
+                    res[p] = info[p]
         return res
 
     def get_geometry_stats(
@@ -355,11 +356,11 @@ class Misc_Analysis(Analysis):
 
         :param ids: Glob-style filter for organelles (e.g., "mito_*").
         :param properties: List of keys to include. If None, defaults to
-                           ['mesh_volume', 'sphericity', 'flatness_ratio'].
+                           ['volume', 'sphericity', 'flatness_ratio'].
         """
 
         if properties is None:
-            properties = ["mesh_volume", "sphericity", "flatness_ratio"]
+            properties = ["volume", "sphericity", "flatness_ratio"]
 
         selected_set = set(properties)
 
