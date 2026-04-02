@@ -1,32 +1,33 @@
 import logging
-from dataclasses import dataclass, field
-from typing import List, Dict, Union
+from dataclasses import dataclass
+from typing import List, Union
 import numpy as np
 from dask import delayed
 from dask.base import compute
 import trimesh
 from trimesh.intersections import mesh_plane
+from organelle_morphology.statistics import Properties, Stats
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ProfileData:
-    """Stores the calculated 2D profile metrics for a single organelle."""
+class ProfileProperties(Properties):
+    """Physical measurements of the 2D profile."""
+
+    perimeters: List[float]
+    widths: List[float]
+    mean_perimeter: float
+    mean_width: float
+
+
+@dataclass
+class ProfileMeta(Properties):
+    """Context for the profile calculation."""
 
     organelle_id: str
     axis_used: Union[str, tuple]
     num_slices_attempted: int
-    perimeters: List[float] = field(default_factory=list)
-    widths: List[float] = field(default_factory=list)
-
-    @property
-    def mean_perimeter(self) -> float:
-        return float(np.mean(self.perimeters)) if self.perimeters else np.nan
-
-    @property
-    def mean_width(self) -> float:
-        return float(np.mean(self.widths)) if self.widths else np.nan
 
 
 @delayed
@@ -85,11 +86,11 @@ class ProfileCalculator:
         vec = np.array(axis)
         return vec / np.linalg.norm(vec)
 
-    def _compute_and_format(
-        self, all_tasks, axis_record, num_slices=None
-    ) -> Dict[str, ProfileData]:
-        """Helper to compute Dask tasks and package them into ProfileData."""
-        results = {}
+    def _compute_and_format(self, all_tasks, axis_record, num_slices=None) -> None:
+        """
+        Helper to compute Dask tasks and register them into the central
+        Project.stats list.
+        """
         for org_id, tasks in all_tasks.items():
             computed = compute(*tasks)
 
@@ -97,15 +98,26 @@ class ProfileCalculator:
             widths = [res[1] for res in computed if not np.isnan(res[1])]
             attempted = num_slices if num_slices is not None else len(tasks)
 
-            results[org_id] = ProfileData(
-                org_id, axis_record, attempted, perimeters, widths
+            # Pre-calculate means for the dataclass fields
+            m_perimeter = float(np.mean(perimeters)) if perimeters else np.nan
+            m_width = float(np.mean(widths)) if widths else np.nan
+
+            data = ProfileProperties(
+                perimeters=perimeters,
+                widths=widths,
+                mean_perimeter=m_perimeter,
+                mean_width=m_width,
+            )
+            meta = ProfileMeta(
+                organelle_id=org_id,
+                axis_used=axis_record,
+                num_slices_attempted=attempted,
             )
 
-        return results
+            # Register the result in the central project repository
+            self.project.add_stat(Stats(data=data, meta=meta))
 
-    def calculate_profile_lengths(
-        self, ids="er_*", axis="z", num_slices=20
-    ) -> Dict[str, ProfileData]:
+    def calculate_profile_lengths(self, ids="er_*", axis="z", num_slices=20) -> None:
         """Calculates 2D profile metrics along a given fixed axis."""
         organelles = self.project.get_organelles(ids=ids)
         plane_normal = self._parse_axis(axis)
@@ -131,11 +143,9 @@ class ProfileCalculator:
             ]
 
         axis_record = axis if isinstance(axis, str) else tuple(axis)
-        return self._compute_and_format(all_tasks, axis_record, num_slices)
+        self._compute_and_format(all_tasks, axis_record, num_slices)
 
-    def calculate_random_profiles(
-        self, ids="er_*", num_planes=20, seed=None
-    ) -> Dict[str, ProfileData]:
+    def calculate_random_profiles(self, ids="er_*", num_planes=20, seed=None) -> None:
         """Calculates 2D profile metrics using randomly oriented planes."""
         organelles = self.project.get_organelles(ids=ids)
         rng = np.random.default_rng(seed)
@@ -167,14 +177,11 @@ class ProfileCalculator:
 
             all_tasks[org.id] = org_tasks
 
-        return self._compute_and_format(all_tasks, "random", num_planes)
+        self._compute_and_format(all_tasks, "random", num_planes)
 
-    def calculate_skeleton_profiles(
-        self, ids="er_*", sample_distance=0.1
-    ) -> Dict[str, ProfileData]:
+    def calculate_skeleton_profiles(self, ids="er_*", sample_distance=0.1) -> None:
         """
         Calculates 2D profile perimeters and widths perpendicular to the organelle skeleton.
-        Ensures accurate tubule diameters by slicing directly against the geometric flow.
         """
         organelles = self.project.get_organelles(ids=ids)
         all_tasks = {}
@@ -192,7 +199,6 @@ class ProfileCalculator:
 
             org_tasks = []
 
-            # Iterate through the skeleton graph edges to define accurate normal vectors
             for edge in org.skeleton.edges:
                 p1 = np.array(org.skeleton.vertices[edge[0]])
                 p2 = np.array(org.skeleton.vertices[edge[1]])
@@ -205,10 +211,7 @@ class ProfileCalculator:
 
                 plane_normal = edge_vec / length
 
-                # Determine how many slices to take along this specific skeleton segment
                 n_points = max(1, int(np.ceil(length / sample_distance)))
-
-                # Exclude exact endpoints (0 and 1) to avoid intersection artifacts at branch points
                 factors = np.linspace(0, 1, n_points + 2)[1:-1]
 
                 for f in factors:
@@ -217,4 +220,4 @@ class ProfileCalculator:
 
             all_tasks[org.id] = org_tasks
 
-        return self._compute_and_format(all_tasks, "skeleton", num_slices=None)
+        self._compute_and_format(all_tasks, "skeleton", num_slices=None)
