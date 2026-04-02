@@ -123,7 +123,6 @@ class Organelle:
         self._sampled_skeleton = None
         self._skeleton_info = {}
         self._mcs = defaultdict(dict)
-        self._mcs_dict = {}
 
     @classmethod
     def construct(cls, source, labels: list[int]):
@@ -449,16 +448,11 @@ class Organelle:
             max_dist=entries["meta"]["max_distance"],
         )
         stat = Stats(mcs_props, mcs_meta)
-        self.mcs_dict[mcs_label] = stat
         self.project.add_stat(stat)
 
     @property
     def mcs(self) -> dict:
         return self._mcs
-
-    @property
-    def mcs_dict(self):
-        return self._mcs_dict
 
     @property
     def data(self) -> da.Array:

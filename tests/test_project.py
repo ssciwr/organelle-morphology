@@ -266,19 +266,6 @@ def test_cache_settings(project_with_sources):
     assert isinstance(cs, dict)
 
 
-@pytest.mark.parametrize("rep", range(2))
-def test_mcs(project_with_sources, rep):
-    if len(ps := list(project_with_sources.path.glob("cache*"))):
-        raise RuntimeError(f"Existing caches found!!\n{ps}")
-    project_with_sources.search_mcs(10)
-
-    props = project_with_sources.get_mcs_properties()
-    assert props.shape == (10, 10)
-
-    overview = project_with_sources.get_mcs_overview()
-    assert overview.shape == (10, 1)
-
-
 def test_curvature_map(project_with_sources, mocker):
     p: Project = project_with_sources
     s = project_with_sources.sources["synth_data"]

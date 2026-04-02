@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import fields
 from pathlib import Path, PosixPath, WindowsPath
+from typing import TypeVar
 
 import yaml
 
@@ -41,6 +42,27 @@ def represent_properties(dumper, obj):
     return dumper.represent_mapping(tag, data)
 
 
+class Properties(ABC):
+    """Base class for (Meta)Data containers"""
+
+    def to_dict(self):
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+    @staticmethod
+    def yaml_constructor(loader, node, properties_class):
+        """Constructor for Properties objects"""
+        values = loader.construct_pairs(node)
+        return properties_class(**dict(values))
+
+    def yaml_representor(self):
+        yaml.add_representer(
+            self.__class__, represent_properties, Dumper=yaml.SafeDumper
+        )
+
+
+AnyProperty = TypeVar("AnyProperty", bound=Properties)
+
+
 class Stats:
     """Stats class to collect statistical data together with metadata
     throughout the project.
@@ -51,9 +73,14 @@ class Stats:
         name: name of data
     """
 
-    def __init__(self, data, meta):
-        self.data: Properties = data
-        self.meta: Properties = meta
+    def __init__(self, data: AnyProperty, meta: AnyProperty):
+        """
+        Args:
+            data: dataclass inheriting from Properties, contains the data
+            meta: dataclass inheriting from Properties, contains the metadata
+        """
+        self.data = data
+        self.meta = meta
         self.name = type(data).__name__
 
     def to_dict(self):
@@ -86,21 +113,3 @@ class Stats:
             if name != self.name:
                 return False
         return True
-
-
-class Properties(ABC):
-    """Base class for (Meta)Data containers"""
-
-    def to_dict(self):
-        return {field.name: getattr(self, field.name) for field in fields(self)}
-
-    @staticmethod
-    def yaml_constructor(loader, node, properties_class):
-        """Constructor for Properties objects"""
-        values = loader.construct_pairs(node)
-        return properties_class(**dict(values))
-
-    def yaml_representor(self):
-        yaml.add_representer(
-            self.__class__, represent_properties, Dumper=yaml.SafeDumper
-        )

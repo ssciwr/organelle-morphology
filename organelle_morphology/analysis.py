@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from organelle_morphology.organelle import McsProperties
-from organelle_morphology.statistics import Stats
+from organelle_morphology.statistics import Properties, Stats
 
 if TYPE_CHECKING:
     from organelle_morphology.organelle import Organelle
@@ -17,9 +17,14 @@ if TYPE_CHECKING:
 class Analysis(ABC):
     """Analysis base class. Specific analysis workflows should subclass this."""
 
-    def __init__(self, project: Project, stat_type: type[Stats]):
+    def __init__(self, project: Project, property_type: type[Properties]):
         self.project = project
-        self.stats = [s for s in self.project.stats if isinstance(s, stat_type)]
+        self.property_type = property_type
+        self.all_stats = self.project.stats
+        self.own_stats = [
+            s for s in self.all_stats if isinstance(s.data, property_type)
+        ]
+
         self.__post_init__()
 
     def __post_init__(self):
@@ -72,7 +77,8 @@ class Mcs_Analysis(Analysis):
     """Methods to calculate mcs statistics"""
 
     def __post_init__(self):
-        self.mcs_labels = {s.meta.mcs_labels for s in self.stats}
+        self.mcs_labels = {s.meta.mcs_label for s in self.own_stats}
+        self.set_filters()
 
     def set_filters(self, ids: str = "*", mcs_labels: Optional[list[str]] = None):
         self.ids = ids
@@ -95,14 +101,14 @@ class Mcs_Analysis(Analysis):
 
         mcs_properties = {}
 
-        for stat in self.stats:
-            if not isinstance(stat.data, McsProperties):
-                continue
+        for stat in self.own_stats:
             for label in self.mcs_labels:
                 if self.mcs_label_filter and (label not in self.mcs_label_filter):
                     continue
                 elif label == stat.meta.mcs_label:
-                    mcs_properties[(label, stat.meta.organelle_id)] = stat.to_dict()
+                    mcs_properties[(label, stat.meta.organelle_id)] = (
+                        stat.data.to_dict()
+                    )
 
         if len(mcs_properties) == 0:
             raise RuntimeError(
@@ -176,6 +182,10 @@ class Mcs_Analysis(Analysis):
         overview = mcs_df.groupby(level=0).apply(_weighted_stats)
         overview.sort_index(axis=1, inplace=True)
         return overview.T
+
+    def get_dataframe(self) -> pd.DataFrame:
+        # TODO: placeholder, output df will change!
+        return self.get_mcs_overview()
 
 
 # should be split into separate topics, like mcs, skeleton, misc(?)
@@ -322,19 +332,16 @@ class Misc_Analysis(Analysis):
         if not to_extract:
             return {}
 
-        mcs_data = organelle.mcs_dict
-        if not mcs_data:
-            return {}
-
         res = {}
-        # Iterate through each MCS label (e.g., "0-0.01", "0-0.03") and its metrics
-        for mcs_label, metrics in mcs_data.items():
-            # For each requested base property (e.g., "n_contacts")
-            for prop_name in to_extract:
-                # If the metric exists for this MCS label, add it to the result
-                # with a new key format: "MCS_LABEL-PROPERTY_NAME"
-                if prop_name in metrics:
-                    res[f"{mcs_label}-{prop_name}"] = metrics[prop_name]
+        for stat in self.own_stats:
+            if stat.meta.organelle_id == organelle.id:
+                mcs_label = stat.meta.mcs_label
+                # For each requested base property (e.g., "n_contacts")
+                for prop_name in to_extract:
+                    # If the metric exists for this MCS label, add it to the result
+                    # with a new key format: "MCS_LABEL-PROPERTY_NAME"
+                    if hasattr(stat.data, prop_name):
+                        res[f"{mcs_label}-{prop_name}"] = getattr(stat.data, prop_name)
 
         return res
 
