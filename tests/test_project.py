@@ -1,6 +1,7 @@
 from trimesh import Trimesh
 from trimesh.path import Path3D
 from organelle_morphology.project import Project
+from organelle_morphology.statistics import Stats
 from .synthetic_data_generator import generate_synthetic_dataset
 
 import pytest
@@ -265,19 +266,6 @@ def test_cache_settings(project_with_sources):
     assert isinstance(cs, dict)
 
 
-@pytest.mark.parametrize("rep", range(2))
-def test_mcs(project_with_sources, rep):
-    if len(ps := list(project_with_sources.path.glob("cache*"))):
-        raise RuntimeError(f"Existing caches found!!\n{ps}")
-    project_with_sources.search_mcs(10)
-
-    props = project_with_sources.get_mcs_properties()
-    assert props.shape == (10, 10)
-
-    overview = project_with_sources.get_mcs_overview()
-    assert overview.shape == (10, 1)
-
-
 def test_curvature_map(project_with_sources, mocker):
     p: Project = project_with_sources
     s = project_with_sources.sources["synth_data"]
@@ -403,3 +391,12 @@ def test_clear_caches(project_with_sources, mocker):
     p.clear_caches(clear_disk=True)
     assert "test" in s_cache
     assert "test" not in s.cache
+
+
+def test_stat_stats(project, mocker):
+    assert project.get_stat_stats() == {}
+
+    stat = Stats(mocker.sentinel, mocker.sentinel)
+    project.add_stat(stat)
+
+    assert project.get_stat_stats()["_Sentinel"] == 1

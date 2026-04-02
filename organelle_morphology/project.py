@@ -1,5 +1,7 @@
+from dataclasses import dataclass
 from typing import Optional
 
+from organelle_morphology.statistics import Properties
 from organelle_morphology.util import setup_logging
 import logging
 from dask.base import compute
@@ -32,6 +34,17 @@ import plotly.graph_objects as go
 clipping_type = (
     tuple[tuple[float, float, float], tuple[float, float, float]] | list[list[float]]
 )
+
+
+@dataclass
+class ProjectMeta(Properties):
+    path: Path
+    name: str
+    clipping: Optional[np.ndarray]
+    compression: str
+    sources: list[str]
+    blacklist: list[str]
+    whitelist: list[str]
 
 
 class Project:
@@ -122,6 +135,18 @@ class Project:
             self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property
+    def metadata(self):
+        return ProjectMeta(
+            path=self.path,
+            name=self.path.name,
+            clipping=self.clipping,
+            compression=self.compression_level,
+            sources=list(self.sources.keys()),
+            blacklist=self.permanent_blacklist,
+            whitelist=self.permanent_whitelist,
+        )
+
+    @property
     def path(self) -> Path:
         return self._project_path.resolve()
 
@@ -204,14 +229,14 @@ class Project:
             background_label,
         )
 
-        self.logger.info(f"Adding source {source_obj.metadata['name']}")
+        self.logger.info(f"Adding source {source_obj.metadata.name}")
 
         # Double-check that it provides the current compression level
-        if self.compression_level not in source_obj.metadata["levels"]:
+        if self.compression_level not in source_obj.metadata.levels:
             raise ValueError(
                 f"Compression level {self.compression_level} is not available "
-                f"for source {source_obj.metadata['name']}.\n Available levels:"
-                f"{source_obj.metadata['levels']}"
+                f"for source {source_obj.metadata.name}.\n Available levels:"
+                f"{source_obj.metadata.levels}"
             )
         self.sources[xml_path.stem] = source_obj
         return source_obj
@@ -410,7 +435,7 @@ class Project:
                     to_show.append(o.skeleton.skeleton)
 
         if domain_box:
-            size = np.array(source.metadata["size"]) * source.data_resolution
+            size = np.array(source.metadata.size) * source.data_resolution
             domain_box = trimesh.path.creation.box_outline(
                 extents=size,
                 transform=trimesh.transformations.translation_matrix(size / 2),
@@ -437,7 +462,7 @@ class Project:
         if box:
             npbox = np.array(box)
             if np.all(npbox <= 1.0):
-                npbox = npbox * source.metadata["size"] * source.data_resolution
+                npbox = npbox * source.metadata.size * source.data_resolution
             edges = corners_to_edges(*npbox)
             trans = trimesh.transformations.translation_matrix(npbox[0] + (edges / 2))
 
@@ -735,10 +760,10 @@ class Project:
     @compression_level.setter
     def compression_level(self, level: str):
         for s_name, s in self.sources.items():
-            if level not in s.metadata["levels"]:
+            if level not in s.metadata.levels:
                 raise ValueError(
                     f"Requested level {level} not available in source {s_name}!\n"
-                    f"Levels in source: {s.metadata['levels']}"
+                    f"Levels in source: {s.metadata.levels}"
                 )
         if getattr(self, "_compression_level", None) != level:
             self.clear_caches()
@@ -783,98 +808,6 @@ class Project:
 
         df = pd.DataFrame(properties).T
         return df
-
-    def get_mcs_properties(self, ids="*", mcs_labels: Optional[list] = None):
-        """The properties of the MCS between organelles
-        Gathers data from all the organelles into one dataframe
-
-        Args:
-            ids: Glob-style filter pattern for organelles, defaults to "*"
-            mcs_labels: Filter the MCS calculations, defaults to None
-
-        Returns:
-            pd.DataFrame
-        """
-
-        orgs = self.get_organelles(ids=ids)
-        if len(self.mcs_labels) == 0:
-            raise RuntimeError("No mcs labels found, run a mcs search first!")
-
-        mcs_properties = {}
-        for org in orgs:
-            for label in self.mcs_labels:
-                if mcs_labels and label not in mcs_labels:
-                    continue
-                elif label in org.mcs_dict:
-                    mcs_properties[(label, org.id)] = org.mcs_dict[label]
-
-        mcs_df = pd.DataFrame(mcs_properties).T
-        mcs_df.sort_index(inplace=True)
-        mcs_df.index.names = ["mcs_label", "organelle"]
-
-        return mcs_df
-
-    def get_mcs_overview(self, ids="*", mcs_labels: Optional[list] = None):
-        def _weighted_stats(x):
-            # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
-            mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
-            std_area = np.sqrt(
-                np.average(
-                    (x["std_area"] ** 2 + (x["mean_area"] - mean_area) ** 2),
-                    weights=x["n_contacts"],
-                )
-            )
-            mean_dist = np.average(x["mean_dist"], weights=x["n_contacts"])
-            std_dist = np.sqrt(
-                np.average(
-                    (x["std_dist"] ** 2 + (x["mean_dist"] - mean_dist) ** 2),
-                    weights=x["n_contacts"],
-                )
-            )
-
-            # Calculate the sum, mean, and standard deviation for 'n_contacts' and 'total_area'
-            total_contacts = x["n_contacts"].sum()
-            mean_n_contacts = x["n_contacts"].mean()
-            std_n_contacts = x["n_contacts"].std()
-            total_area = x["total_area"].sum()
-            mean_total_area = x["total_area"].mean()
-            std_total_area = x["total_area"].std()
-
-            new_columns = [
-                ("overall", "total_contacts"),
-                ("overall", "total_area"),
-                ("per organelle", "mean_n_contacts"),
-                ("per organelle", "std_n_contacts"),
-                ("per organelle", "mean_total_area"),
-                ("per organelle", "std_area"),
-                ("per mcs", "mean_area"),
-                ("per mcs", "std_area"),
-                ("per mcs", "mean_dist"),
-                ("per mcs", "std_dist"),
-            ]
-            new_index = pd.MultiIndex.from_tuples(new_columns)
-
-            return pd.Series(
-                [
-                    total_contacts,
-                    total_area,
-                    mean_n_contacts,
-                    std_n_contacts,
-                    mean_total_area,
-                    std_total_area,
-                    mean_area,
-                    std_area,
-                    mean_dist,
-                    std_dist,
-                ],
-                index=new_index,
-            )
-
-        mcs_df = self.get_mcs_properties(ids=ids, mcs_labels=mcs_labels)
-
-        overview = mcs_df.groupby(level=0).apply(_weighted_stats)
-        overview.sort_index(axis=1, inplace=True)
-        return overview.T
 
     def n_oranelles(self) -> dict[str, int]:
         counts = {}
@@ -1157,6 +1090,32 @@ class Project:
         self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
         return caches
 
+    def add_stat(self, stat):
+        self._stats.append(stat)
+
+    @property
+    def stats(self):
+        return self._stats
+
+    def get_stat_stats(self):
+        """Generate some meta statistics
+        about the already calculated statistics objects
+
+        Returns:
+            dict: Number of each statistics type available.
+        """
+        desc = "Collected statistics:\n"
+        stat_count = defaultdict(int)
+        desc += f"{'number of stats':<20}: {len(self.stats)}\n"
+
+        for stat in self.stats:
+            stat_count[stat.name] += 1
+        for stat, count in stat_count.items():
+            desc += f"{stat:<18}: {count}\n"
+
+        self.logger.info(desc)
+        return stat_count
+
     def clear_memory_cache(self):
         """(Re)initialize project-level storage."""
 
@@ -1167,6 +1126,7 @@ class Project:
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
         self._max_compute_distance = 0.0
         self._cache = None
+        self._stats = []
 
     def clear_caches(self, clear_disk=False):
         """Clear all caches related to this project, optionally also from disk"""

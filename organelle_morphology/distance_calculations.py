@@ -1,4 +1,5 @@
 import logging
+from time import time
 from dask.delayed import delayed
 from dask.distributed import span
 from scipy.spatial import KDTree
@@ -429,6 +430,12 @@ def generate_mcs(
     mcs_label = f"{min_distance}-{max_distance},{label_1}-{label_2}"
     if project._mcs_labels.get(mcs_label) and not overwrite:
         return mcs_label
+    mcs_meta = {
+        "ids_filter_1": ids_filter_1,
+        "ids_filter_2": ids_filter_2,
+        "min_distance": min_distance,
+        "max_distance": max_distance,
+    }
 
     ids_1 = project.get_organelle_ids(ids_filter_1)
     ids_2 = project.get_organelle_ids(ids_filter_2)
@@ -479,6 +486,7 @@ def generate_mcs(
     logger.debug("Finished mcs calculations")
 
     org_ids = set()
+    t0 = time()
     for id_1, id_2 in pairs:
         org1 = project.get_organelles(id_1)[0]
         org2 = project.get_organelles(id_2)[0]
@@ -489,16 +497,16 @@ def generate_mcs(
 
         # add mcs to organelle
         if org1.id == mcs_source["self_id"]:
-            org1.add_mcs(mcs_source)
-            org2.add_mcs(mcs_target)
+            org1.add_mcs(mcs_source, mcs_meta)
+            org2.add_mcs(mcs_target, mcs_meta)
         else:
-            org1.add_mcs(mcs_target)
-            org2.add_mcs(mcs_source)
+            org1.add_mcs(mcs_target, mcs_meta)
+            org2.add_mcs(mcs_source, mcs_meta)
 
     for org_id in org_ids:
         org = project.get_organelles(org_id)[0]
         org.calc_mcs_dict_entry(mcs_label)
-    logger.debug("Transfered mcs to organelles")
+    logger.debug(f"Transfered mcs to organelles in {time() - t0}")
 
     project._mcs_labels[mcs_label] = {
         "max_distance": max_distance,

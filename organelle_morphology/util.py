@@ -394,6 +394,24 @@ def boxes_overlap(box1, box2):
     return True
 
 
+def numpy_to_python(obj):
+    """Recursively convert NumPy types to Python types"""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, dict):
+        return {key: numpy_to_python(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [numpy_to_python(item) for item in obj]
+    else:
+        return obj
+
+
 class FrequencyFilter(logging.Filter):
     """Accumulate repeating log messages"""
 

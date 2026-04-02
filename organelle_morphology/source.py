@@ -2,10 +2,6 @@ from collections import defaultdict
 import logging
 from typing import Optional
 from pathlib import Path
-
-from trimesh import Trimesh
-import trimesh
-
 import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
 
@@ -14,7 +10,6 @@ import dask.array as da
 from dask.array.core import Array
 from dask.delayed import Delayed, delayed
 
-from zmesh import Mesher
 import skeletor as sk
 
 import fnmatch
@@ -23,8 +18,10 @@ import xml.etree.ElementTree as ET
 from skimage.measure import regionprops
 from dataclasses import dataclass, field
 import z5py
+from organelle_morphology.block_mesher import block_mesher
 
 
+from organelle_morphology.statistics import Properties
 from organelle_morphology.util import (
     Cache,
     color_delayed_trimesh_rgba,
@@ -33,173 +30,6 @@ from organelle_morphology.util import (
     measure_gaussian_curvature_delayed,
     sample_skeleton,
 )
-
-
-@delayed(nout=2)
-def _block_mesher(
-    block,
-    space_offset: tuple[int, ...],
-    reduction_factor=0,
-    debug_color=0,
-    scaling_factors=[1, 1, 1],
-):
-    """Delayed function to calculate meshes from label data
-
-    Args:
-        block: 3D array containing labels
-        space_offset: 3D tuple containing the offset of the current block
-            in relation to the whole data. The vertices are therefore *not*
-            local to the block, but can directly be merged with other blocks.
-
-    Returns:
-        meshes: Dict with labels as keys and meshes as values.
-        labels: list of labels present in this block.
-
-    """
-
-    def plane(origin, normal):
-        """Plane for debug view"""
-        normal_i = np.array(normal, dtype=bool)
-        planeverts = np.stack([origin] * 4)
-        # axis along which to strech from origin to plane
-        for i, axis in enumerate((~normal_i).nonzero()[0]):
-            if i == 0:
-                planeverts[0, axis] += 50
-                planeverts[1, axis] += 50
-                planeverts[2, axis] -= 50
-                planeverts[3, axis] -= 50
-
-            else:
-                planeverts[0, axis] += 50
-                planeverts[2, axis] += 50
-                planeverts[1, axis] -= 50
-                planeverts[3, axis] -= 50
-
-        plane = Trimesh(planeverts, [[0, 1, 2], [3, 2, 1]])
-        plane += Trimesh(planeverts, [[2, 1, 0], [1, 2, 3]])
-
-        plane.visual.vertex_colors = (0, 0, 0, 40)
-        plane.visual.vertex_colors[:, [normal_i.nonzero()[0][0]]] = 200
-
-        return plane
-
-    # calculate slice planes, assuming overlap of 2 on all sides
-    bs = np.array(block.shape)
-    overlap = 2
-    slice_points = []
-    slice_normals = []
-
-    for i in range(3):
-        lower = bs.copy() / 2
-        lower[i] = overlap
-        slice_points.append(lower)
-        dir = np.zeros((3,), dtype=int)
-        dir[i] = 1
-        slice_normals.append(dir)
-
-        upper = bs.copy() / 2
-        upper[i] = bs[i] - overlap
-        slice_points.append(upper)
-        dir = np.zeros((3,), dtype=int)
-        dir[i] = -1
-        slice_normals.append(dir)
-
-    mesher = Mesher((1, 1, 1))
-    mesher.mesh(block, close=False)
-    meshes = {}
-
-    for id in mesher.ids():
-        assert meshes.get(id) is None, f"{id} was in mesh already!"
-        mesh = mesher.get(
-            id,
-            normals=False,
-            reduction_factor=reduction_factor,
-            voxel_centered=False,
-            max_error=None,  # None: max 1 voxel, otherwise unit of data
-        )
-        mesh = Trimesh(mesh.vertices, mesh.faces, process=False)
-
-        parts = []
-        masks = []
-        if debug_color:
-            mesh.visual.vertex_colors[:, :] = trimesh.visual.random_color()
-            mesh.visual.vertex_colors[:, 3] = 120
-
-        planes = []
-        for origin, normal in zip(slice_points, slice_normals):
-            mesh_slice = mesh.slice_plane(origin, normal)
-            assert mesh_slice is not None
-            if mesh_slice.vertices.shape[0] == 0 and not debug_color:
-                mesh = mesh_slice
-                continue
-
-            if debug_color:
-                planes.append(plane(origin, normal))
-                if (
-                    mesh_slice.vertices.shape[0] != mesh.vertices.shape[0]
-                    or mesh_slice.faces.shape[0] != mesh.faces.shape[0]
-                ):
-                    normal_i = np.array(normal, dtype=bool)
-                    mask = np.logical_and(
-                        mesh.vertices[:, normal_i] < (origin[normal_i] + 1),
-                        mesh.vertices[:, normal_i] > (origin[normal_i] - 1),
-                    ).nonzero()[0]
-                    masks.append(mask)
-
-                    # Add removed slice in pink
-                    mesh_outer = mesh.slice_plane(origin, normal * -1)
-                    mesh_outer.visual.vertex_colors = (255, 0, 255, 100)
-                    parts.append(mesh_outer)
-
-                    if debug_color >= 3:
-                        mesh.visual.vertex_colors[:, :3] = (
-                            mesh.vertices / (mesh.vertices.max(axis=0)) * 200
-                        )
-                        mesh.visual.vertex_colors[:, 3] = 200
-            else:
-                # Debug views contain the non-sliced mesh!
-                mesh = mesh_slice
-        if masks:
-            mask = np.concatenate(masks)
-            mesh.visual.vertex_colors[mask] = (0, 255, 0, 180)
-        if parts:
-            mesh += sum(parts)
-
-        if mesh.vertices.shape[0] > 0:
-            mesh.vertices += space_offset
-            meshes[id] = mesh
-
-    if debug_color >= 1:
-        try:
-            i, m = meshes.popitem()
-
-            verts = np.array(
-                [
-                    [0, 0, 0],
-                    [bs[0], 0, 0],
-                    [0, bs[1], 0],
-                    [0, 0, bs[2]],
-                    [bs[0], bs[1], 0],
-                    [0, bs[1], bs[2]],
-                    [bs[0], 0, bs[2]],
-                    [bs[0], bs[1], bs[2]],
-                ]
-            )
-            verts += space_offset
-            for v in verts:
-                m += trimesh.primitives.Sphere(3, v, subdivisions=1, mutable=True)
-            if debug_color >= 2:
-                pl = sum(planes)
-                pl.vertices += space_offset
-                m += pl
-            meshes[i] = m
-        except KeyError:
-            pass
-
-    for label in meshes:
-        meshes[label].vertices *= scaling_factors
-
-    return meshes, list(meshes.keys())
 
 
 @dataclass
@@ -219,6 +49,17 @@ class Data_level:
     chunks_per_dimension: list
     downsamplingFactor: list[int]
     data: z5py.dataset.Dataset
+
+
+@dataclass
+class SourceMeta(Properties):
+    data_root: Path
+    downsampling: list[list[int]]
+    levels: list[str]
+    size: tuple[int, ...]
+    resolution: list[float]
+    name: str
+    coarse_level: str
 
 
 class DataSource:
@@ -308,8 +149,6 @@ class DataSource:
         return timepoints
 
     def load_metadata(self):
-        self._metadata = {}
-
         # Read the XML file
         tree = ET.parse(self.xml_path)
         xmldata = tree.getroot()
@@ -336,7 +175,7 @@ class DataSource:
                 .find("name")
                 .text
             )
-            resolution: str = (
+            _resolution: str = (
                 xmldata.find("SequenceDescription")
                 .find("ViewSetups")
                 .find("ViewSetup")
@@ -344,7 +183,7 @@ class DataSource:
                 .find("size")
                 .text
             )
-            resolution = list((float(i) for i in resolution.split(" ")))
+            resolution = list((float(i) for i in _resolution.split(" ")))
             first_timepoint = int(
                 xmldata.find("SequenceDescription")
                 .find("Timepoints")
@@ -379,17 +218,18 @@ class DataSource:
             if int(level[-1]) > int(coarse_level[-1]):
                 coarse_level = level
 
-        # Store the metadata
-        self._metadata["data_root"] = self.xml_path / filename
-        self._metadata["downsampling"] = self.timepoint.downsamplingFactors
-        self._metadata["levels"] = self.timepoint.levels
-        self._metadata["size"] = tuple([int(i) for i in size.split(" ")][::-1])
-        self._metadata["resolution"] = resolution
-        self._metadata["name"] = name
-        self._metadata["coarse_level"] = coarse_level
+        self._metadata = SourceMeta(
+            data_root=self.xml_path / filename,
+            downsampling=self.timepoint.downsamplingFactors,
+            levels=self.timepoint.levels,
+            size=tuple([int(i) for i in size.split(" ")][::-1]),
+            resolution=resolution,
+            name=name,
+            coarse_level=coarse_level,
+        )
 
     @property
-    def metadata(self) -> dict:
+    def metadata(self) -> SourceMeta:
         """Return the metadata of this source. Loads the metadata, if necessary
 
         coarse_level: coarsest level available
@@ -512,7 +352,7 @@ class DataSource:
         # chunk factor for efficieny, needs tuning
         data = da.from_array(data_at_level, chunks="auto")
 
-        _idx = np.nonzero(np.array(self.metadata["levels"]) == level)[0][0]
+        _idx = np.nonzero(np.array(self.metadata.levels) == level)[0][0]
 
         cube_slice = (slice(None), slice(None), slice(None))
 
@@ -529,7 +369,6 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        # self._scaling_factors = self.metadata["downsampling"][_idx]
         self._scaling_factors = self.resolution
         self.clipping_corners_data = (c_low_d, c_high_d)
         self.clipping_corners = (
@@ -547,13 +386,13 @@ class DataSource:
         on the data resolution and should be fast.
         """
 
-        return self.get_data(self.metadata["coarse_level"])
+        return self.get_data(self.metadata.coarse_level)
 
     @property
-    def data_resolution(self) -> tuple[float]:
+    def data_resolution(self) -> list[float]:
         """Return the resolution in micrometers at which the data is stored."""
 
-        return self.metadata["resolution"]
+        return self.metadata.resolution
 
     @property
     def resolution(self) -> tuple[float]:
@@ -923,7 +762,7 @@ class DataSource:
                 int(size_offset_cumsum[i][c]) - (2 if overlap else 0)
                 for i, c in enumerate(index)
             )
-            meshes_chunk, ids_chunk = _block_mesher(
+            meshes_chunk, ids_chunk = block_mesher(
                 block=d_block,
                 space_offset=space_offset,
                 reduction_factor=reduction_factor,

@@ -48,3 +48,11 @@ def test_get_mesh_mcs_colored_missing(project_with_sources):
     o = project_with_sources.get_organelles("mito_0015")[0]
     mesh = o.get_mesh_mcs_colored().compute()
     assert np.unique(mesh.visual.vertex_colors, axis=0).shape == (1, 4)
+
+
+def test_get_metadata(project_with_sources):
+    o = project_with_sources.get_organelles("mito_0015")[0]
+    meta = o.metadata
+    assert getattr(meta, "source")
+    assert getattr(meta, "label")
+    assert getattr(meta, "id")
