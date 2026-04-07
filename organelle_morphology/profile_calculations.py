@@ -7,6 +7,7 @@ from dask.base import compute
 import trimesh
 from trimesh.intersections import mesh_plane
 from organelle_morphology.statistics import Properties, Stats
+from scipy.spatial.distance import pdist
 
 logger = logging.getLogger(__name__)
 
@@ -35,28 +36,45 @@ class ProfileMeta(Properties):
 @delayed
 def _slice_profile(mesh: trimesh.Trimesh, origin: np.ndarray, normal: np.ndarray):
     """
-    Slices a mesh with a plane.
-    Returns: (perimeter, width) of the resulting 2D cross-section.
+    Slices a mesh and returns a list of (perimeter, width) (for each
+    disjoint component found in the slice).
     """
     try:
         lines = mesh_plane(mesh, plane_normal=normal, plane_origin=origin)
     except Exception as e:
         logger.debug(f"Mesh slicing failed: {e}")
-        return np.nan, np.nan
+        return []
 
     if len(lines) == 0:
-        return np.nan, np.nan
+        return []
 
-    #  Perimeter Calculation
-    segment_vectors = lines[:, 1, :] - lines[:, 0, :]
-    perimeter = np.sum(np.linalg.norm(segment_vectors, axis=1))
+    # One organelle might be cut twice by one plane
+    # -> use trimesh to group segments into individual loops
+    path = trimesh.load_path(lines)
+    components = []
+    for discrete_path in path.discrete:
+        # perimeter of this specific path
+        diffs = np.diff(discrete_path, axis=0)
+        perimeter = np.sum(np.linalg.norm(diffs, axis=1))
+        if perimeter <= 0:
+            logger.debug(f"Perimeter calculation failed for path: {discrete_path}")
+            continue
 
-    # Width Calculation (Longest diameter between any two points in the slice)
-    pts = lines.reshape(-1, 3)
-    diffs = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]
-    width = np.max(np.linalg.norm(diffs, axis=-1))
+        # width of this specific path (Max distance)
+        if len(discrete_path) <= 1:
+            logger.debug(f"Width calculation failed for path: {discrete_path}")
+            continue
 
-    return perimeter, width
+        # pdist calculates the pairwise distances between points in discrete_path
+        width = pdist(discrete_path).max()
+
+        if width <= 0:
+            logger.debug(f"Width calculation failed for path: {discrete_path}")
+            continue
+
+        components.append((perimeter, width))
+
+    return components
 
 
 class ProfileCalculator:
@@ -94,11 +112,19 @@ class ProfileCalculator:
         Project.stats list.
         """
         for org_id, tasks in all_tasks.items():
+            # computed is a list of lists: [[(p1, w1), (p2, w2)], [], [(p3, w3)], ...]
+            # Each sub-list represents one slicing plane.
             computed = compute(*tasks)
+
+            # Flatten the results: each slice_result is a list of (perimeter, width) tuples
+            all_components = []
+            for slice_result in computed:
+                for component in slice_result:
+                    all_components.append(component)
 
             # Filter pairs where the mesh was actually hit
             valid_results = [
-                res for res in computed if not np.isnan(res[0]) and res[0] > 0
+                res for res in all_components if not np.isnan(res[0]) and res[0] > 0
             ]
 
             perimeters = [res[0] for res in valid_results]
