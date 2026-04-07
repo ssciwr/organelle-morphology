@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from organelle_morphology.profile_calculations import (
     ProfileCalculator,
     ProfileProperties,
@@ -112,3 +113,30 @@ def test_calculate_skeleton_profiles(project_with_sources):
     np.testing.assert_almost_equal(
         profile_stat.data.ratios[:3], expected_ratios, decimal=5
     )
+
+
+def test_profile_calculator_dataframe(project_with_sources):
+    """Test that the ProfileCalculator generates the correct DataFrame."""
+    calculator = ProfileCalculator(project_with_sources)
+    calculator.calculate_profile_lengths(ids="mito_0007", axis="z", num_slices=1)
+
+    df = calculator.get_dataframe()
+
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) == 1
+
+    expected_columns = {
+        "ID",
+        "axis",
+        "mean_perimeter",
+        "mean_width",
+        "mean_ratio",
+        "slice_count",
+    }
+    assert expected_columns.issubset(df.columns)
+    assert df["ID"].iloc[0] == "mito_0007"
+    assert df["axis"].iloc[0] == "z"
+    np.testing.assert_almost_equal(df["mean_perimeter"].iloc[0], 39.506097, decimal=5)
+    np.testing.assert_almost_equal(df["mean_width"].iloc[0], 14.422205, decimal=5)
+    np.testing.assert_almost_equal(df["mean_ratio"].iloc[0], 0.365063, decimal=5)
+    assert df["slice_count"].iloc[0] == 1

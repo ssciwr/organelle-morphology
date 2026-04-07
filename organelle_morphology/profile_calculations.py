@@ -1,13 +1,22 @@
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
-from typing import List, Union
+from typing import TYPE_CHECKING, List, Union
+
 import numpy as np
+import pandas as pd
+import trimesh
 from dask import delayed
 from dask.base import compute
-import trimesh
-from trimesh.intersections import mesh_plane
-from organelle_morphology.statistics import Properties, Stats
 from scipy.spatial.distance import pdist
+from trimesh.intersections import mesh_plane
+
+from organelle_morphology.analysis import Analysis
+from organelle_morphology.statistics import Properties, Stats
+
+if TYPE_CHECKING:
+    from organelle_morphology.project import Project
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +86,34 @@ def _slice_profile(mesh: trimesh.Trimesh, origin: np.ndarray, normal: np.ndarray
     return components
 
 
-class ProfileCalculator:
-    """Calculates 2D profile metrics for organelles within a project."""
+class ProfileCalculator(Analysis):
+    """Calculates and analyzes 2D profile metrics for organelles."""
 
-    def __init__(self, project):
-        self.project = project
+    def __init__(self, project: Project):
+        super().__init__(project, ProfileProperties)
+
+    def get_dataframe(self) -> pd.DataFrame:
+        """
+        Returns a DataFrame summarizing the profile statistics.
+        Refreshes the local stats view to include results calculated after initialization.
+        """
+        self.own_stats = [
+            s for s in self.project.stats if isinstance(s.data, self.property_type)
+        ]
+
+        data_rows = []
+        for stat in self.own_stats:
+            row = {
+                "ID": stat.meta.organelle_id,
+                "axis": stat.meta.axis_used,
+                "mean_perimeter": stat.data.mean_perimeter,
+                "mean_width": stat.data.mean_width,
+                "mean_ratio": stat.data.mean_ratio,
+                "slice_count": len(stat.data.perimeters),
+            }
+            data_rows.append(row)
+
+        return pd.DataFrame(data_rows)
 
     def _get_bounds(self, org):
         """Helper to safely extract real-world bounding box limits."""
