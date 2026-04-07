@@ -17,8 +17,10 @@ class ProfileProperties(Properties):
 
     perimeters: List[float]
     widths: List[float]
-    mean_perimeter: float
+    ratios: List[float]  # width / perimeter ratio for every slice
+    mean_perimeter: float  # mean across all slices for one organelle
     mean_width: float
+    mean_ratio: float
 
 
 @dataclass
@@ -45,11 +47,11 @@ def _slice_profile(mesh: trimesh.Trimesh, origin: np.ndarray, normal: np.ndarray
     if len(lines) == 0:
         return np.nan, np.nan
 
-    # 1. Perimeter Calculation
+    #  Perimeter Calculation
     segment_vectors = lines[:, 1, :] - lines[:, 0, :]
     perimeter = np.sum(np.linalg.norm(segment_vectors, axis=1))
 
-    # 2. Width Calculation (Longest diameter between any two points in the slice)
+    # Width Calculation (Longest diameter between any two points in the slice)
     pts = lines.reshape(-1, 3)
     diffs = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]
     width = np.max(np.linalg.norm(diffs, axis=-1))
@@ -94,19 +96,31 @@ class ProfileCalculator:
         for org_id, tasks in all_tasks.items():
             computed = compute(*tasks)
 
-            perimeters = [res[0] for res in computed if not np.isnan(res[0])]
-            widths = [res[1] for res in computed if not np.isnan(res[1])]
+            # Filter pairs where the mesh was actually hit
+            valid_results = [
+                res for res in computed if not np.isnan(res[0]) and res[0] > 0
+            ]
+
+            perimeters = [res[0] for res in valid_results]
+            widths = [res[1] for res in valid_results]
+
+            # Calculate ratio (width / perimeter) for each slice
+            ratios = [w / p for w, p in zip(widths, perimeters)]
+
             attempted = num_slices if num_slices is not None else len(tasks)
 
-            # Pre-calculate means for the dataclass fields
+            # Calculate means across slices
             m_perimeter = float(np.mean(perimeters)) if perimeters else np.nan
             m_width = float(np.mean(widths)) if widths else np.nan
+            m_ratio = float(np.mean(ratios)) if ratios else np.nan
 
             data = ProfileProperties(
                 perimeters=perimeters,
                 widths=widths,
+                ratios=ratios,
                 mean_perimeter=m_perimeter,
                 mean_width=m_width,
+                mean_ratio=m_ratio,
             )
             meta = ProfileMeta(
                 organelle_id=org_id,
@@ -114,7 +128,7 @@ class ProfileCalculator:
                 num_slices_attempted=attempted,
             )
 
-            # Register the result in the central project repository
+            # Register the result in the central project registry
             self.project.add_stat(Stats(data=data, meta=meta))
 
     def calculate_profile_lengths(self, ids="er_*", axis="z", num_slices=20) -> None:
