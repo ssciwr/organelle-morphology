@@ -16,7 +16,8 @@ with app.setup:
     from dask.base import compute
     import pandas as pd
     import traceback
-    from organelle_morphology.statistics import Statistics
+    from organelle_morphology.analysis import Misc_Analysis
+    from organelle_morphology.statistics import Properties
     import matplotlib.pyplot as plt
 
 
@@ -125,7 +126,7 @@ def _(project, run_add_source, sources):
 
     def _get_levels():
         s = list(project.sources.values())[0]
-        return s.metadata["levels"]
+        return s.metadata.levels
 
     level_ui = mo.ui.radio(
         label="Compression level",
@@ -451,7 +452,7 @@ def _(cache_info_button, project):
 def _(box_dict, mesh_id_filter, project):
     def ids_in_box(_):
         orgs = project.get_organelles(ids=mesh_id_filter.value)
-        _scaling = np.array(list(project.sources.values())[0].metadata["size"])
+        _scaling = np.array(list(project.sources.values())[0].metadata.size)
         _box = (
             np.array(
                 (
@@ -621,8 +622,12 @@ def geo_execute_cell(project, run_geo_btn):
 
 @app.cell
 def prop_selector_cell(project):
-    stats = Statistics(project)
-    available_properties = stats.get_properties()
+    stats = Misc_Analysis(project, Properties)
+    available_properties = (
+        stats.get_mesh_properties()
+        + stats.get_skeleton_properties()
+        + stats.get_geometry_properties()
+    )
 
     # Convert the list of available_properties keys into a dictionary of checkboxes
     properties_checkboxes = {}
@@ -644,7 +649,7 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
 
     if calc_stats_btn.value:
         try:
-            display_stats = Statistics(project)
+            display_stats = Misc_Analysis(project, Properties)
 
             # Get the list of internal keys from the checkbox dictionary
             selected_properties = [
