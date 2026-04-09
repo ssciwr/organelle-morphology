@@ -19,6 +19,7 @@ with app.setup:
     from organelle_morphology.analysis import Misc_Analysis
     from organelle_morphology.statistics import Properties
     import matplotlib.pyplot as plt
+    from organelle_morphology.profile_calculations import ProfileCalculator
 
 
 @app.cell
@@ -621,6 +622,135 @@ def geo_execute_cell(project, run_geo_btn):
 
 
 @app.cell
+def profile_calc_ui_cell(sources):
+    mo.stop(len(sources) < 1, "")
+
+    profile_ids_ui = mo.ui.text(value="*", label="Organelle ID filter (e.g., er_*)")
+
+    profile_method_ui = mo.ui.radio(
+        options=["Fixed Axis", "Random Planes", "Skeleton Perpendicular"],
+        value="Fixed Axis",
+        inline=True,
+        label="Slicing Method",
+    )
+
+    fixed_axis_dict = mo.ui.dictionary(
+        {
+            "axis": mo.ui.text(value="z", label="Axis (x, y, z)"),
+            "num_slices": mo.ui.number(
+                value=20, start=1, step=1, label="Number of slices"
+            ),
+        }
+    )
+
+    random_planes_dict = mo.ui.dictionary(
+        {
+            "num_planes": mo.ui.number(
+                value=20, start=1, step=1, label="Number of planes"
+            ),
+            "seed": mo.ui.number(value=42, start=0, step=1, label="Random seed"),
+        }
+    )
+
+    skeleton_dict = mo.ui.dictionary(
+        {
+            "sample_distance": mo.ui.number(
+                value=0.1, start=0.01, step=0.01, label="Sample distance"
+            )
+        }
+    )
+
+    run_profile_btn = mo.ui.run_button(label="Calculate Profiles")
+
+    profile_calc_ui_layout = mo.vstack(
+        [
+            mo.md(
+                "## 2D Profile Calculations\nCalculate perimeter, width, and ratio of 2D cross-sections to determine tubule vs. sheet morphology."
+            ),
+            profile_ids_ui,
+            profile_method_ui,
+            mo.md("**Fixed Axis Settings:**"),
+            fixed_axis_dict,
+            mo.md("**Random Planes Settings:**"),
+            random_planes_dict,
+            mo.md("**Skeleton Perpendicular Settings:**"),
+            skeleton_dict,
+            run_profile_btn,
+        ]
+    )
+
+    profile_calc_ui_layout  # display the layout
+
+    return (
+        fixed_axis_dict,
+        profile_ids_ui,
+        profile_method_ui,
+        random_planes_dict,
+        run_profile_btn,
+        skeleton_dict,
+    )
+
+
+@app.cell
+def profile_execute_cell(
+    fixed_axis_dict,
+    profile_ids_ui,
+    profile_method_ui,
+    project,
+    random_planes_dict,
+    run_profile_btn,
+    skeleton_dict,
+):
+    mo.stop(
+        not run_profile_btn.value, mo.md("Select method and click 'Calculate Profiles'")
+    )
+
+    profile_execute_cell_status = mo.md(
+        "Calculating profiles... (Check Dask dashboard for progress)"
+    )
+
+    try:
+        profile_calculator = ProfileCalculator(project)
+        with mo.redirect_stderr():
+            if profile_method_ui.value == "Fixed Axis":
+                profile_calculator.calculate_profile_lengths(
+                    ids=profile_ids_ui.value,
+                    axis=fixed_axis_dict["axis"].value,
+                    num_slices=fixed_axis_dict["num_slices"].value,
+                )
+            elif profile_method_ui.value == "Random Planes":
+                profile_calculator.calculate_random_profiles(
+                    ids=profile_ids_ui.value,
+                    num_planes=random_planes_dict["num_planes"].value,
+                    seed=random_planes_dict["seed"].value,
+                )
+            elif profile_method_ui.value == "Skeleton Perpendicular":
+                profile_calculator.calculate_skeleton_profiles(
+                    ids=profile_ids_ui.value,
+                    sample_distance=skeleton_dict["sample_distance"].value,
+                )
+
+        df = profile_calculator.get_dataframe()
+
+        profile_execute_cell_status = mo.vstack(
+            [
+                mo.md(
+                    f"**Success!** Profile properties computed using {profile_method_ui.value}."
+                ),
+                mo.ui.table(df, selection=None, pagination=False),
+            ]
+        )
+
+    except Exception:
+        profile_execute_cell_status = mo.md(
+            f"## Unable to calculate profiles\n\n```\n{traceback.format_exc()}\n```"
+        )
+
+    profile_execute_cell_status  # display the status/table
+    return
+
+
+@app.cell
 def prop_selector_cell(project):
     stats = Misc_Analysis(project, Properties)
     available_properties = (
@@ -766,12 +896,19 @@ def plot_selector_cell(calc_stats_btn, df_data):
         ]
     )
     plot_selector_layout  # show the layout
-    return plot_property_ui, plot_secondary_property_ui, plot_selector_histogram
+    return (
+        plot_property_ui,
+        plot_secondary_property_ui,
+        plot_selector_histogram,
+    )
 
 
 @app.cell
 def plot_display_cell(
-    df_data, plot_property_ui, plot_secondary_property_ui, plot_selector_histogram
+    df_data,
+    plot_property_ui,
+    plot_secondary_property_ui,
+    plot_selector_histogram,
 ):
     mo.stop(df_data is None or df_data.empty, mo.md("No data calculated yet."))
 
