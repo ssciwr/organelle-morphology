@@ -803,7 +803,7 @@ class Project:
         for organelle in self.get_organelles():
             # TODO: geometric data is expensive, and not parallel, necessary?
             properties[organelle.id] = (
-                organelle.mesh_properties | organelle.geometric_data
+                organelle.mesh_properties.to_dict() | organelle.geometric_data
             )
 
         df = pd.DataFrame(properties).T
