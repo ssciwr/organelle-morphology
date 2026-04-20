@@ -126,15 +126,35 @@ class ProfileCalculator(Analysis):
         vec = np.array(axis)
         return vec / np.linalg.norm(vec)
 
-    def _compute_and_format(self, all_tasks, axis_record, num_slices=None) -> None:
+    def _compute_and_format(
+        self, all_tasks: dict[str, list], axis_record, num_slices=None
+    ) -> None:
         """
-        Helper to compute Dask tasks and register them into the central
-        Project.stats list.
+        Helper to compute Dask tasks in a single batch and register them.
         """
-        for org_id, tasks in all_tasks.items():
-            # computed is a list of lists: [[(p1, w1), (p2, w2)], [], [(p3, w3)], ...]
-            # Each sub-list represents one slicing plane.
-            computed = compute(*tasks)
+        if not all_tasks:
+            return
+
+        # 1. Flatten all tasks to one Dask call
+        ordered_ids = list(all_tasks.keys())
+        flat_tasks = []
+        task_counts = []
+        for org_id in ordered_ids:
+            tasks = all_tasks[org_id]
+            flat_tasks.extend(tasks)
+            task_counts.append(len(tasks))
+
+        self.project.logger.info(
+            f"Computing {len(flat_tasks)} slices across {len(ordered_ids)} organelles..."
+        )
+        all_computed_results = compute(*flat_tasks)  # single Dask call
+
+        current_idx = 0
+        for i, org_id in enumerate(ordered_ids):
+            count = task_counts[i]
+            # Grab the subset of results belonging to this organelle
+            computed = all_computed_results[current_idx : current_idx + count]
+            current_idx += count
 
             # Flatten the results: each slice_result is a list of (perimeter, width) tuples
             all_components = []
@@ -149,11 +169,10 @@ class ProfileCalculator(Analysis):
 
             perimeters = [res[0] for res in valid_results]
             widths = [res[1] for res in valid_results]
-
             # Calculate ratio (width / perimeter) for each slice
             ratios = [w / p for w, p in zip(widths, perimeters)]
 
-            attempted = num_slices if num_slices is not None else len(tasks)
+            attempted = num_slices if num_slices is not None else count
 
             # Calculate means across slices
             m_perimeter = float(np.mean(perimeters)) if perimeters else np.nan
