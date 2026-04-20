@@ -19,7 +19,6 @@ with app.setup:
     from organelle_morphology.analysis import Misc_Analysis
     from organelle_morphology.statistics import Properties
     import matplotlib.pyplot as plt
-    from organelle_morphology.profile_calculations import ProfileCalculator
 
 
 @app.cell
@@ -710,27 +709,16 @@ def profile_execute_cell(
     )
 
     try:
-        profile_calculator = ProfileCalculator(project)
         with mo.redirect_stderr():
-            if profile_method_ui.value == "Fixed Axis":
-                profile_calculator.calculate_profile_lengths(
-                    ids=profile_ids_ui.value,
-                    axis=fixed_axis_dict["axis"].value,
-                    num_slices=fixed_axis_dict["num_slices"].value,
-                )
-            elif profile_method_ui.value == "Random Planes":
-                profile_calculator.calculate_random_profiles(
-                    ids=profile_ids_ui.value,
-                    num_planes=random_planes_dict["num_planes"].value,
-                    seed=random_planes_dict["seed"].value,
-                )
-            elif profile_method_ui.value == "Skeleton Perpendicular":
-                profile_calculator.calculate_skeleton_profiles(
-                    ids=profile_ids_ui.value,
-                    sample_distance=skeleton_dict["sample_distance"].value,
-                )
-
-        df = profile_calculator.get_dataframe()
+            df = project.calculate_profiles(
+                method=profile_method_ui.value,
+                ids=profile_ids_ui.value,
+                axis=fixed_axis_dict["axis"].value,
+                num_slices=fixed_axis_dict["num_slices"].value,
+                num_planes=random_planes_dict["num_planes"].value,
+                seed=random_planes_dict["seed"].value,
+                sample_distance=skeleton_dict["sample_distance"].value,
+            )
 
         profile_execute_cell_status = mo.vstack(
             [
