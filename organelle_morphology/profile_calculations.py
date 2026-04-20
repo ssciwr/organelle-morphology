@@ -115,18 +115,6 @@ class ProfileCalculator(Analysis):
 
         return pd.DataFrame(data_rows)
 
-    def _get_bounds(self, org):
-        """Helper to safely extract real-world bounding box limits."""
-        geo = org.geometric_data
-        if "voxel_bbox" not in geo:
-            self.project.logger.warning(f"Missing voxel_bbox for {org.id}. Skipping.")
-            return None, None
-
-        res = org.source.resolution
-        return np.array(geo["voxel_bbox"][:3]) * res, np.array(
-            geo["voxel_bbox"][3:]
-        ) * res
-
     def _parse_axis(self, axis):
         """Helper to cleanly parse string aliases or raw vectors."""
         if isinstance(axis, str):
@@ -200,7 +188,7 @@ class ProfileCalculator(Analysis):
         )
 
         for org in organelles:
-            min_b, max_b = self._get_bounds(org)
+            min_b, max_b = org.bounding_box
             if min_b is None:
                 continue
 
@@ -228,7 +216,7 @@ class ProfileCalculator(Analysis):
         )
 
         for org in organelles:
-            min_b, max_b = self._get_bounds(org)
+            min_b, max_b = org.bounding_box
             if min_b is None:
                 continue
 
