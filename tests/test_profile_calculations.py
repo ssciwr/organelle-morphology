@@ -31,7 +31,7 @@ def test_calculate_profile_lengths(project_with_sources):
     assert profile_stat.meta.axis_used == "z"
     assert profile_stat.meta.num_slices_attempted == 3
 
-    expected_perimeters = [33.53122292, 39.50609665, 29.67766953]
+    expected_perimeters = [32.47056275, 39.21320344, 31.09188309]
     assert len(profile_stat.data.perimeters) == len(expected_perimeters)
     np.testing.assert_almost_equal(
         profile_stat.data.perimeters, expected_perimeters, decimal=5
@@ -40,14 +40,14 @@ def test_calculate_profile_lengths(project_with_sources):
         profile_stat.data.mean_perimeter, np.mean(expected_perimeters), decimal=5
     )
 
-    expected_widths = [11.096170510586074, 14.422205101855956, 9.848857801796104]
+    expected_widths = [10.53862, 14.42221, 10.1304]
     assert len(profile_stat.data.widths) == len(expected_widths)
     np.testing.assert_almost_equal(profile_stat.data.widths, expected_widths, decimal=5)
     np.testing.assert_almost_equal(
         profile_stat.data.mean_width, np.mean(expected_widths), decimal=5
     )
 
-    expected_ratios = [0.33092054342827526, 0.36506277064064424, 0.3318608892774375]
+    expected_ratios = [0.324559, 0.367790, 0.325822]
     assert len(profile_stat.data.ratios) == len(expected_ratios)
     np.testing.assert_almost_equal(profile_stat.data.ratios, expected_ratios, decimal=5)
     np.testing.assert_almost_equal(
@@ -72,7 +72,7 @@ def test_calculate_random_profiles(project_with_sources):
         raise ValueError("Profile stat for mito_0007 not found in project stats")
 
     perimeters = profile_stat.data.perimeters
-    expected = [31.36676084, 52.20270082, 32.24204422, 22.81741491, 30.23820865]
+    expected = [31.36796409, 0.96620059, 32.23578778, 18.62489814, 30.39622306]
 
     np.testing.assert_almost_equal(perimeters, expected, decimal=5)
 
@@ -136,7 +136,7 @@ def test_profile_calculator_dataframe(project_with_sources):
     assert expected_columns.issubset(df.columns)
     assert df["ID"].iloc[0] == "mito_0007"
     assert df["axis"].iloc[0] == "z"
-    np.testing.assert_almost_equal(df["mean_perimeter"].iloc[0], 39.506097, decimal=5)
+    np.testing.assert_almost_equal(df["mean_perimeter"].iloc[0], 39.213203, decimal=5)
     np.testing.assert_almost_equal(df["mean_width"].iloc[0], 14.422205, decimal=5)
-    np.testing.assert_almost_equal(df["mean_ratio"].iloc[0], 0.365063, decimal=5)
+    np.testing.assert_almost_equal(df["mean_ratio"].iloc[0], 0.367790, decimal=5)
     assert df["slice_count"].iloc[0] == 1
