@@ -29,6 +29,7 @@ import pandas as pd
 
 from collections import defaultdict
 import plotly.graph_objects as go
+from sys import platform
 
 
 clipping_type = (
@@ -1102,15 +1103,24 @@ class Project:
         caches = []
         cs = self.cache_settings
         cache_dir = cs["cache_root"] / f"cache_{cs['project_name']}"
+
+        # OS-safe tree drawing characters
+        if platform == "win32":
+            branch = "|-"
+            pipe = "| "
+        else:
+            branch = "├─"
+            pipe = "│ "
+
         messages = ["*** List of Caches: ***"]
         if cache_dir.exists():
             messages.append(str(cache_dir))
             for source in filter(lambda f: f.is_dir(), (cache_dir).iterdir()):
-                messages.append(f"├─ /{source.name}")
+                messages.append(f"{branch} /{source.name}")
                 for level in filter(lambda f: f.is_dir(), source.iterdir()):
-                    messages.append(f"│  ├─ /{level.name}")
+                    messages.append(f"{pipe}  {branch} /{level.name}")
                     for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
-                        messages.append(f"│  │  ├─ /{clip_dir.name}")
+                        messages.append(f"{pipe}  {pipe}  {branch} /{clip_dir.name}")
                         name = (
                             f"cache_{cs['project_name']}/{source.name}/"
                             f"{level.name}/{clip_dir.name}"
