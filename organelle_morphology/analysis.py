@@ -20,15 +20,18 @@ class Analysis(ABC):
         self.project = project
         self.property_type = property_type
         self.all_stats = self.project.stats
-        self.own_stats = [
-            s for s in self.all_stats if isinstance(s.data, property_type)
-        ]
+        self.update_project_stats()
 
         self.__post_init__()
 
     def __post_init__(self):
         """Run after initialization of base class, used for subclass specific init"""
         pass
+
+    def update_project_stats(self):
+        self.own_stats = [
+            s for s in self.all_stats if isinstance(s.data, self.property_type)
+        ]
 
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:
