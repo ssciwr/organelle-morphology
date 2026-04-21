@@ -179,9 +179,9 @@ def custom_client(cluster):
 
 
 @pytest.fixture
-def project(project_path, custom_client):
+def project(project_path, client):  # noqa: F811
     """A fixture for a valid project instance"""
-    project = Project(project_path, client=custom_client)
+    project = Project(project_path, client=client)
     yield project
     project.clear_caches(True)
 
