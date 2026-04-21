@@ -1,0 +1,47 @@
+from organelle_morphology.position import Position_Analysis
+from organelle_morphology.project import Project
+
+import numpy as np
+
+
+def test_get_centroid(project_with_sources: Project):
+    p = project_with_sources
+    posan = Position_Analysis(project=p)
+    center = posan.get_centroid(p.sources["synth_data"])
+    np.testing.assert_allclose(center, [7.52777778, 8.10416667, 11.29166667])
+
+
+def test_density3D(project_with_sources):
+    p = project_with_sources
+    posan = Position_Analysis(project=p)
+    density = posan.density3D(p.sources["synth_data"], (2, 3, 4))
+    assert density.shape == (118, 80, 83)
+
+
+def test_density2D(project_with_sources):
+    p = project_with_sources
+    posan = Position_Analysis(project=p)
+    res0 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 2, 0.0, (0, 1))
+    res1 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 2, 10, (0, 1))
+    res2 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 2, 20, (0, 1))
+    res3 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 1, 0.0, (0, 1))
+    res4 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 1, 10, (2, 1))
+    res5 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 1, 20, (2, 1))
+
+    # import matplotlib.pyplot as plt
+    # fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+    # axes[0, 0].imshow(res0)
+    # axes[0, 1].imshow(res1)
+    # axes[0, 2].imshow(res2)
+    # axes[1, 0].imshow(res3)
+    # axes[1, 1].imshow(res4)
+    # axes[1, 2].imshow(res5)
+    # plt.show()
+
+    np.testing.assert_almost_equal(res0.mean(), 0.0391694957797291, 5)
+    assert res0.shape == (118, 80)
+    assert res1.shape == (130, 99)
+    assert res2.shape == (138, 116)
+    assert res3.shape == (118, 83)
+    assert res4.shape == (118, 96)
+    assert res5.shape == (118, 105)

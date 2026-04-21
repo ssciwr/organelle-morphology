@@ -242,6 +242,18 @@ class Project:
         self.sources[xml_path.stem] = source_obj
         return source_obj
 
+    @property
+    def resolution(self):
+        res = None
+        for s in self.sources.values():
+            if res is None:
+                s.resolution
+            elif s != res:
+                raise RuntimeError(
+                    "Sources have different resolutions which is not supported!"
+                )
+        return res
+
     def skeletonize_wavefront(
         self,
         ids: str = "*",
@@ -855,7 +867,7 @@ class Project:
         df = pd.DataFrame(properties).T
         return df
 
-    def n_oranelles(self) -> dict[str, int]:
+    def n_organelles(self) -> dict[str, int]:
         counts = {}
         for s in self.sources.values():
             counts[s.org_name] = len(self.get_organelles(s.org_name + "*"))
