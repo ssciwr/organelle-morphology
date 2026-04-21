@@ -15,6 +15,7 @@ from organelle_morphology import Project
 
 import numpy as np
 import pytest
+import shutil
 from .synthetic_data_generator import generate_synthetic_dataset
 
 try:
@@ -141,7 +142,15 @@ def synthetic_data(_synthetic_data, tmp_path: Path):
     new_project = tmp_path / project_path.name
     new_project.mkdir()
     for item in project_path.iterdir():
-        (new_project / item.name).symlink_to(item)
+        dest = new_project / item.name
+        try:
+            dest.symlink_to(item)
+        except OSError:
+            # Fallback for Windows users without Admin rights
+            if item.is_dir():
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy2(item, dest)
 
     return (new_project, original_meshes)
 
@@ -170,9 +179,9 @@ def custom_client(cluster):
 
 
 @pytest.fixture
-def project(project_path, client):
+def project(project_path, custom_client):
     """A fixture for a valid project instance"""
-    project = Project(project_path, client=client)
+    project = Project(project_path, client=custom_client)
     yield project
     project.clear_caches(True)
 
