@@ -7,7 +7,7 @@ from organelle_morphology.source import DataSource
 import logging
 import dask.array as da
 
-from organelle_morphology.statistics import Properties
+from organelle_morphology.statistics import Properties, Stats
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class PositionMeta(Properties):
     source: str
     normalizing_sources: list[str]
-    centroids: list[list[float]]  # per source
+    centroids: Optional[list[float]]  # per source
     dimensionality: int
     bin_resolution: tuple[float, float, float]
     marginal_axis_2d: Optional[int] = None
@@ -39,19 +39,11 @@ class Position_Analysis(Analysis):
     def get_dataframe(self):
         return super().get_dataframe()
 
-    def get_centroid(self, source: DataSource) -> np.ndarray:
-        logger.debug(f"Calculating centroid of {source}")
-
-        coarse_data = source.get_data(
-            compression_level=source.metadata.coarse_level,
-            clipping=[[0, 0, 0], [1, 1, 1]],
-        )
-        center = np.mean(coarse_data.nonzero(), axis=1)
-        logger.debug(f"Centroid of {source}: {center}")
-        return center
-
     def density3D(
-        self, source: DataSource, bin_resolution: tuple[float, float, float]
+        self,
+        source: DataSource,
+        bin_resolution: tuple[float, float, float],
+        normalizing_sources: Optional[list[DataSource]],
     ) -> da.Array:
         """Calculate a 3d heatmap of all organelles in the source.
 
@@ -60,12 +52,26 @@ class Position_Analysis(Analysis):
             bin_resolution: binning resolution in micrometers
         """
         res = bin_resolution
-        cache_key = f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}"
+        norm_sources_name = ""
+        if normalizing_sources is not None:
+            norm_sources_name = "_".join([s.org_name for s in normalizing_sources])
+        cache_key = (
+            f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_norm-{norm_sources_name}"
+        )
         if cache_key not in source.cache:
             binsize = (np.array(bin_resolution) // source.resolution).astype(int)
             n_missing = source.data.shape % binsize
+
             data = source.data.astype(bool)
             data = da.pad(data, [(0, i) for i in n_missing])
+            center = None
+            if normalizing_sources is not None:
+                center = np.mean(
+                    [s.global_coarse_centroid for s in normalizing_sources]
+                )
+                logger.debug(f"Normalizing position onto centroid: {center}")
+                data -= center
+
             logger.debug(f"Density3D calculation, binsize {binsize}")
             density = da.coarsen(
                 np.mean,
@@ -74,6 +80,19 @@ class Position_Analysis(Analysis):
                 trim_excess=False,
             ).compute()
             source.cache[cache_key] = density
+
+            Stats(
+                PositionProperties(density=density),
+                PositionMeta(
+                    source=source.org_name,
+                    normalizing_sources=norm_sources_name,
+                    centroids=center,
+                    bin_resolution=bin_resolution,
+                    dimensionality=3,
+                ),
+            )
+            # TODO: save stats, test
+
         return source.cache[cache_key]
 
     def density2D(
@@ -95,13 +114,14 @@ class Position_Analysis(Analysis):
             rot_angle: Rotation angle to rotate the input image.
         """
 
+        if marginal_axis not in [0, 1, 2]:
+            raise ValueError("Marginal axis must be between 0 and 2")
         res = bin_resolution
         cache_key = f"density2d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_{marginal_axis}_{rot_angle:.2f}_{rot_axes[0]}-{rot_axes[1]}"
         if cache_key not in source.cache:
             density = self.density3D(source, bin_resolution)
             density = rotate(density, rot_angle, rot_axes, reshape=True)
-            result = np.mean(density, axis=marginal_axis)
-            source.cache[cache_key] = result
+            source.cache[cache_key] = np.mean(density, axis=marginal_axis)
         return source.cache[cache_key]
 
     def density1D(
@@ -122,13 +142,19 @@ class Position_Analysis(Analysis):
             rot_axes: Two axes defining a plane in which the input image can
                 be rotated.
         """
-        marginal_axes = [0, 1, 2]
-        marginal_axes.remove(axis)
-        density2d = self.density2D(
-            source=source,
-            bin_resolution=bin_resolution,
-            marginal_axis=marginal_axes[1],
-            rot_angle=rot_angle,
-            rot_axes=rot_axes,
-        )
-        density1d = np.mean(density2d, axis=marginal_axes[0])
+        if axis not in [0, 1, 2]:
+            raise ValueError("Axis must be between 0 and 2")
+        res = bin_resolution
+        cache_key = f"density1d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_{axis}_{rot_angle:.2f}_{rot_axes[0]}-{rot_axes[1]}"
+        if cache_key not in source.cache:
+            marginal_axes = [0, 1, 2]
+            marginal_axes.remove(axis)
+            density2d = self.density2D(
+                source=source,
+                bin_resolution=bin_resolution,
+                marginal_axis=marginal_axes[1],
+                rot_angle=rot_angle,
+                rot_axes=rot_axes,
+            )
+            source.cache[cache_key] = np.mean(density2d, axis=marginal_axes[0])
+        return source.cache[cache_key]

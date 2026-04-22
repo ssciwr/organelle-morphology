@@ -328,7 +328,7 @@ class DataSource:
     def clipping_corners_data(self, corners):
         self._clip_low_corner_data, self._clip_high_corner_data = corners
 
-    def get_data(self, compression_level: Optional[str], clipping=None) -> Array:
+    def get_data(self, compression_level: Optional[str] = None, clipping=None) -> Array:
         """Get data of this source as array.
 
         Sets self.clipping_corners and self.clipping_corners_data, if
@@ -369,12 +369,18 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        self._scaling_factors = self.resolution
-        self.clipping_corners_data = (c_low_d, c_high_d)
-        self.clipping_corners = (
-            c_low_d * self._scaling_factors,
-            c_high_d * self._scaling_factors,
-        )
+        if clipping is None and compression_level is None:
+            self._scaling_factors = self.resolution
+            self.clipping_corners_data = (c_low_d, c_high_d)
+            self.clipping_corners = (
+                c_low_d * self._scaling_factors,
+                c_high_d * self._scaling_factors,
+            )
+        else:
+            self.logger.debug(
+                "Getting non-default data,"
+                "clipping corners and scaling_factor are not updated!"
+            )
 
         return data[cube_slice]
 
@@ -411,6 +417,22 @@ class DataSource:
         )
 
     @property
+    def coarse_resolution(self) -> tuple[float]:
+        """Return the resolution of our data at the coarsest compression level."""
+
+        return tuple(
+            (
+                r * d
+                for r, d in zip(
+                    self.data_resolution,
+                    getattr(
+                        self.timepoint, self.metadata.coarse_level
+                    ).downsamplingFactor,
+                )
+            )
+        )
+
+    @property
     def cache(self):
         """Get the cache for this source.
 
@@ -426,6 +448,27 @@ class DataSource:
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             self._cache = cache
         return self._cache
+
+    @property
+    def centroid(self) -> np.ndarray:
+        if self._centroid is None:
+            self._centroid = (
+                np.mean(self.data.nonzero(), axis=1) * self.resolution
+            ) + self.clipping_corners[0]
+
+        return self._centroid
+
+    @property
+    def global_coarse_centroid(self):
+        if self._global_coarse_centroid is None:
+            data = self.get_data(
+                compression_level=self.metadata.coarse_level,
+                clipping=[[0, 0, 0], [1, 1, 1]],
+            )
+            self._global_coarse_centroid = (
+                np.mean(data.nonzero(), axis=1) * self.coarse_resolution
+            )
+        return self._global_coarse_centroid
 
     @property
     def labels(self) -> list[int]:
@@ -857,6 +900,8 @@ class DataSource:
         self._scaling_factors = None
         self._curv_radius = None
         self._mcs_dicts = {}
+        self._centroid = None
+        self._global_coarse_centroid = None
 
     @property
     def mcs_dicts(self) -> dict:
