@@ -1,4 +1,5 @@
 from organelle_morphology.position import Position_Analysis
+import organelle_morphology.position
 from organelle_morphology.project import Project
 
 import numpy as np
@@ -16,6 +17,22 @@ def test_density3D(project_with_sources):
     posan = Position_Analysis(project=p)
     density = posan.density3D(p.sources["synth_data"], (2, 3, 4))
     assert density.shape == (118, 80, 83)
+
+
+def test_density3D_cached(project_with_sources, mocker):
+    p = project_with_sources
+    mock_coarsen = mocker.spy(organelle_morphology.position.da, "coarsen")
+    posan = Position_Analysis(project=p)
+    density = posan.density3D(p.sources["synth_data"], (2, 3, 4))
+    mock_coarsen.assert_called_once()
+    assert density.shape == (118, 80, 83)
+    density_cached = posan.density3D(p.sources["synth_data"], (2, 3, 4))
+    mock_coarsen.assert_called_once()
+    np.testing.assert_array_almost_equal(density_cached, density)
+    p.clear_caches()
+    density_cached = posan.density3D(p.sources["synth_data"], (2, 3, 4))
+    mock_coarsen.assert_called_once()
+    np.testing.assert_array_almost_equal(density_cached, density)
 
 
 def test_density2D(project_with_sources):
