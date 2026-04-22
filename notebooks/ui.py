@@ -16,7 +16,8 @@ with app.setup:
     from dask.base import compute
     import pandas as pd
     import traceback
-    from organelle_morphology.statistics import Statistics
+    from organelle_morphology.analysis import Misc_Analysis
+    from organelle_morphology.statistics import Properties
     import matplotlib.pyplot as plt
 
 
@@ -125,7 +126,7 @@ def _(project, run_add_source, sources):
 
     def _get_levels():
         s = list(project.sources.values())[0]
-        return s.metadata["levels"]
+        return s.metadata.levels
 
     level_ui = mo.ui.radio(
         label="Compression level",
@@ -451,7 +452,7 @@ def _(cache_info_button, project):
 def _(box_dict, mesh_id_filter, project):
     def ids_in_box(_):
         orgs = project.get_organelles(ids=mesh_id_filter.value)
-        _scaling = np.array(list(project.sources.values())[0].metadata["size"])
+        _scaling = np.array(list(project.sources.values())[0].metadata.size)
         _box = (
             np.array(
                 (
@@ -620,9 +621,131 @@ def geo_execute_cell(project, run_geo_btn):
 
 
 @app.cell
+def profile_calc_ui_cell(sources):
+    mo.stop(len(sources) < 1, "")
+
+    profile_ids_ui = mo.ui.text(value="*", label="Organelle ID filter (e.g., er_*)")
+
+    profile_method_ui = mo.ui.radio(
+        options=["Fixed Axis", "Random Planes", "Skeleton Perpendicular"],
+        value="Fixed Axis",
+        inline=True,
+        label="Slicing Method",
+    )
+
+    fixed_axis_dict = mo.ui.dictionary(
+        {
+            "axis": mo.ui.text(value="z", label="Axis (x, y, z)"),
+            "num_slices": mo.ui.number(
+                value=20, start=1, step=1, label="Number of slices"
+            ),
+        }
+    )
+
+    random_planes_dict = mo.ui.dictionary(
+        {
+            "num_planes": mo.ui.number(
+                value=20, start=1, step=1, label="Number of planes"
+            ),
+            "seed": mo.ui.number(value=42, start=0, step=1, label="Random seed"),
+        }
+    )
+
+    skeleton_dict = mo.ui.dictionary(
+        {
+            "sample_distance": mo.ui.number(
+                value=0.1, start=0.01, step=0.01, label="Sample distance"
+            )
+        }
+    )
+
+    run_profile_btn = mo.ui.run_button(label="Calculate Profiles")
+
+    profile_calc_ui_layout = mo.vstack(
+        [
+            mo.md(
+                "## 2D Profile Calculations\nCalculate perimeter, width, and ratio of 2D cross-sections to determine tubule vs. sheet morphology."
+            ),
+            profile_ids_ui,
+            profile_method_ui,
+            mo.md("**Fixed Axis Settings:**"),
+            fixed_axis_dict,
+            mo.md("**Random Planes Settings:**"),
+            random_planes_dict,
+            mo.md("**Skeleton Perpendicular Settings:**"),
+            skeleton_dict,
+            run_profile_btn,
+        ]
+    )
+
+    profile_calc_ui_layout  # display the layout
+
+    return (
+        fixed_axis_dict,
+        profile_ids_ui,
+        profile_method_ui,
+        random_planes_dict,
+        run_profile_btn,
+        skeleton_dict,
+    )
+
+
+@app.cell
+def profile_execute_cell(
+    fixed_axis_dict,
+    profile_ids_ui,
+    profile_method_ui,
+    project,
+    random_planes_dict,
+    run_profile_btn,
+    skeleton_dict,
+):
+    mo.stop(
+        not run_profile_btn.value, mo.md("Select method and click 'Calculate Profiles'")
+    )
+
+    profile_execute_cell_status = mo.md(
+        "Calculating profiles... (Check Dask dashboard for progress)"
+    )
+
+    try:
+        with mo.redirect_stderr():
+            df = project.calculate_profiles(
+                method=profile_method_ui.value,
+                ids=profile_ids_ui.value,
+                axis=fixed_axis_dict["axis"].value,
+                num_slices=fixed_axis_dict["num_slices"].value,
+                num_planes=random_planes_dict["num_planes"].value,
+                seed=random_planes_dict["seed"].value,
+                sample_distance=skeleton_dict["sample_distance"].value,
+            )
+
+        profile_execute_cell_status = mo.vstack(
+            [
+                mo.md(
+                    f"**Success!** Profile properties computed using {profile_method_ui.value}."
+                ),
+                mo.ui.table(df, selection=None, pagination=False),
+            ]
+        )
+
+    except Exception:
+        profile_execute_cell_status = mo.md(
+            f"## Unable to calculate profiles\n\n```\n{traceback.format_exc()}\n```"
+        )
+
+    profile_execute_cell_status  # display the status/table
+    return
+
+
+@app.cell
 def prop_selector_cell(project):
-    stats = Statistics(project)
-    available_properties = stats.get_properties()
+    stats = Misc_Analysis(project, Properties)
+    available_properties = (
+        stats.get_mesh_properties()
+        + stats.get_skeleton_properties()
+        + stats.get_geometry_properties()
+    )
 
     # Convert the list of available_properties keys into a dictionary of checkboxes
     properties_checkboxes = {}
@@ -644,7 +767,7 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
 
     if calc_stats_btn.value:
         try:
-            display_stats = Statistics(project)
+            display_stats = Misc_Analysis(project, Properties)
 
             # Get the list of internal keys from the checkbox dictionary
             selected_properties = [
@@ -761,12 +884,19 @@ def plot_selector_cell(calc_stats_btn, df_data):
         ]
     )
     plot_selector_layout  # show the layout
-    return plot_property_ui, plot_secondary_property_ui, plot_selector_histogram
+    return (
+        plot_property_ui,
+        plot_secondary_property_ui,
+        plot_selector_histogram,
+    )
 
 
 @app.cell
 def plot_display_cell(
-    df_data, plot_property_ui, plot_secondary_property_ui, plot_selector_histogram
+    df_data,
+    plot_property_ui,
+    plot_secondary_property_ui,
+    plot_selector_histogram,
 ):
     mo.stop(df_data is None or df_data.empty, mo.md("No data calculated yet."))
 

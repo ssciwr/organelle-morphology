@@ -29,6 +29,7 @@ import pandas as pd
 
 from collections import defaultdict
 import plotly.graph_objects as go
+from sys import platform
 
 
 clipping_type = (
@@ -751,6 +752,51 @@ class Project:
         )
         return fig
 
+    def calculate_profiles(
+        self,
+        method: str,
+        ids: str = "*",
+        axis: str | tuple = "z",
+        num_slices: int = 20,
+        num_planes: int = 20,
+        seed: int = 42,
+        sample_distance: float = 0.1,
+    ):
+        """
+        API to calculate 2D profile metrics for organelles.
+
+        :param method: The slicing method ("Fixed Axis", "Random Planes", "Skeleton Perpendicular").
+        :param ids: Filter string for the organelle ids, defaults to "*".
+        :param axis: The axis to slice along (for Fixed Axis).
+        :param num_slices: The number of slices to make (for Fixed Axis).
+        :param num_planes: The number of random planes to generate (for Random Planes).
+        :param seed: Random seed (for Random Planes).
+        :param sample_distance: Distance between sample points (for Skeleton Perpendicular).
+
+        :return: A pandas DataFrame containing the profile statistics.
+        """
+        # Import locally to avoid circular dependencies if necessary
+        from organelle_morphology.profile_calculations import ProfileCalculator
+
+        calculator = ProfileCalculator(self)
+
+        if method == "Fixed Axis":
+            calculator.calculate_profile_lengths(
+                ids=ids, axis=axis, num_slices=num_slices
+            )
+        elif method == "Random Planes":
+            calculator.calculate_random_profiles(
+                ids=ids, num_planes=num_planes, seed=seed
+            )
+        elif method == "Skeleton Perpendicular":
+            calculator.calculate_skeleton_profiles(
+                ids=ids, sample_distance=sample_distance
+            )
+        else:
+            raise ValueError(f"Unknown profile calculation method: {method}")
+
+        return calculator.get_dataframe()
+
     @property
     def compression_level(self) -> str:
         """The compression level used for our computations."""
@@ -1057,15 +1103,24 @@ class Project:
         caches = []
         cs = self.cache_settings
         cache_dir = cs["cache_root"] / f"cache_{cs['project_name']}"
+
+        # OS-safe tree drawing characters
+        if platform == "win32":
+            branch = "|-"
+            pipe = "| "
+        else:
+            branch = "├─"
+            pipe = "│ "
+
         messages = ["*** List of Caches: ***"]
         if cache_dir.exists():
             messages.append(str(cache_dir))
             for source in filter(lambda f: f.is_dir(), (cache_dir).iterdir()):
-                messages.append(f"├─ /{source.name}")
+                messages.append(f"{branch} /{source.name}")
                 for level in filter(lambda f: f.is_dir(), source.iterdir()):
-                    messages.append(f"│  ├─ /{level.name}")
+                    messages.append(f"{pipe}  {branch} /{level.name}")
                     for clip_dir in filter(lambda f: f.is_dir, level.iterdir()):
-                        messages.append(f"│  │  ├─ /{clip_dir.name}")
+                        messages.append(f"{pipe}  {pipe}  {branch} /{clip_dir.name}")
                         name = (
                             f"cache_{cs['project_name']}/{source.name}/"
                             f"{level.name}/{clip_dir.name}"
