@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ProfileProperties(PropertyBlock):
+class ProfileData(PropertyBlock):
     """Physical measurements of the 2D profile."""
 
     perimeters: List[float]
@@ -34,7 +34,7 @@ class ProfileProperties(PropertyBlock):
 
 
 @dataclass
-class ProfileMeta(PropertyBlock):
+class ProfileMetadata(PropertyBlock):
     """Context for the profile calculation."""
 
     organelle_id: str
@@ -90,7 +90,7 @@ class ProfileCalculator(Analysis):
     """Calculates and analyzes 2D profile metrics for organelles."""
 
     def __init__(self, project: Project):
-        super().__init__(project, ProfileProperties)
+        super().__init__(project, ProfileData)
 
     def get_dataframe(self) -> pd.DataFrame:
         """
@@ -179,7 +179,7 @@ class ProfileCalculator(Analysis):
             m_width = float(np.mean(widths)) if widths else np.nan
             m_ratio = float(np.mean(ratios)) if ratios else np.nan
 
-            data = ProfileProperties(
+            data = ProfileData(
                 perimeters=perimeters,
                 widths=widths,
                 ratios=ratios,
@@ -187,7 +187,7 @@ class ProfileCalculator(Analysis):
                 mean_width=m_width,
                 mean_ratio=m_ratio,
             )
-            meta = ProfileMeta(
+            meta = ProfileMetadata(
                 organelle_id=org_id,
                 axis_used=axis_record,
                 num_slices_attempted=attempted,
