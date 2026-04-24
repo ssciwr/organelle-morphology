@@ -63,8 +63,8 @@ class PropertyBlock(ABC):
 AnyProperty = TypeVar("AnyProperty", bound=PropertyBlock)
 
 
-class Stats:
-    """Stats class to collect statistical data together with metadata
+class Record:
+    """Record class to collect statistical data together with metadata
     throughout the project.
 
     Attributes:

@@ -19,7 +19,7 @@ class Analysis(ABC):
     def __init__(self, project: Project, property_type: type[PropertyBlock]):
         self.project = project
         self.property_type = property_type
-        self.all_stats = self.project.stats
+        self.all_stats = self.project.records
         self.update_project_stats()
 
         self.__post_init__()

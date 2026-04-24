@@ -610,7 +610,7 @@ class DataSource:
                 # stats = defaultdict(int)
                 # for batch in tasks.values():
                 #     stats[len(batch)] += 1
-                # self.logger.debug(f"Stats about saving mesh batches:\n{stats}")
+                # self.logger.debug(f"Record about saving mesh batches:\n{stats}")
                 #
                 # for to_save in tasks.values():
                 #     delayed_save = _write_mesh_cache_batch(to_save, cs)

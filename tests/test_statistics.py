@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 from organelle_morphology.statistics import (
     PropertyBlock,
-    Stats,
+    Record,
 )
 import pytest
 
@@ -30,17 +30,17 @@ def mock_prop():
 
 
 def test_stat_to_dict(mock_prop):
-    stat = Stats(data=mock_prop, meta=mock_prop)
+    stat = Record(data=mock_prop, meta=mock_prop)
     assert isinstance(stat.to_dict(), dict)
 
 
 def test_stat_save_load(mock_prop, tmp_path):
-    stat = Stats(data=mock_prop, meta=mock_prop)
+    stat = Record(data=mock_prop, meta=mock_prop)
     file = tmp_path / "stat.yaml"
     assert not file.exists()
     stat.save_yaml(file)
     assert file.exists()
 
-    loaded_stat = Stats.from_yaml(file)
+    loaded_stat = Record.from_yaml(file)
     assert loaded_stat.data == stat.data
     assert loaded_stat.meta == stat.meta

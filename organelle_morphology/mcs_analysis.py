@@ -45,7 +45,7 @@ def plot_mcs_hist(df: DataFrame, label: str, measurement: str):
 
 
 def stats_contacts_a_b(df: DataFrame, mcs_label: str, n_orgs: dict[str, int]):
-    logger.info(f"Calculating Stats for {mcs_label}")
+    logger.info(f"Calculating Record for {mcs_label}")
     df_contacts = df.loc[mcs_label, "n_contacts"]
     if partners := mcs_label.split(",")[1].split("-"):
         o1, o2 = partners

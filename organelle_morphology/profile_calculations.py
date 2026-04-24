@@ -13,7 +13,7 @@ from scipy.spatial.distance import pdist
 from trimesh.intersections import mesh_plane
 
 from organelle_morphology.analysis import Analysis
-from organelle_morphology.statistics import PropertyBlock, Stats
+from organelle_morphology.statistics import PropertyBlock, Record
 
 if TYPE_CHECKING:
     from organelle_morphology.project import Project
@@ -98,7 +98,7 @@ class ProfileCalculator(Analysis):
         Refreshes the local stats view to include results calculated after initialization.
         """
         self.own_stats = [
-            s for s in self.project.stats if isinstance(s.data, self.property_type)
+            s for s in self.project.records if isinstance(s.data, self.property_type)
         ]
 
         data_rows = []
@@ -194,7 +194,7 @@ class ProfileCalculator(Analysis):
             )
 
             # Register the result in the central project registry
-            self.project.add_stat(Stats(data=data, meta=meta))
+            self.project.add_stat(Record(data=data, meta=meta))
 
     def calculate_profile_lengths(self, ids="er_*", axis="z", num_slices=20) -> None:
         """Calculates 2D profile metrics along a given fixed axis."""

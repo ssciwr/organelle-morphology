@@ -1,7 +1,7 @@
 import pandas as pd
 
 from organelle_morphology.analysis import Misc_Analysis
-from organelle_morphology.statistics import PropertyBlock, Stats
+from organelle_morphology.statistics import PropertyBlock, Record
 from organelle_morphology.organelle import McsProperties, McsMeta
 
 
@@ -68,7 +68,7 @@ def test_statistics_mcs_aggregation(project_with_sources):
         area_per_area=0.1,
         area_per_volume=0.1,
     )
-    stat = Stats(data=data, meta=meta)
+    stat = Record(data=data, meta=meta)
 
     # Inject the stat into the project BEFORE initializing Misc_Analysis so own_stats picks it up
     project_with_sources.add_stat(stat)

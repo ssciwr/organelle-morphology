@@ -12,7 +12,7 @@ from trimesh import Trimesh
 import yaml
 
 import organelle_morphology
-from organelle_morphology.statistics import PropertyBlock, Stats
+from organelle_morphology.statistics import PropertyBlock, Record
 from organelle_morphology.util import (
     bounding_box_delayed,
     color_delayed_trimesh_vertices,
@@ -447,7 +447,7 @@ class Organelle:
             min_dist=entries["meta"]["min_distance"],
             max_dist=entries["meta"]["max_distance"],
         )
-        stat = Stats(mcs_props, mcs_meta)
+        stat = Record(mcs_props, mcs_meta)
         self.project.add_stat(stat)
 
     @property

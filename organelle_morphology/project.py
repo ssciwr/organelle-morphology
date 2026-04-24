@@ -1146,11 +1146,11 @@ class Project:
         return caches
 
     def add_stat(self, stat):
-        self._stats.append(stat)
+        self._records.append(stat)
 
     @property
-    def stats(self):
-        return self._stats
+    def records(self):
+        return self._records
 
     def get_stat_stats(self):
         """Generate some meta statistics
@@ -1161,9 +1161,9 @@ class Project:
         """
         desc = "Collected statistics:\n"
         stat_count = defaultdict(int)
-        desc += f"{'number of stats':<20}: {len(self.stats)}\n"
+        desc += f"{'number of stats':<20}: {len(self.records)}\n"
 
-        for stat in self.stats:
+        for stat in self.records:
             stat_count[stat.name] += 1
         for stat, count in stat_count.items():
             desc += f"{stat:<18}: {count}\n"
@@ -1181,7 +1181,7 @@ class Project:
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
         self._max_compute_distance = 0.0
         self._cache = None
-        self._stats = []
+        self._records = []
 
     def clear_caches(self, clear_disk=False):
         """Clear all caches related to this project, optionally also from disk"""

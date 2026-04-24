@@ -205,7 +205,7 @@ def test_generate_mcs(project_with_sources):
     # deviation due to mesh normals and subsequent filtering
     # -> different area on windows
 
-    mcs_stats = [s for s in p.stats if s.name == "McsProperties"]
+    mcs_stats = [s for s in p.records if s.name == "McsProperties"]
     assert len(mcs_stats) == 19
     stat = [s for s in mcs_stats if s.meta.organelle_id == org.id][0]
 
