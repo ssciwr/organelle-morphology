@@ -1,7 +1,7 @@
 import pandas as pd
 
 from organelle_morphology.analysis import Misc_Analysis
-from organelle_morphology.statistics import PropertyBlock, Record
+from organelle_morphology.records import PropertyBlock, Record
 from organelle_morphology.organelle import McsProperties, McsMeta
 
 

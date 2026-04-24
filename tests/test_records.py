@@ -18,7 +18,7 @@ class MockProp(PropertyBlock):
 
 
 yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:tests.test_statistics.MockProp",
+    "tag:yaml.org,2002:python/object/apply:tests.test_records.MockProp",
     lambda loader, node: PropertyBlock.yaml_constructor(loader, node, MockProp),
     Loader=yaml.SafeLoader,
 )

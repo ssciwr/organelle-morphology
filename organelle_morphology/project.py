@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from organelle_morphology.statistics import PropertyBlock
+from organelle_morphology.records import PropertyBlock
 from organelle_morphology.util import setup_logging
 import logging
 from dask.base import compute

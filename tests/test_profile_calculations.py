@@ -5,7 +5,7 @@ from organelle_morphology.profile_calculations import (
     ProfileData,
     ProfileMetadata,
 )
-from organelle_morphology.statistics import Record
+from organelle_morphology.records import Record
 
 
 def test_calculate_profile_lengths(project_with_sources):

@@ -21,7 +21,7 @@ import z5py
 from organelle_morphology.block_mesher import block_mesher
 
 
-from organelle_morphology.statistics import PropertyBlock
+from organelle_morphology.records import PropertyBlock
 from organelle_morphology.util import (
     Cache,
     color_delayed_trimesh_rgba,

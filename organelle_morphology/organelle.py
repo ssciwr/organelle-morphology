@@ -12,7 +12,7 @@ from trimesh import Trimesh
 import yaml
 
 import organelle_morphology
-from organelle_morphology.statistics import PropertyBlock, Record
+from organelle_morphology.records import PropertyBlock, Record
 from organelle_morphology.util import (
     bounding_box_delayed,
     color_delayed_trimesh_vertices,

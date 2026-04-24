@@ -1,7 +1,7 @@
 from trimesh import Trimesh
 from trimesh.path import Path3D
 from organelle_morphology.project import Project
-from organelle_morphology.statistics import Record
+from organelle_morphology.records import Record
 from .synthetic_data_generator import generate_synthetic_dataset
 
 import pytest

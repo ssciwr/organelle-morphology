@@ -13,7 +13,7 @@ from scipy.spatial.distance import pdist
 from trimesh.intersections import mesh_plane
 
 from organelle_morphology.analysis import Analysis
-from organelle_morphology.statistics import PropertyBlock, Record
+from organelle_morphology.records import PropertyBlock, Record
 
 if TYPE_CHECKING:
     from organelle_morphology.project import Project

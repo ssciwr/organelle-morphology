@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, List, Optional
 import numpy as np
 import pandas as pd
 
-from organelle_morphology.statistics import PropertyBlock
+from organelle_morphology.records import PropertyBlock
 
 if TYPE_CHECKING:
     from organelle_morphology.organelle import Organelle

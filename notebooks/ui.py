@@ -17,7 +17,7 @@ with app.setup:
     import pandas as pd
     import traceback
     from organelle_morphology.analysis import Misc_Analysis
-    from organelle_morphology.statistics import PropertyBlock
+    from organelle_morphology.records import PropertyBlock
     import matplotlib.pyplot as plt
 
 
