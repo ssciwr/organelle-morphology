@@ -97,9 +97,7 @@ class ProfileCalculator(Analysis):
         Returns a DataFrame summarizing the profile statistics.
         Refreshes the local stats view to include results calculated after initialization.
         """
-        self.own_stats = [
-            s for s in self.project.records if isinstance(s.data, self.property_type)
-        ]
+        self.own_stats = self.project.registry.get_by_type(self.property_type)
 
         data_rows = []
         for stat in self.own_stats:
@@ -194,7 +192,7 @@ class ProfileCalculator(Analysis):
             )
 
             # Register the result in the central project registry
-            self.project.add_stat(Record(data=data, meta=meta))
+            self.project.registry.add(Record(data=data, meta=meta))
 
     def calculate_profile_lengths(self, ids="er_*", axis="z", num_slices=20) -> None:
         """Calculates 2D profile metrics along a given fixed axis."""

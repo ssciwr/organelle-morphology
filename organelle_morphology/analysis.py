@@ -19,7 +19,6 @@ class Analysis(ABC):
     def __init__(self, project: Project, property_type: type[PropertyBlock]):
         self.project = project
         self.property_type = property_type
-        self.all_stats = self.project.records
         self.update_project_stats()
 
         self.__post_init__()
@@ -29,9 +28,7 @@ class Analysis(ABC):
         pass
 
     def update_project_stats(self):
-        self.own_stats = [
-            s for s in self.all_stats if isinstance(s.data, self.property_type)
-        ]
+        self.own_stats = self.project.registry.get_by_type(self.property_type)
 
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:

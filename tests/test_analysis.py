@@ -71,7 +71,7 @@ def test_statistics_mcs_aggregation(project_with_sources):
     stat = Record(data=data, meta=meta)
 
     # Inject the stat into the project BEFORE initializing Misc_Analysis so own_stats picks it up
-    project_with_sources.add_stat(stat)
+    project_with_sources.registry.add(stat)
 
     stats = Misc_Analysis(project_with_sources, PropertyBlock)
 

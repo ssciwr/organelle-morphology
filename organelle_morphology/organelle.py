@@ -448,7 +448,7 @@ class Organelle:
             max_dist=entries["meta"]["max_distance"],
         )
         stat = Record(mcs_props, mcs_meta)
-        self.project.add_stat(stat)
+        self.project.registry.add(stat)
 
     @property
     def mcs(self) -> dict:

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from organelle_morphology.records import PropertyBlock
+from organelle_morphology.records import PropertyBlock, RecordRegistry
 from organelle_morphology.util import setup_logging
 import logging
 from dask.base import compute
@@ -1145,31 +1145,12 @@ class Project:
         self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
         return caches
 
-    def add_stat(self, stat):
-        self._records.append(stat)
-
     @property
     def records(self):
-        return self._records
+        return self.registry.get_all()
 
     def get_stat_stats(self):
-        """Generate some meta statistics
-        about the already calculated statistics objects
-
-        Returns:
-            dict: Number of each statistics type available.
-        """
-        desc = "Collected statistics:\n"
-        stat_count = defaultdict(int)
-        desc += f"{'number of stats':<20}: {len(self.records)}\n"
-
-        for stat in self.records:
-            stat_count[stat.name] += 1
-        for stat, count in stat_count.items():
-            desc += f"{stat:<18}: {count}\n"
-
-        self.logger.info(desc)
-        return stat_count
+        return self.registry.summary()
 
     def clear_memory_cache(self):
         """(Re)initialize project-level storage."""
@@ -1181,7 +1162,7 @@ class Project:
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
         self._max_compute_distance = 0.0
         self._cache = None
-        self._records = []
+        self.registry = RecordRegistry(self)
 
     def clear_caches(self, clear_disk=False):
         """Clear all caches related to this project, optionally also from disk"""

@@ -397,6 +397,6 @@ def test_stat_stats(project, mocker):
     assert project.get_stat_stats() == {}
 
     stat = Record(mocker.sentinel, mocker.sentinel)
-    project.add_stat(stat)
+    project.registry.add(stat)
 
     assert project.get_stat_stats()["_Sentinel"] == 1
