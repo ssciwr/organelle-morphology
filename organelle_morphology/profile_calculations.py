@@ -13,7 +13,7 @@ from scipy.spatial.distance import pdist
 from trimesh.intersections import mesh_plane
 
 from organelle_morphology.analysis import Analysis
-from organelle_morphology.statistics import Properties, Stats
+from organelle_morphology.statistics import PropertyBlock, Stats
 
 if TYPE_CHECKING:
     from organelle_morphology.project import Project
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ProfileProperties(Properties):
+class ProfileProperties(PropertyBlock):
     """Physical measurements of the 2D profile."""
 
     perimeters: List[float]
@@ -34,7 +34,7 @@ class ProfileProperties(Properties):
 
 
 @dataclass
-class ProfileMeta(Properties):
+class ProfileMeta(PropertyBlock):
     """Context for the profile calculation."""
 
     organelle_id: str

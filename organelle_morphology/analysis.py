@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, List, Optional
 import numpy as np
 import pandas as pd
 
-from organelle_morphology.statistics import Properties
+from organelle_morphology.statistics import PropertyBlock
 
 if TYPE_CHECKING:
     from organelle_morphology.organelle import Organelle
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class Analysis(ABC):
     """Analysis base class. Specific analysis workflows should subclass this."""
 
-    def __init__(self, project: Project, property_type: type[Properties]):
+    def __init__(self, project: Project, property_type: type[PropertyBlock]):
         self.project = project
         self.property_type = property_type
         self.all_stats = self.project.stats

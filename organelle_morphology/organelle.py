@@ -12,7 +12,7 @@ from trimesh import Trimesh
 import yaml
 
 import organelle_morphology
-from organelle_morphology.statistics import Properties, Stats
+from organelle_morphology.statistics import PropertyBlock, Stats
 from organelle_morphology.util import (
     bounding_box_delayed,
     color_delayed_trimesh_vertices,
@@ -31,14 +31,14 @@ def organelle_types() -> list[str]:
 
 
 @dataclass
-class OrganelleMeta(Properties):
+class OrganelleMeta(PropertyBlock):
     source: Path
     label: int
     id: str
 
 
 @dataclass
-class McsMeta(Properties):
+class McsMeta(PropertyBlock):
     mcs_label: str
     max_dist: float
     min_dist: float = 0.0
@@ -60,7 +60,7 @@ class McsMeta(Properties):
 
 
 @dataclass
-class MeshProperties(Properties):
+class MeshProperties(PropertyBlock):
     volume: float
     area: float
     centroid: list[float]
@@ -71,7 +71,7 @@ class MeshProperties(Properties):
 
 
 @dataclass
-class McsProperties(Properties):
+class McsProperties(PropertyBlock):
     n_contacts: int
     total_area: float
     mean_area: float
@@ -86,14 +86,14 @@ class McsProperties(Properties):
 
 yaml.add_constructor(
     "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsProperties",
-    lambda loader, node: Properties.yaml_constructor(loader, node, McsProperties),
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsProperties),
     Loader=yaml.SafeLoader,
 )
 
 
 yaml.add_constructor(
     "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMeta",
-    lambda loader, node: Properties.yaml_constructor(loader, node, McsMeta),
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsMeta),
     Loader=yaml.SafeLoader,
 )
 

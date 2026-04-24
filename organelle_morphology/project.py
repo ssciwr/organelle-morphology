@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from organelle_morphology.statistics import Properties
+from organelle_morphology.statistics import PropertyBlock
 from organelle_morphology.util import setup_logging
 import logging
 from dask.base import compute
@@ -38,7 +38,7 @@ clipping_type = (
 
 
 @dataclass
-class ProjectMeta(Properties):
+class ProjectMeta(PropertyBlock):
     path: Path
     name: str
     clipping: Optional[np.ndarray]

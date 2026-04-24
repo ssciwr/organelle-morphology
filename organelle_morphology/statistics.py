@@ -29,7 +29,7 @@ yaml.add_representer(WindowsPath, represent_path, Dumper=yaml.SafeDumper)
 
 
 def represent_properties(dumper, obj):
-    """Represent Properties objects with their class tag"""
+    """Represent PropertyBlock objects with their class tag"""
     # Get the class name and module for YAML reconstruction
     class_name = obj.__class__.__name__
     module_name = obj.__class__.__module__
@@ -42,7 +42,7 @@ def represent_properties(dumper, obj):
     return dumper.represent_mapping(tag, data)
 
 
-class Properties(ABC):
+class PropertyBlock(ABC):
     """Base class for (Meta)Data containers"""
 
     def to_dict(self):
@@ -50,7 +50,7 @@ class Properties(ABC):
 
     @staticmethod
     def yaml_constructor(loader, node, properties_class):
-        """Constructor for Properties objects"""
+        """Constructor for PropertyBlock objects"""
         values = loader.construct_pairs(node)
         return properties_class(**dict(values))
 
@@ -60,7 +60,7 @@ class Properties(ABC):
         )
 
 
-AnyProperty = TypeVar("AnyProperty", bound=Properties)
+AnyProperty = TypeVar("AnyProperty", bound=PropertyBlock)
 
 
 class Stats:
@@ -76,8 +76,8 @@ class Stats:
     def __init__(self, data: AnyProperty, meta: AnyProperty):
         """
         Args:
-            data: dataclass inheriting from Properties, contains the data
-            meta: dataclass inheriting from Properties, contains the metadata
+            data: dataclass inheriting from PropertyBlock, contains the data
+            meta: dataclass inheriting from PropertyBlock, contains the metadata
         """
         self.data = data
         self.meta = meta

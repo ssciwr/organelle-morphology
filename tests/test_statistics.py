@@ -3,14 +3,14 @@ import numpy as np
 from pathlib import Path
 import yaml
 from organelle_morphology.statistics import (
-    Properties,
+    PropertyBlock,
     Stats,
 )
 import pytest
 
 
 @dataclass
-class MockProp(Properties):
+class MockProp(PropertyBlock):
     mock_str: str
     mock_int: int
     mock_path: Path
@@ -19,7 +19,7 @@ class MockProp(Properties):
 
 yaml.add_constructor(
     "tag:yaml.org,2002:python/object/apply:tests.test_statistics.MockProp",
-    lambda loader, node: Properties.yaml_constructor(loader, node, MockProp),
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, MockProp),
     Loader=yaml.SafeLoader,
 )
 

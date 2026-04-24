@@ -21,7 +21,7 @@ import z5py
 from organelle_morphology.block_mesher import block_mesher
 
 
-from organelle_morphology.statistics import Properties
+from organelle_morphology.statistics import PropertyBlock
 from organelle_morphology.util import (
     Cache,
     color_delayed_trimesh_rgba,
@@ -52,7 +52,7 @@ class Data_level:
 
 
 @dataclass
-class SourceMeta(Properties):
+class SourceMeta(PropertyBlock):
     data_root: Path
     downsampling: list[list[int]]
     levels: list[str]
