@@ -598,7 +598,7 @@ def geo_calc_ui_cell(sources):
     run_geo_btn = mo.ui.run_button(label="Calculate Geometry")
     geo_calc_ui_layout = mo.vstack(
         [
-            mo.md("## Geometry PropertyBlock"),
+            mo.md("## Geometry Properties"),
             mo.md("Compute voxel-based data (voxel_solidity, voxel_extent)."),
             run_geo_btn,
         ]

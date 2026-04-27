@@ -144,7 +144,7 @@ class RecordRegistry:
         """
         self._all_records.append(record)
 
-        # Index by the class name of the data (e.g., "McsProperties", "ProfileData")
+        # Index by the class name of the data (e.g., "McsData", "ProfileData")
         record_type = type(record.data).__name__
         self._records_by_type[record_type].append(record)
 

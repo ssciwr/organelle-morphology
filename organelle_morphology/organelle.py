@@ -38,7 +38,7 @@ class OrganelleMeta(PropertyBlock):
 
 
 @dataclass
-class McsMeta(PropertyBlock):
+class McsMetadata(PropertyBlock):
     mcs_label: str
     max_dist: float
     min_dist: float = 0.0
@@ -71,7 +71,7 @@ class MeshProperties(PropertyBlock):
 
 
 @dataclass
-class McsProperties(PropertyBlock):
+class McsData(PropertyBlock):
     n_contacts: int
     total_area: float
     mean_area: float
@@ -85,15 +85,15 @@ class McsProperties(PropertyBlock):
 
 
 yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsProperties",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsProperties),
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsData",
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsData),
     Loader=yaml.SafeLoader,
 )
 
 
 yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMeta",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsMeta),
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMetadata",
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsMetadata),
     Loader=yaml.SafeLoader,
 )
 
@@ -440,8 +440,8 @@ class Organelle:
         mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
         mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
 
-        mcs_props = McsProperties(**numpy_to_python(mcs_dict))
-        mcs_meta = McsMeta(
+        mcs_props = McsData(**numpy_to_python(mcs_dict))
+        mcs_meta = McsMetadata(
             organelle_meta=self.metadata,
             mcs_label=mcs_label,
             min_dist=entries["meta"]["min_distance"],
