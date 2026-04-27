@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 import numpy as np
+import pandas as pd
 from scipy.ndimage import rotate
 from organelle_morphology.analysis import Analysis
 from organelle_morphology.source import DataSource
@@ -15,8 +17,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PositionMeta(Properties):
     source: str
-    normalizing_sources: list[str]
-    centroids: Optional[list[float]]  # per source
     dimensionality: int
     bin_resolution: tuple[float, float, float]
     marginal_axis_2d: Optional[int] = None
@@ -27,7 +27,7 @@ class PositionMeta(Properties):
 
 @dataclass
 class PositionProperties(Properties):
-    density: list
+    density: np.ndarray
 
 
 class Position_Analysis(Analysis):
@@ -37,13 +37,20 @@ class Position_Analysis(Analysis):
         super().__init__(project=project, property_type=PositionProperties)
 
     def get_dataframe(self):
-        return super().get_dataframe()
+        """Dataframe describing available data
+
+        Dataframe is build from the metadata of all Position_Analysis Stats
+
+        Returns:
+            Dataframe of the metadata of all collected position analysis calculations
+        """
+        self.update_project_stats()
+        return pd.DataFrame([s.meta for s in self.own_stats])
 
     def density3D(
         self,
         source: DataSource,
         bin_resolution: tuple[float, float, float],
-        normalizing_sources: Optional[list[DataSource]],
     ) -> da.Array:
         """Calculate a 3d heatmap of all organelles in the source.
 
@@ -52,25 +59,13 @@ class Position_Analysis(Analysis):
             bin_resolution: binning resolution in micrometers
         """
         res = bin_resolution
-        norm_sources_name = ""
-        if normalizing_sources is not None:
-            norm_sources_name = "_".join([s.org_name for s in normalizing_sources])
-        cache_key = (
-            f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_norm-{norm_sources_name}"
-        )
+        cache_key = f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}"
         if cache_key not in source.cache:
             binsize = (np.array(bin_resolution) // source.resolution).astype(int)
             n_missing = source.data.shape % binsize
 
             data = source.data.astype(bool)
             data = da.pad(data, [(0, i) for i in n_missing])
-            center = None
-            if normalizing_sources is not None:
-                center = np.mean(
-                    [s.global_coarse_centroid for s in normalizing_sources]
-                )
-                logger.debug(f"Normalizing position onto centroid: {center}")
-                data -= center
 
             logger.debug(f"Density3D calculation, binsize {binsize}")
             density = da.coarsen(
@@ -81,17 +76,15 @@ class Position_Analysis(Analysis):
             ).compute()
             source.cache[cache_key] = density
 
-            Stats(
+            stat = Stats(
                 PositionProperties(density=density),
                 PositionMeta(
                     source=source.org_name,
-                    normalizing_sources=norm_sources_name,
-                    centroids=center,
-                    bin_resolution=bin_resolution,
                     dimensionality=3,
+                    bin_resolution=bin_resolution,
                 ),
             )
-            # TODO: save stats, test
+            self.project.add_stat(stat)
 
         return source.cache[cache_key]
 
@@ -121,7 +114,21 @@ class Position_Analysis(Analysis):
         if cache_key not in source.cache:
             density = self.density3D(source, bin_resolution)
             density = rotate(density, rot_angle, rot_axes, reshape=True)
-            source.cache[cache_key] = np.mean(density, axis=marginal_axis)
+            density_2D = np.mean(density, axis=marginal_axis)
+            source.cache[cache_key] = density_2D
+
+            stat = Stats(
+                PositionProperties(density=density_2D),
+                PositionMeta(
+                    source=source.org_name,
+                    dimensionality=2,
+                    bin_resolution=bin_resolution,
+                    marginal_axis_2d=marginal_axis,
+                    rot_angle=rot_angle,
+                    rot_axes=rot_axes,
+                ),
+            )
+            self.project.add_stat(stat)
         return source.cache[cache_key]
 
     def density1D(
@@ -156,5 +163,19 @@ class Position_Analysis(Analysis):
                 rot_angle=rot_angle,
                 rot_axes=rot_axes,
             )
-            source.cache[cache_key] = np.mean(density2d, axis=marginal_axes[0])
+            density_1D = np.mean(density2d, axis=marginal_axes[0])
+            source.cache[cache_key] = density_1D
+
+            stat = Stats(
+                PositionProperties(density=density_1D),
+                PositionMeta(
+                    source=source.org_name,
+                    dimensionality=2,
+                    bin_resolution=bin_resolution,
+                    axis_1d=axis,
+                    rot_angle=rot_angle,
+                    rot_axes=rot_axes,
+                ),
+            )
+            self.project.add_stat(stat)
         return source.cache[cache_key]

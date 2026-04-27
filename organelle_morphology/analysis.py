@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional
+import uuid
 
 import numpy as np
 import pandas as pd
@@ -11,6 +14,8 @@ from organelle_morphology.records import PropertyBlock
 if TYPE_CHECKING:
     from organelle_morphology.organelle import Organelle
     from organelle_morphology.project import Project
+
+logger = logging.getLogger(__name__)
 
 
 class Analysis(ABC):
@@ -29,6 +34,13 @@ class Analysis(ABC):
 
     def update_project_stats(self):
         self.own_stats = self.project.registry.get_by_type(self.property_type)
+
+    def save_stats(self):
+        self.update_project_stats()
+        for stat in self.project.stats:
+            dir: Path = self.project.path / "analysis" / stat.name
+            dir.mkdir(exist_ok=True, parents=True)
+            stat.save_yaml(dir / f"{uuid.uuid4()}.yaml")
 
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:

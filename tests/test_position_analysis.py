@@ -73,3 +73,15 @@ def test_density1D(project_with_sources):
     # axes[0, 1].plot(res1)
     # axes[0, 2].plot(res2)
     # plt.show()
+
+
+def test_save_stats(project_with_sources):
+    p = project_with_sources
+    posan = Position_Analysis(project=p)
+
+    res = posan.density1D(p.sources["synth_data"], (2, 3, 4), 0, 0.0, (0, 1))
+    posan.save_stats()
+    out_dir = p.path / "analysis" / "PositionProperties"
+    assert out_dir.exists()
+    assert len(list(out_dir.glob("*.npz"))) == 3
+    assert len(list(out_dir.glob("*.yaml"))) == 3
