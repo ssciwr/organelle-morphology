@@ -38,7 +38,7 @@ clipping_type = (
 
 
 @dataclass
-class ProjectMeta(PropertyBlock):
+class ProjectMetadata(PropertyBlock):
     path: Path
     name: str
     clipping: Optional[np.ndarray]
@@ -137,7 +137,7 @@ class Project:
 
     @property
     def metadata(self):
-        return ProjectMeta(
+        return ProjectMetadata(
             path=self.path,
             name=self.path.name,
             clipping=self.clipping,
