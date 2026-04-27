@@ -6,14 +6,14 @@ from pathlib import Path, PosixPath, WindowsPath
 from typing import TypeVar
 from collections import defaultdict
 from typing import List, Type
+from organelle_morphology.util import numpy_to_python
 
 import logging
+import yaml
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from organelle_morphology.project import Project
-
-import yaml
 
 
 def construct_path(loader, node):
@@ -36,7 +36,7 @@ yaml.add_representer(PosixPath, represent_path, Dumper=yaml.SafeDumper)
 yaml.add_representer(WindowsPath, represent_path, Dumper=yaml.SafeDumper)
 
 
-def represent_properties(dumper, obj):
+def represent_property_block(dumper, obj):
     """Represent PropertyBlock objects with their class tag"""
     # Get the class name and module for YAML reconstruction
     class_name = obj.__class__.__name__
@@ -46,7 +46,7 @@ def represent_properties(dumper, obj):
     tag = f"tag:yaml.org,2002:python/object/apply:{module_name}.{class_name}"
 
     # Represent the object as a sequence of key-value pairs
-    data = obj.to_dict()
+    data = numpy_to_python(obj.to_dict())
     return dumper.represent_mapping(tag, data)
 
 
@@ -64,11 +64,11 @@ class PropertyBlock(ABC):
 
     def yaml_representor(self):
         yaml.add_representer(
-            self.__class__, represent_properties, Dumper=yaml.SafeDumper
+            self.__class__, represent_property_block, Dumper=yaml.SafeDumper
         )
 
 
-AnyProperty = TypeVar("AnyProperty", bound=PropertyBlock)
+AnyPropertyBlock = TypeVar("AnyPropertyBlock", bound=PropertyBlock)
 
 
 class Record:
@@ -81,7 +81,7 @@ class Record:
         name: name of data
     """
 
-    def __init__(self, data: AnyProperty, meta: AnyProperty):
+    def __init__(self, data: AnyPropertyBlock, meta: AnyPropertyBlock):
         """
         Args:
             data: dataclass inheriting from PropertyBlock, contains the data
