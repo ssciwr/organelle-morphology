@@ -31,7 +31,7 @@ def organelle_types() -> list[str]:
 
 
 @dataclass
-class OrganelleMeta(PropertyBlock):
+class OrganelleMetadata(PropertyBlock):
     source: Path
     label: int
     id: str
@@ -47,9 +47,9 @@ class McsMetadata(PropertyBlock):
     organelle_source: Optional[Path] = None
     organelle_label: Optional[int] = None
     organelle_id: Optional[str] = None
-    organelle_meta: InitVar[Optional[OrganelleMeta]] = None
+    organelle_meta: InitVar[Optional[OrganelleMetadata]] = None
 
-    def __post_init__(self, organelle_meta: Optional[OrganelleMeta]):
+    def __post_init__(self, organelle_meta: Optional[OrganelleMetadata]):
         if organelle_meta is not None:
             for f in fields(organelle_meta):
                 setattr(
@@ -143,8 +143,8 @@ class Organelle:
         return f"{self.__class__.__name__}({self._organelle_id})"
 
     @property
-    def metadata(self) -> OrganelleMeta:
-        return OrganelleMeta(
+    def metadata(self) -> OrganelleMetadata:
+        return OrganelleMetadata(
             source=self.source.xml_path, label=self.label, id=self._organelle_id
         )
 
