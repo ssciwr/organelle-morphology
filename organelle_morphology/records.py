@@ -192,3 +192,52 @@ class RecordRegistry:
 
         self.logger.info(desc)
         return dict(stat_count)
+
+    def save_all_to_yaml(self, filepath: Path | str) -> None:
+        """
+        Saves all records in the registry to a single YAML file.
+        """
+        filepath = Path(filepath)
+
+        # Ensure all PropertyBlock subclasses are registered with YAML
+        for record in self._all_records:
+            record.data.yaml_representor()
+            record.meta.yaml_representor()
+
+        # Collect all records in their dict representations
+        to_save = [record.to_dict() for record in self._all_records]
+
+        with open(filepath, "w") as f:
+            yaml.safe_dump(to_save, f)
+
+        self.logger.info(f"Saved {len(self._all_records)} records to {filepath}")
+
+    def load_all_from_yaml(self, filepath: Path | str) -> None:
+        """
+        Loads records from a YAML file and adds them to the registry.
+        """
+
+        filepath = Path(filepath)
+        if not filepath.exists():
+            raise FileNotFoundError(f"Record file not found: {filepath}")
+
+        # Load the raw list of dictionaries from the YAML file
+        with open(filepath, "r") as f:
+            loaded_data = yaml.safe_load(f)
+
+        if not isinstance(loaded_data, list):
+            raise ValueError(f"Expected a list of records in {filepath}")
+
+        # Reconstruct Record objects and add them to the registry
+        count = 0
+        for yaml_dict in loaded_data:
+            if not all(k in yaml_dict for k in ["data", "meta", "name"]):
+                self.logger.warning("Skipping invalid record entry found in file.")
+                continue
+
+            # Reconstructs with yaml_constructors
+            record = Record(data=yaml_dict["data"], meta=yaml_dict["meta"])
+            self.add(record)
+            count += 1
+
+        self.logger.info(f"Successfully loaded {count} records from {filepath}")

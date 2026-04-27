@@ -44,3 +44,31 @@ def test_stat_save_load(mock_prop, tmp_path):
     loaded_stat = Record.from_yaml(file)
     assert loaded_stat.data == stat.data
     assert loaded_stat.meta == stat.meta
+
+
+def test_registry_save_load_real_records(project_with_sources, tmp_path):
+    """Test bulk saving and loading using actual production records."""
+    project = project_with_sources
+
+    # Generate some profiles to populate the registry with ProfileData & ProfileMetadata
+    project.calculate_profiles(method="Fixed Axis", ids="mito_0007", num_slices=3)
+
+    # Keep copy of original records for comparison
+    original_records = project.registry.get_all().copy()
+    assert len(original_records) > 0, "Pipeline failed to generate records."
+
+    # Save to the pytests temp path
+    file_path = tmp_path / "real_records.yaml"
+    project.registry.save_all_to_yaml(file_path)
+    assert file_path.exists()
+
+    # Clear the registry
+    project.registry.clear()
+    assert len(project.registry.get_all()) == 0
+
+    # Load the records back and check them
+    project.registry.load_all_from_yaml(file_path)
+    loaded_records = project.registry.get_all()
+    assert len(loaded_records) == len(original_records)
+    for orig, loaded in zip(original_records, loaded_records):
+        assert orig == loaded
