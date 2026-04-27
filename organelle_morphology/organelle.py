@@ -60,7 +60,7 @@ class McsMetadata(PropertyBlock):
 
 
 @dataclass
-class MeshProperties(PropertyBlock):
+class MeshData(PropertyBlock):
     volume: float
     area: float
     centroid: list[float]
@@ -338,7 +338,7 @@ class Organelle:
         return self.source.basic_geometric_properties[self.id]
 
     @property
-    def mesh_properties(self) -> MeshProperties:
+    def mesh_properties(self) -> MeshData:
         """Get properties of the mesh for this organelle
         Causes a compute call, if you need this for many organelles,
         use `get_mesh_properties_delayed`
@@ -487,7 +487,7 @@ organelle_registry["er"] = EndoplasmicReticulum
 
 
 @delayed
-def get_mesh_properties_delayed(mesh: Trimesh) -> MeshProperties:
+def get_mesh_properties_delayed(mesh: Trimesh) -> MeshData:
     """Extract mesh properties from a trimesh object and return as dict.
 
     This function is designed to be called on delayed mesh objects to
@@ -501,7 +501,7 @@ def get_mesh_properties_delayed(mesh: Trimesh) -> MeshProperties:
         dict: Dictionary containing mesh properties that can be used to
             construct a mesh_properties dataclass
     """
-    return MeshProperties(
+    return MeshData(
         volume=(mesh.volume).item(),
         area=(mesh.area).item(),
         centroid=(mesh.centroid).tolist(),
