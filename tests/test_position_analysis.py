@@ -33,17 +33,17 @@ def test_density2D(project_with_sources):
     res0 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 2, 0.0, (0, 1))
     res1 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 2, 10, (0, 1))
     res2 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 2, 20, (0, 1))
-    res3 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 1, 0.0, (0, 1))
-    res4 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 1, 10, (2, 1))
-    res5 = posan.density2D(p.sources["synth_data"], (2, 3, 4), 1, 20, (2, 1))
+    res3 = posan.density2D(p.sources["synth_data"], (7, 3, 5), 1, 0.0, (0, 1))
+    res4 = posan.density2D(p.sources["synth_data"], (7, 3, 5), 1, 10, (2, 1))
+    res5 = posan.density2D(p.sources["synth_data"], (7, 3, 5), 1, 20, (2, 1))
 
     np.testing.assert_almost_equal(res0.mean(), 0.0391694957797291, 5)
     assert res0.shape == (118, 80)
     assert res1.shape == (130, 99)
     assert res2.shape == (138, 116)
-    assert res3.shape == (118, 83)
-    assert res4.shape == (118, 96)
-    assert res5.shape == (118, 105)
+    assert res3.shape == (34, 66)
+    assert res4.shape == (34, 79)
+    assert res5.shape == (34, 89)
 
     # import matplotlib.pyplot as plt
     # fig, axes = plt.subplots(2, 3, figsize=(12, 8))

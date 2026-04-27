@@ -10,6 +10,7 @@ import logging
 import dask.array as da
 
 from organelle_morphology.statistics import Properties, Stats
+import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,18 @@ class PositionMeta(Properties):
 @dataclass
 class PositionProperties(Properties):
     density: np.ndarray
+
+    def get_plot(self):
+        if len(self.density.shape) == 3:
+            raise NotImplementedError()
+        elif len(self.density.shape) == 2:
+            return plt.imshow(self.density)
+        elif len(self.density.shape) == 1:
+            return plt.plot(self.density)
+
+    def plot(self):
+        self.get_plot()
+        plt.show()
 
 
 class Position_Analysis(Analysis):
@@ -62,7 +75,7 @@ class Position_Analysis(Analysis):
         cache_key = f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}"
         if cache_key not in source.cache:
             binsize = (np.array(bin_resolution) // source.resolution).astype(int)
-            n_missing = source.data.shape % binsize
+            n_missing = (binsize - (source.data.shape % binsize)) % binsize
 
             data = source.data.astype(bool)
             data = da.pad(data, [(0, i) for i in n_missing])
