@@ -52,7 +52,7 @@ class Data_level:
 
 
 @dataclass
-class SourceMeta(PropertyBlock):
+class SourceMetadata(PropertyBlock):
     data_root: Path
     downsampling: list[list[int]]
     levels: list[str]
@@ -218,7 +218,7 @@ class DataSource:
             if int(level[-1]) > int(coarse_level[-1]):
                 coarse_level = level
 
-        self._metadata = SourceMeta(
+        self._metadata = SourceMetadata(
             data_root=self.xml_path / filename,
             downsampling=self.timepoint.downsamplingFactors,
             levels=self.timepoint.levels,
@@ -229,7 +229,7 @@ class DataSource:
         )
 
     @property
-    def metadata(self) -> SourceMeta:
+    def metadata(self) -> SourceMetadata:
         """Return the metadata of this source. Loads the metadata, if necessary
 
         coarse_level: coarsest level available
