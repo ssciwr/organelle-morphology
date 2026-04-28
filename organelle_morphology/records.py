@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 from abc import ABC
-from dataclasses import fields
+from dataclasses import astuple, fields
 from pathlib import Path, PosixPath, WindowsPath
 from typing import TypeVar
 from collections import defaultdict
 from typing import List, Type
-from organelle_morphology.util import numpy_to_python
+import numpy as np
 
 import logging
 import yaml
 from typing import TYPE_CHECKING
 
+from organelle_morphology.util import numpy_to_python
+
 if TYPE_CHECKING:
     from organelle_morphology.project import Project
+
+logger = logging.getLogger(__name__)
 
 
 def construct_path(loader, node):
@@ -36,6 +40,29 @@ yaml.add_representer(PosixPath, represent_path, Dumper=yaml.SafeDumper)
 yaml.add_representer(WindowsPath, represent_path, Dumper=yaml.SafeDumper)
 
 
+def array_safe_eq(a, b) -> bool:
+    """Check if a and b are equal, even if they are numpy arrays"""
+    if a is b:
+        return True
+    if isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
+        return a.shape == b.shape and (a == b).all()
+    try:
+        return a == b
+    except TypeError:
+        return NotImplemented
+
+
+def dc_eq(dc1, dc2) -> bool:
+    """Checks if two dataclasses which hold numpy arrays are equal"""
+    if dc1 is dc2:
+        return True
+    if dc1.__class__ is not dc2.__class__:
+        return NotImplemented  # better than False
+    t1 = astuple(dc1)
+    t2 = astuple(dc2)
+    return all(array_safe_eq(a1, a2) for a1, a2 in zip(t1, t2))
+
+
 def represent_property_block(dumper, obj):
     """Represent PropertyBlock objects with their class tag"""
     # Get the class name and module for YAML reconstruction
@@ -51,7 +78,12 @@ def represent_property_block(dumper, obj):
 
 
 class PropertyBlock(ABC):
-    """Base class for (Meta)Data containers"""
+    """Base class for (Meta)Data containers
+
+    Should be subclassed into a dataclass.
+    If the dataclass should hold np arrays, use
+    `@dataclass(eq=False)`
+    """
 
     def to_dict(self):
         return {field.name: getattr(self, field.name) for field in fields(self)}
@@ -66,6 +98,9 @@ class PropertyBlock(ABC):
         yaml.add_representer(
             self.__class__, represent_property_block, Dumper=yaml.SafeDumper
         )
+
+    def __eq__(self, other):
+        return dc_eq(self, other)
 
 
 AnyPropertyBlock = TypeVar("AnyPropertyBlock", bound=PropertyBlock)
@@ -96,15 +131,59 @@ class Record:
 
     def save_yaml(self, filename: Path):
         to_save = self.to_dict()
-        self.data.yaml_representor()
+
+        array_paths = []
+
+        # Process data fields for numpy arrays
+        data_fields = fields(to_save["data"])
+        data_dict = {}
+        for field in data_fields:
+            obj = getattr(to_save["data"], field.name)
+            if isinstance(obj, np.ndarray):
+                # Save array to npz file
+                array_filename = filename.with_name(f"{filename.stem}_{field.name}.npz")
+                np.savez_compressed(array_filename, array=obj)
+                data_dict[field.name] = array_filename
+                array_paths.append(array_filename)
+            else:
+                data_dict[field.name] = obj
+
+        data_class = to_save["data"].__class__
+        processed_data = data_class(**data_dict)
+
+        processed_dict = {
+            "data": processed_data,
+            "meta": self.meta,
+            "name": self.name,
+        }
+
+        processed_data.yaml_representor()
         self.meta.yaml_representor()
+
+        filename.parent.mkdir(exist_ok=True, parents=True)
         with open(filename, "w") as f:
-            yaml.safe_dump(to_save, f)
+            yaml.safe_dump(processed_dict, f)
 
     @classmethod
     def from_yaml(cls, filename: Path):
         with open(filename) as f:
             yaml_dict = yaml.safe_load(f)
+
+        # Restore numpy arrays from files
+        # Process data fields
+        if hasattr(yaml_dict["data"], "__dict__"):
+            data_fields = fields(yaml_dict["data"])
+            for field in data_fields:
+                obj = getattr(yaml_dict["data"], field.name)
+                if isinstance(obj, Path) and obj.suffix == ".npz":
+                    try:
+                        data = np.load(obj)
+                        restored_array = data["array"]
+                        setattr(yaml_dict["data"], field.name, restored_array)
+                    except Exception as e:
+                        logger.warning(f"Restoring {obj} failed!\n{e}")
+                        pass  # Keep original value if restoration fails
+
         if not all([k in yaml_dict for k in ["data", "meta", "name"]]):
             raise ValueError(f"YAML file could not be parsed: {filename}")
 
@@ -175,7 +254,7 @@ class RecordRegistry:
     def summary(self) -> dict[str, int]:
         """
         Generate meta-statistics about the currently stored records.
-        Replaces the old Project.get_stat_stats() method.
+        Replaces the old Project.get_record_stats() method.
 
         Returns:
             dict: Number of each Record type available.

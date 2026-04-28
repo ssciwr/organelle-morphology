@@ -395,9 +395,11 @@ def boxes_overlap(box1, box2):
 
 
 def numpy_to_python(obj):
-    """Recursively convert NumPy types to Python types"""
+    """Recursively convert NumPy types to Python equivalents.
+    np arrays stay np arrays
+    """
     if isinstance(obj, np.ndarray):
-        return obj.tolist()
+        return obj
     elif isinstance(obj, np.integer):
         return int(obj)
     elif isinstance(obj, np.floating):

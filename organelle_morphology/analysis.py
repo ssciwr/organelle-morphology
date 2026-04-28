@@ -24,7 +24,7 @@ class Analysis(ABC):
     def __init__(self, project: Project, property_type: type[PropertyBlock]):
         self.project = project
         self.property_type = property_type
-        self.update_project_stats()
+        self.update_project_records()
 
         self.__post_init__()
 
@@ -32,15 +32,15 @@ class Analysis(ABC):
         """Run after initialization of base class, used for subclass specific init"""
         pass
 
-    def update_project_stats(self):
+    def update_project_records(self):
         self.own_stats = self.project.registry.get_by_type(self.property_type)
 
-    def save_stats(self):
-        self.update_project_stats()
-        for stat in self.project.stats:
-            dir: Path = self.project.path / "analysis" / stat.name
+    def save_records(self):
+        self.update_project_records()
+        for rec in self.project.records:
+            dir: Path = self.project.path / "analysis" / rec.name
             dir.mkdir(exist_ok=True, parents=True)
-            stat.save_yaml(dir / f"{uuid.uuid4()}.yaml")
+            rec.save_yaml(dir / f"{uuid.uuid4()}.yaml")
 
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:

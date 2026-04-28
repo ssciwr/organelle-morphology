@@ -1161,7 +1161,7 @@ class Project:
     def records(self):
         return self.registry.get_all()
 
-    def get_stat_stats(self):
+    def get_record_stats(self):
         return self.registry.summary()
 
     def clear_memory_cache(self):

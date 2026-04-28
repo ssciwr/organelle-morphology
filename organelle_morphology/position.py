@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 import numpy as np
 import pandas as pd
@@ -9,14 +8,14 @@ from organelle_morphology.source import DataSource
 import logging
 import dask.array as da
 
-from organelle_morphology.statistics import Properties, Stats
+from organelle_morphology.records import PropertyBlock, Record
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PositionMeta(Properties):
+class PositionMeta(PropertyBlock):
     source: str
     dimensionality: int
     bin_resolution: tuple[float, float, float]
@@ -27,7 +26,7 @@ class PositionMeta(Properties):
 
 
 @dataclass
-class PositionProperties(Properties):
+class PositionProperties(PropertyBlock):
     density: np.ndarray
 
     def get_plot(self):
@@ -89,7 +88,7 @@ class Position_Analysis(Analysis):
             ).compute()
             source.cache[cache_key] = density
 
-            stat = Stats(
+            record = Record(
                 PositionProperties(density=density),
                 PositionMeta(
                     source=source.org_name,
@@ -97,7 +96,7 @@ class Position_Analysis(Analysis):
                     bin_resolution=bin_resolution,
                 ),
             )
-            self.project.add_stat(stat)
+            self.project.registry.add(record)
 
         return source.cache[cache_key]
 
@@ -130,7 +129,7 @@ class Position_Analysis(Analysis):
             density_2D = np.mean(density, axis=marginal_axis)
             source.cache[cache_key] = density_2D
 
-            stat = Stats(
+            record = Record(
                 PositionProperties(density=density_2D),
                 PositionMeta(
                     source=source.org_name,
@@ -141,7 +140,7 @@ class Position_Analysis(Analysis):
                     rot_axes=rot_axes,
                 ),
             )
-            self.project.add_stat(stat)
+            self.project.registry.add(record)
         return source.cache[cache_key]
 
     def density1D(
@@ -179,7 +178,7 @@ class Position_Analysis(Analysis):
             density_1D = np.mean(density2d, axis=marginal_axes[0])
             source.cache[cache_key] = density_1D
 
-            stat = Stats(
+            record = Record(
                 PositionProperties(density=density_1D),
                 PositionMeta(
                     source=source.org_name,
@@ -190,5 +189,5 @@ class Position_Analysis(Analysis):
                     rot_axes=rot_axes,
                 ),
             )
-            self.project.add_stat(stat)
+            self.project.registry.add(record)
         return source.cache[cache_key]

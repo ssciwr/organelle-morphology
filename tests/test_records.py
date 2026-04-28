@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 import numpy as np
 from pathlib import Path
 import yaml
@@ -9,12 +10,12 @@ from organelle_morphology.records import (
 import pytest
 
 
-@dataclass
+@dataclass(eq=False)
 class MockProp(PropertyBlock):
     mock_str: str
     mock_int: int
     mock_path: Path
-    mock_np: np.ndarray
+    mock_np: Optional[np.ndarray | Path]
 
 
 yaml.add_constructor(
@@ -26,7 +27,19 @@ yaml.add_constructor(
 
 @pytest.fixture
 def mock_prop():
-    return MockProp("a", 5, Path("../test_file.txt"), [1, 2.2, 3])
+    return MockProp(
+        mock_str="a", mock_int=5, mock_path=Path("../test_file.txt"), mock_np=None
+    )
+
+
+@pytest.fixture
+def mock_prop_np():
+    return MockProp(
+        mock_str="a",
+        mock_int=5,
+        mock_path=Path("../test_file.txt"),
+        mock_np=np.array([1.1, 5, 2, 99.5]),
+    )
 
 
 def test_stat_to_dict(mock_prop):
@@ -44,6 +57,18 @@ def test_stat_save_load(mock_prop, tmp_path):
     loaded_stat = Record.from_yaml(file)
     assert loaded_stat.data == stat.data
     assert loaded_stat.meta == stat.meta
+
+
+def test_stat_save_load_np(mock_prop, mock_prop_np, tmp_path):
+    rec = Record(data=mock_prop_np, meta=mock_prop)
+    file = tmp_path / "stat.yaml"
+    assert not file.exists()
+    rec.save_yaml(file)
+    assert file.exists()
+
+    loaded_rec = Record.from_yaml(file)
+    assert loaded_rec.data == rec.data
+    assert loaded_rec.meta == rec.meta
 
 
 def test_registry_save_load_real_records(project_with_sources, tmp_path):

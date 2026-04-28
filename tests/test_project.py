@@ -394,9 +394,9 @@ def test_clear_caches(project_with_sources, mocker):
 
 
 def test_stat_stats(project, mocker):
-    assert project.get_stat_stats() == {}
+    assert project.get_record_stats() == {}
 
     stat = Record(mocker.sentinel, mocker.sentinel)
     project.registry.add(stat)
 
-    assert project.get_stat_stats()["_Sentinel"] == 1
+    assert project.get_record_stats()["_Sentinel"] == 1

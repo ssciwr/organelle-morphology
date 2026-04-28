@@ -79,8 +79,8 @@ def test_save_stats(project_with_sources):
     p = project_with_sources
     posan = Position_Analysis(project=p)
 
-    res = posan.density1D(p.sources["synth_data"], (2, 3, 4), 0, 0.0, (0, 1))
-    posan.save_stats()
+    posan.density1D(p.sources["synth_data"], (2, 3, 4), 0, 0.0, (0, 1))
+    posan.save_records()
     out_dir = p.path / "analysis" / "PositionProperties"
     assert out_dir.exists()
     assert len(list(out_dir.glob("*.npz"))) == 3
