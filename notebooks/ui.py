@@ -17,7 +17,7 @@ with app.setup:
     import pandas as pd
     import traceback
     from organelle_morphology.analysis import Misc_Analysis
-    from organelle_morphology.statistics import Properties
+    from organelle_morphology.records import PropertyBlock
     import matplotlib.pyplot as plt
 
 
@@ -740,7 +740,7 @@ def profile_execute_cell(
 
 @app.cell
 def prop_selector_cell(project):
-    stats = Misc_Analysis(project, Properties)
+    stats = Misc_Analysis(project, PropertyBlock)
     available_properties = (
         stats.get_mesh_properties()
         + stats.get_skeleton_properties()
@@ -767,7 +767,7 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
 
     if calc_stats_btn.value:
         try:
-            display_stats = Misc_Analysis(project, Properties)
+            display_stats = Misc_Analysis(project, PropertyBlock)
 
             # Get the list of internal keys from the checkbox dictionary
             selected_properties = [

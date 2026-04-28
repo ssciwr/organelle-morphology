@@ -2,30 +2,30 @@ import numpy as np
 import pandas as pd
 from organelle_morphology.profile_calculations import (
     ProfileCalculator,
-    ProfileProperties,
-    ProfileMeta,
+    ProfileData,
+    ProfileMetadata,
 )
-from organelle_morphology.statistics import Stats
+from organelle_morphology.records import Record
 
 
 def test_calculate_profile_lengths(project_with_sources):
     """Regression-Test the 2D profile length calculation pipeline."""
     calculator = ProfileCalculator(project_with_sources)
 
-    # Calculation returns None and updates project_with_sources.stats
+    # Calculation returns None and updates project_with_sources.records
     calculator.calculate_profile_lengths(ids="mito_0007", axis="z", num_slices=3)
 
     # Retrieve the stat from the central project stats object
-    for s in project_with_sources.stats:
-        if isinstance(s.data, ProfileProperties) and s.meta.organelle_id == "mito_0007":
+    for s in project_with_sources.records:
+        if isinstance(s.data, ProfileData) and s.meta.organelle_id == "mito_0007":
             profile_stat = s
             break
     else:
         raise ValueError("Profile stat for mito_0007 not found in project stats")
 
-    assert isinstance(profile_stat, Stats)
-    assert isinstance(profile_stat.data, ProfileProperties)
-    assert isinstance(profile_stat.meta, ProfileMeta)
+    assert isinstance(profile_stat, Record)
+    assert isinstance(profile_stat.data, ProfileData)
+    assert isinstance(profile_stat.meta, ProfileMetadata)
 
     assert profile_stat.meta.organelle_id == "mito_0007"
     assert profile_stat.meta.axis_used == "z"
@@ -64,8 +64,8 @@ def test_calculate_random_profiles(project_with_sources):
     calculator.calculate_random_profiles(ids="mito_0007", num_planes=5, seed=42)
 
     # Retrieve from the central registry
-    for s in project_with_sources.stats:
-        if isinstance(s.data, ProfileProperties) and s.meta.organelle_id == "mito_0007":
+    for s in project_with_sources.records:
+        if isinstance(s.data, ProfileData) and s.meta.organelle_id == "mito_0007":
             profile_stat = s
             break
     else:
@@ -86,8 +86,8 @@ def test_calculate_skeleton_profiles(project_with_sources):
     calculator.calculate_skeleton_profiles(ids="mito_0007")
 
     # Retrieve from the central stats object
-    for s in project_with_sources.stats:
-        if isinstance(s.data, ProfileProperties) and s.meta.organelle_id == "mito_0007":
+    for s in project_with_sources.records:
+        if isinstance(s.data, ProfileData) and s.meta.organelle_id == "mito_0007":
             profile_stat = s
             break
     else:

@@ -1,13 +1,13 @@
 import pandas as pd
 
 from organelle_morphology.analysis import Misc_Analysis
-from organelle_morphology.statistics import Properties, Stats
-from organelle_morphology.organelle import McsProperties, McsMeta
+from organelle_morphology.records import PropertyBlock, Record
+from organelle_morphology.organelle import McsData, McsMetadata
 
 
 def test_statistics_defaults(project_with_sources):
     """Verify that we get a basic dataframe with default properties."""
-    stats = Misc_Analysis(project_with_sources, Properties)
+    stats = Misc_Analysis(project_with_sources, PropertyBlock)
     df = stats.get_dataframe()
     assert isinstance(df, pd.DataFrame)
     assert not df.empty
@@ -20,7 +20,7 @@ def test_statistics_defaults(project_with_sources):
 
 def test_statistics_alphabetical_sorting(project_with_sources):
     """Check that columns are sorted and ID filtering works."""
-    stats = Misc_Analysis(project_with_sources, Properties)
+    stats = Misc_Analysis(project_with_sources, PropertyBlock)
     props = ["water_tight", "area", "volume"]  # non-alphabetical order
     df = stats.get_dataframe(ids="mito_0001", properties=props)
     assert df.shape[0] == 1
@@ -36,7 +36,7 @@ def test_statistics_alphabetical_sorting(project_with_sources):
 
 def test_statistics_summary_dataframe(project_with_sources):
     """Test the statistical summary logic, including boolean handling."""
-    stats = Misc_Analysis(project_with_sources, Properties)
+    stats = Misc_Analysis(project_with_sources, PropertyBlock)
     # water_tight is boolean
     df_data = stats.get_dataframe(properties=["volume", "water_tight", "sphericity"])
     summary_df = stats.get_summary_dataframe(df_data)
@@ -54,9 +54,9 @@ def test_statistics_summary_dataframe(project_with_sources):
 def test_statistics_mcs_aggregation(project_with_sources):
     """Verify that MCS data is correctly pulled from the mcs_dict."""
 
-    # Create real dataclasses to pass the isinstance(stat.data, Properties) check natively
-    meta = McsMeta(mcs_label="0-0.01", organelle_id="mito_0001", max_dist=0.01)
-    data = McsProperties(
+    # Create real dataclasses to pass the isinstance(stat.data, PropertyBlock) check natively
+    meta = McsMetadata(mcs_label="0-0.01", organelle_id="mito_0001", max_dist=0.01)
+    data = McsData(
         n_contacts=1,
         total_area=150.5,
         mean_area=150.5,
@@ -68,12 +68,12 @@ def test_statistics_mcs_aggregation(project_with_sources):
         area_per_area=0.1,
         area_per_volume=0.1,
     )
-    stat = Stats(data=data, meta=meta)
+    stat = Record(data=data, meta=meta)
 
     # Inject the stat into the project BEFORE initializing Misc_Analysis so own_stats picks it up
-    project_with_sources.add_stat(stat)
+    project_with_sources.registry.add(stat)
 
-    stats = Misc_Analysis(project_with_sources, Properties)
+    stats = Misc_Analysis(project_with_sources, PropertyBlock)
 
     props = ["total_area", "mean_dist", "volume"]  # Request contact keys
     df = stats.get_dataframe(ids="mito_0001", properties=props)
@@ -93,7 +93,7 @@ def test_statistics_integration(project_with_sources):
     project_with_sources.search_mcs(10)  # calc and add contact sites
     _ = project_with_sources.geometric_properties  # calc and add voxel based properties
 
-    stats = Misc_Analysis(project_with_sources, Properties)
+    stats = Misc_Analysis(project_with_sources, PropertyBlock)
 
     # Combine all properties since get_properties() no longer exists
     all_props = (

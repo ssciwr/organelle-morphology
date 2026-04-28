@@ -12,7 +12,7 @@ from trimesh import Trimesh
 import yaml
 
 import organelle_morphology
-from organelle_morphology.statistics import Properties, Stats
+from organelle_morphology.records import PropertyBlock, Record
 from organelle_morphology.util import (
     bounding_box_delayed,
     color_delayed_trimesh_vertices,
@@ -31,14 +31,14 @@ def organelle_types() -> list[str]:
 
 
 @dataclass
-class OrganelleMeta(Properties):
+class OrganelleMetadata(PropertyBlock):
     source: Path
     label: int
     id: str
 
 
 @dataclass
-class McsMeta(Properties):
+class McsMetadata(PropertyBlock):
     mcs_label: str
     max_dist: float
     min_dist: float = 0.0
@@ -47,9 +47,9 @@ class McsMeta(Properties):
     organelle_source: Optional[Path] = None
     organelle_label: Optional[int] = None
     organelle_id: Optional[str] = None
-    organelle_meta: InitVar[Optional[OrganelleMeta]] = None
+    organelle_meta: InitVar[Optional[OrganelleMetadata]] = None
 
-    def __post_init__(self, organelle_meta: Optional[OrganelleMeta]):
+    def __post_init__(self, organelle_meta: Optional[OrganelleMetadata]):
         if organelle_meta is not None:
             for f in fields(organelle_meta):
                 setattr(
@@ -60,7 +60,7 @@ class McsMeta(Properties):
 
 
 @dataclass
-class MeshProperties(Properties):
+class MeshData(PropertyBlock):
     volume: float
     area: float
     centroid: list[float]
@@ -71,7 +71,7 @@ class MeshProperties(Properties):
 
 
 @dataclass
-class McsProperties(Properties):
+class McsData(PropertyBlock):
     n_contacts: int
     total_area: float
     mean_area: float
@@ -85,15 +85,15 @@ class McsProperties(Properties):
 
 
 yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsProperties",
-    lambda loader, node: Properties.yaml_constructor(loader, node, McsProperties),
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsData",
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsData),
     Loader=yaml.SafeLoader,
 )
 
 
 yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMeta",
-    lambda loader, node: Properties.yaml_constructor(loader, node, McsMeta),
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMetadata",
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsMetadata),
     Loader=yaml.SafeLoader,
 )
 
@@ -143,8 +143,8 @@ class Organelle:
         return f"{self.__class__.__name__}({self._organelle_id})"
 
     @property
-    def metadata(self) -> OrganelleMeta:
-        return OrganelleMeta(
+    def metadata(self) -> OrganelleMetadata:
+        return OrganelleMetadata(
             source=self.source.xml_path, label=self.label, id=self._organelle_id
         )
 
@@ -338,7 +338,7 @@ class Organelle:
         return self.source.basic_geometric_properties[self.id]
 
     @property
-    def mesh_properties(self) -> MeshProperties:
+    def mesh_properties(self) -> MeshData:
         """Get properties of the mesh for this organelle
         Causes a compute call, if you need this for many organelles,
         use `get_mesh_properties_delayed`
@@ -440,15 +440,15 @@ class Organelle:
         mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
         mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
 
-        mcs_props = McsProperties(**numpy_to_python(mcs_dict))
-        mcs_meta = McsMeta(
+        mcs_props = McsData(**numpy_to_python(mcs_dict))
+        mcs_meta = McsMetadata(
             organelle_meta=self.metadata,
             mcs_label=mcs_label,
             min_dist=entries["meta"]["min_distance"],
             max_dist=entries["meta"]["max_distance"],
         )
-        stat = Stats(mcs_props, mcs_meta)
-        self.project.add_stat(stat)
+        stat = Record(mcs_props, mcs_meta)
+        self.project.registry.add(stat)
 
     @property
     def mcs(self) -> dict:
@@ -487,7 +487,7 @@ organelle_registry["er"] = EndoplasmicReticulum
 
 
 @delayed
-def get_mesh_properties_delayed(mesh: Trimesh) -> MeshProperties:
+def get_mesh_properties_delayed(mesh: Trimesh) -> MeshData:
     """Extract mesh properties from a trimesh object and return as dict.
 
     This function is designed to be called on delayed mesh objects to
@@ -501,7 +501,7 @@ def get_mesh_properties_delayed(mesh: Trimesh) -> MeshProperties:
         dict: Dictionary containing mesh properties that can be used to
             construct a mesh_properties dataclass
     """
-    return MeshProperties(
+    return MeshData(
         volume=(mesh.volume).item(),
         area=(mesh.area).item(),
         centroid=(mesh.centroid).tolist(),

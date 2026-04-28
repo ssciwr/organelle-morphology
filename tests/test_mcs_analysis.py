@@ -9,7 +9,7 @@ from organelle_morphology.mcs_analysis import (
     stats_contacts_a_b,
     stats_global,
 )
-from organelle_morphology.organelle import McsProperties
+from organelle_morphology.organelle import McsData
 
 
 def write_mcs_df_test_data(df):
@@ -51,7 +51,7 @@ def test_mcs(project_with_sources, rep):
         raise RuntimeError(f"Existing caches found!!\n{ps}")
     project_with_sources.search_mcs(10)
 
-    analysis = Mcs_Analysis(project_with_sources, McsProperties)
+    analysis = Mcs_Analysis(project_with_sources, McsData)
     props = analysis.get_mcs_properties()
     assert props.shape == (10, 10)
 

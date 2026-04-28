@@ -7,13 +7,14 @@ from typing import TYPE_CHECKING, List, Union
 import numpy as np
 import pandas as pd
 import trimesh
+import yaml
 from dask import delayed
 from dask.base import compute
 from scipy.spatial.distance import pdist
 from trimesh.intersections import mesh_plane
 
 from organelle_morphology.analysis import Analysis
-from organelle_morphology.statistics import Properties, Stats
+from organelle_morphology.records import PropertyBlock, Record
 
 if TYPE_CHECKING:
     from organelle_morphology.project import Project
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ProfileProperties(Properties):
+class ProfileData(PropertyBlock):
     """Physical measurements of the 2D profile."""
 
     perimeters: List[float]
@@ -34,7 +35,7 @@ class ProfileProperties(Properties):
 
 
 @dataclass
-class ProfileMeta(Properties):
+class ProfileMetadata(PropertyBlock):
     """Context for the profile calculation."""
 
     organelle_id: str
@@ -90,16 +91,14 @@ class ProfileCalculator(Analysis):
     """Calculates and analyzes 2D profile metrics for organelles."""
 
     def __init__(self, project: Project):
-        super().__init__(project, ProfileProperties)
+        super().__init__(project, ProfileData)
 
     def get_dataframe(self) -> pd.DataFrame:
         """
         Returns a DataFrame summarizing the profile statistics.
         Refreshes the local stats view to include results calculated after initialization.
         """
-        self.own_stats = [
-            s for s in self.project.stats if isinstance(s.data, self.property_type)
-        ]
+        self.own_stats = self.project.registry.get_by_type(self.property_type)
 
         data_rows = []
         for stat in self.own_stats:
@@ -179,7 +178,7 @@ class ProfileCalculator(Analysis):
             m_width = float(np.mean(widths)) if widths else np.nan
             m_ratio = float(np.mean(ratios)) if ratios else np.nan
 
-            data = ProfileProperties(
+            data = ProfileData(
                 perimeters=perimeters,
                 widths=widths,
                 ratios=ratios,
@@ -187,14 +186,14 @@ class ProfileCalculator(Analysis):
                 mean_width=m_width,
                 mean_ratio=m_ratio,
             )
-            meta = ProfileMeta(
+            meta = ProfileMetadata(
                 organelle_id=org_id,
                 axis_used=axis_record,
                 num_slices_attempted=attempted,
             )
 
             # Register the result in the central project registry
-            self.project.add_stat(Stats(data=data, meta=meta))
+            self.project.registry.add(Record(data=data, meta=meta))
 
     def calculate_profile_lengths(self, ids="er_*", axis="z", num_slices=20) -> None:
         """Calculates 2D profile metrics along a given fixed axis."""
@@ -300,3 +299,16 @@ class ProfileCalculator(Analysis):
             all_tasks[org.id] = org_tasks
 
         self._compute_and_format(all_tasks, "skeleton", num_slices=None)
+
+
+yaml.add_constructor(
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.profile_calculations.ProfileData",
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, ProfileData),
+    Loader=yaml.SafeLoader,
+)
+
+yaml.add_constructor(
+    "tag:yaml.org,2002:python/object/apply:organelle_morphology.profile_calculations.ProfileMetadata",
+    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, ProfileMetadata),
+    Loader=yaml.SafeLoader,
+)

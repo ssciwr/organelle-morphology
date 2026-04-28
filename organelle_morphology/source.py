@@ -21,7 +21,7 @@ import z5py
 from organelle_morphology.block_mesher import block_mesher
 
 
-from organelle_morphology.statistics import Properties
+from organelle_morphology.records import PropertyBlock
 from organelle_morphology.util import (
     Cache,
     color_delayed_trimesh_rgba,
@@ -52,7 +52,7 @@ class Data_level:
 
 
 @dataclass
-class SourceMeta(Properties):
+class SourceMetadata(PropertyBlock):
     data_root: Path
     downsampling: list[list[int]]
     levels: list[str]
@@ -218,7 +218,7 @@ class DataSource:
             if int(level[-1]) > int(coarse_level[-1]):
                 coarse_level = level
 
-        self._metadata = SourceMeta(
+        self._metadata = SourceMetadata(
             data_root=self.xml_path / filename,
             downsampling=self.timepoint.downsamplingFactors,
             levels=self.timepoint.levels,
@@ -229,7 +229,7 @@ class DataSource:
         )
 
     @property
-    def metadata(self) -> SourceMeta:
+    def metadata(self) -> SourceMetadata:
         """Return the metadata of this source. Loads the metadata, if necessary
 
         coarse_level: coarsest level available
@@ -610,7 +610,7 @@ class DataSource:
                 # stats = defaultdict(int)
                 # for batch in tasks.values():
                 #     stats[len(batch)] += 1
-                # self.logger.debug(f"Stats about saving mesh batches:\n{stats}")
+                # self.logger.debug(f"Record about saving mesh batches:\n{stats}")
                 #
                 # for to_save in tasks.values():
                 #     delayed_save = _write_mesh_cache_batch(to_save, cs)

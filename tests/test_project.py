@@ -1,7 +1,7 @@
 from trimesh import Trimesh
 from trimesh.path import Path3D
 from organelle_morphology.project import Project
-from organelle_morphology.statistics import Stats
+from organelle_morphology.records import Record
 from .synthetic_data_generator import generate_synthetic_dataset
 
 import pytest
@@ -396,7 +396,7 @@ def test_clear_caches(project_with_sources, mocker):
 def test_stat_stats(project, mocker):
     assert project.get_stat_stats() == {}
 
-    stat = Stats(mocker.sentinel, mocker.sentinel)
-    project.add_stat(stat)
+    stat = Record(mocker.sentinel, mocker.sentinel)
+    project.registry.add(stat)
 
     assert project.get_stat_stats()["_Sentinel"] == 1

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, List, Optional
 import numpy as np
 import pandas as pd
 
-from organelle_morphology.statistics import Properties
+from organelle_morphology.records import PropertyBlock
 
 if TYPE_CHECKING:
     from organelle_morphology.organelle import Organelle
@@ -16,10 +16,9 @@ if TYPE_CHECKING:
 class Analysis(ABC):
     """Analysis base class. Specific analysis workflows should subclass this."""
 
-    def __init__(self, project: Project, property_type: type[Properties]):
+    def __init__(self, project: Project, property_type: type[PropertyBlock]):
         self.project = project
         self.property_type = property_type
-        self.all_stats = self.project.stats
         self.update_project_stats()
 
         self.__post_init__()
@@ -29,9 +28,7 @@ class Analysis(ABC):
         pass
 
     def update_project_stats(self):
-        self.own_stats = [
-            s for s in self.all_stats if isinstance(s.data, self.property_type)
-        ]
+        self.own_stats = self.project.registry.get_by_type(self.property_type)
 
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:
