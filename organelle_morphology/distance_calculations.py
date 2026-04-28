@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_min_dist(args):
-    id_1, id_2, mesh_1, mesh_2 = args
+    id_1, id_2, mesh_1, mesh_2, max_dist = args
     mcs_calculator = MembraneContactSiteCalculator()
-    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2)
+    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2, max_dist)
     return (id_1, id_2), mcs_calculator.min_distance
 
 
@@ -36,7 +36,7 @@ def _check_overlap(box, bounding_boxes):
 
 @delayed
 def delayed_domain_min_dists(args):
-    local_meshes, local_ids = args
+    local_meshes, local_ids, max_dist = args
     tasks = []
 
     for i in range(len(local_meshes)):
@@ -46,12 +46,12 @@ def delayed_domain_min_dists(args):
             mesh_2 = local_meshes[j]
             id_2 = local_ids[j]
 
-            tasks.append(get_min_dist((id_1, id_2, mesh_1, mesh_2)))
+            tasks.append(get_min_dist((id_1, id_2, mesh_1, mesh_2, max_dist)))
     return tasks
 
 
 class MembraneContactSiteCalculator:
-    def search_mcs(self, id_1, id_2, mesh_1, mesh_2):
+    def search_mcs(self, id_1, id_2, mesh_1, mesh_2, max_dist=None):
         """
         first search the entire membrane surface that is facing the other organelle
         we do this by first performing a kd-tree search to find the nearest vertices.
@@ -100,11 +100,26 @@ class MembraneContactSiteCalculator:
             id_source = id_1
             id_target = id_2
 
+        self.id_source = id_source
+        self.id_target = id_target
+        self.mesh_source = mesh_source
+        self.mesh_target = mesh_target
+
         if watertight:
             distance, index_source = mesh_source.nearest.vertex(mesh_target.vertices)
         else:
             source_tree = KDTree(mesh_source.vertices)
             distance, index_source = source_tree.query(mesh_target.vertices, k=1)
+
+        # skip rest of calculation if min distance too big
+        if max_dist is not None and min(distance) > max_dist:
+            self.distances = np.array([])
+            self.index_source = np.array([])
+            self.index_target = np.array([])
+            self.normals_source = np.array([])
+            self.normals_target = np.array([])
+            self.dot_products = np.array([])
+            return
 
         self.distances = distance
         self.index_source: np.ndarray = index_source
@@ -148,11 +163,6 @@ class MembraneContactSiteCalculator:
             self._filter_distances(lambda i: self.dot_products[i] < 0)
         else:
             self._filter_distances(lambda i: self.dot_products[i] > 0)
-
-        self.id_source = id_source
-        self.id_target = id_target
-        self.mesh_source = mesh_source
-        self.mesh_target = mesh_target
 
     def analyze_mcs(self, mcs_label: str, max_distance: float, min_distance=0.0):
         """After searching the entire surface we now filter only the area we are interested in
@@ -368,7 +378,7 @@ def generate_distance_matrix(
                 empty_cubes += 1
                 continue
 
-            tasks.append((local_meshes_d, local_ids))
+            tasks.append((local_meshes_d, local_ids, max_dist))
 
         project.logger.debug(f"n empty cube: {empty_cubes}")
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
@@ -381,6 +391,7 @@ def generate_distance_matrix(
         for res in results:
             distance_df.loc[res[0]] = res[1]
             distance_df.loc[res[0][::-1]] = res[1]
+        distance_df.fillna(-1, inplace=True)
 
         cache["distance_matrix"] = distance_df
         cache["max_distance_computed"] = max_dist
@@ -527,7 +538,7 @@ def calc_mcs_delayed(
     min_dist,
 ):
     mcs_calculator = MembraneContactSiteCalculator()
-    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2)
+    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2, max_dist)
     mcs_calculator.analyze_mcs(mcs_label, max_distance=max_dist, min_distance=min_dist)
 
     mcs_source = mcs_calculator.mcs_source

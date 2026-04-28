@@ -11,7 +11,7 @@ import trimesh
 
 
 def test_distance_matrix(project_with_sources):
-    project_with_sources.max_distance = 100
+    project_with_sources.max_distance = 500
     df = generate_distance_matrix(project_with_sources)
     assert isinstance(df, DataFrame)
     assert df.shape == (19, 19)
@@ -22,11 +22,11 @@ def test_distance_matrix(project_with_sources):
 
 
 def test_distance_matrix_incomplete(project_with_sources):
-    project_with_sources.max_distance = 1
+    project_with_sources.max_distance = 10
     df = generate_distance_matrix(project_with_sources)
     assert isinstance(df, DataFrame)
     assert df.shape == (19, 19)
-    assert (df < 0).sum().sum() == 341
+    assert (df < 0).sum().sum() == 347
     for ind, row in df.iterrows():
         assert row.loc[df.index[3]] == df.loc[df.index[3], ind]
         assert row.pop(ind) == -1.0
@@ -53,9 +53,9 @@ def test_get_min_dist():
     mesh2 = trimesh.Trimesh(vertices=points + [0, 0, 2], faces=faces)
     mesh3 = trimesh.Trimesh(vertices=points_touching, faces=faces)
 
-    d1 = get_min_dist(("a", "b", mesh1, mesh2))
-    d2 = get_min_dist(("a", "b", mesh1, mesh1))
-    d3 = get_min_dist(("a", "b", mesh1, mesh3))
+    d1 = get_min_dist(("a", "b", mesh1, mesh2, None))
+    d2 = get_min_dist(("a", "b", mesh1, mesh1, None))
+    d3 = get_min_dist(("a", "b", mesh1, mesh3, None))
 
     assert all([r[0] == ("a", "b") for r in [d1, d2, d3]])
     assert d1[1] == 2.0

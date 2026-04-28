@@ -1,6 +1,6 @@
 from pathlib import Path
 from time import time
-from organelle_morphology import Project, merge_meshes
+from organelle_morphology import Project
 
 def main():
 
