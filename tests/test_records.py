@@ -71,7 +71,7 @@ def test_stat_save_load_np(mock_prop, mock_prop_np, tmp_path):
     assert loaded_rec.meta == rec.meta
 
 
-def test_registry_save_load_real_records(project_with_sources, tmp_path):
+def test_registry_save_load_real_records(project_with_sources):
     """Test bulk saving and loading using actual production records."""
     project = project_with_sources
 
@@ -83,16 +83,15 @@ def test_registry_save_load_real_records(project_with_sources, tmp_path):
     assert len(original_records) > 0, "Pipeline failed to generate records."
 
     # Save to the pytests temp path
-    file_path = tmp_path / "real_records.yaml"
-    project.registry.save_all_to_yaml(file_path)
-    assert file_path.exists()
+    project.registry.save_all_to_yaml()
+    assert (project.path / "analysis").exists()
 
     # Clear the registry
     project.registry.clear()
     assert len(project.registry.get_all()) == 0
 
     # Load the records back and check them
-    project.registry.load_all_from_yaml(file_path)
+    project.registry.load_all_from_yaml()
     loaded_records = project.registry.get_all()
     assert len(loaded_records) == len(original_records)
     for orig, loaded in zip(original_records, loaded_records):

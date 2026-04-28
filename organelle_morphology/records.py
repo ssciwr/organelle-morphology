@@ -6,6 +6,7 @@ from pathlib import Path, PosixPath, WindowsPath
 from typing import TypeVar
 from collections import defaultdict
 from typing import List, Type
+import uuid
 import numpy as np
 
 import logging
@@ -176,6 +177,8 @@ class Record:
             for field in data_fields:
                 obj = getattr(yaml_dict["data"], field.name)
                 if isinstance(obj, Path) and obj.suffix == ".npz":
+                    if not obj.exists():
+                        obj = filename.parent / obj.name
                     try:
                         data = np.load(obj)
                         restored_array = data["array"]
@@ -272,51 +275,30 @@ class RecordRegistry:
         self.logger.info(desc)
         return dict(stat_count)
 
-    def save_all_to_yaml(self, filepath: Path | str) -> None:
+    def save_all_to_yaml(self) -> None:
         """
-        Saves all records in the registry to a single YAML file.
+        Saves all records in the registry as YAML files.
         """
-        filepath = Path(filepath)
+        for rec in self._all_records:
+            dir: Path = self.project.path / "analysis" / rec.name
+            dir.mkdir(exist_ok=True, parents=True)
+            rec.save_yaml(dir / f"{uuid.uuid4()}.yaml")
 
-        # Ensure all PropertyBlock subclasses are registered with YAML
-        for record in self._all_records:
-            record.data.yaml_representor()
-            record.meta.yaml_representor()
+        self.logger.info(f"Saved {len(self._all_records)} records in project directory")
 
-        # Collect all records in their dict representations
-        to_save = [record.to_dict() for record in self._all_records]
-
-        with open(filepath, "w") as f:
-            yaml.safe_dump(to_save, f)
-
-        self.logger.info(f"Saved {len(self._all_records)} records to {filepath}")
-
-    def load_all_from_yaml(self, filepath: Path | str) -> None:
+    def load_all_from_yaml(self) -> None:
         """
         Loads records from a YAML file and adds them to the registry.
         """
 
-        filepath = Path(filepath)
-        if not filepath.exists():
-            raise FileNotFoundError(f"Record file not found: {filepath}")
+        files = list((self.project.path / "analysis").rglob("*.yaml"))
 
-        # Load the raw list of dictionaries from the YAML file
-        with open(filepath, "r") as f:
-            loaded_data = yaml.safe_load(f)
-
-        if not isinstance(loaded_data, list):
-            raise ValueError(f"Expected a list of records in {filepath}")
-
-        # Reconstruct Record objects and add them to the registry
+        logger.info(f"Found {len(files)} record files.")
         count = 0
-        for yaml_dict in loaded_data:
-            if not all(k in yaml_dict for k in ["data", "meta", "name"]):
-                self.logger.warning("Skipping invalid record entry found in file.")
-                continue
-
-            # Reconstructs with yaml_constructors
-            record = Record(data=yaml_dict["data"], meta=yaml_dict["meta"])
-            self.add(record)
-            count += 1
-
-        self.logger.info(f"Successfully loaded {count} records from {filepath}")
+        for file in files:
+            try:
+                self.add(Record.from_yaml(file))
+                count += 1
+            except ValueError as e:
+                logger.warning(e)
+        self.logger.info(f"Successfully loaded {count} records")
