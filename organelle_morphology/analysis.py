@@ -24,7 +24,6 @@ class Analysis(ABC):
     def __init__(self, project: Project, property_type: type[PropertyBlock]):
         self.project = project
         self.property_type = property_type
-        self.update_project_records()
 
         self.__post_init__()
 
@@ -32,11 +31,11 @@ class Analysis(ABC):
         """Run after initialization of base class, used for subclass specific init"""
         pass
 
-    def update_project_records(self):
-        self.own_stats = self.project.registry.get_by_type(self.property_type)
+    @property
+    def own_records(self):
+        return self.project.registry.get_by_type(self.property_type)
 
     def save_records(self):
-        self.update_project_records()
         for rec in self.project.records:
             dir: Path = self.project.path / "analysis" / rec.name
             dir.mkdir(exist_ok=True, parents=True)
@@ -89,7 +88,7 @@ class Mcs_Analysis(Analysis):
     """Methods to calculate mcs statistics"""
 
     def __post_init__(self):
-        self.mcs_labels = {s.meta.mcs_label for s in self.own_stats}
+        self.mcs_labels = {s.meta.mcs_label for s in self.own_records}
         self.set_filters()
 
     def set_filters(self, ids: str = "*", mcs_labels: Optional[list[str]] = None):
@@ -113,7 +112,7 @@ class Mcs_Analysis(Analysis):
 
         mcs_properties = {}
 
-        for stat in self.own_stats:
+        for stat in self.own_records:
             for label in self.mcs_labels:
                 if self.mcs_label_filter and (label not in self.mcs_label_filter):
                     continue
@@ -346,7 +345,7 @@ class Misc_Analysis(Analysis):
             return {}
 
         res = {}
-        for stat in self.own_stats:
+        for stat in self.own_records:
             if stat.meta.organelle_id == organelle.id:
                 mcs_label = stat.meta.mcs_label
                 # For each requested base property (e.g., "n_contacts")

@@ -98,10 +98,10 @@ class ProfileCalculator(Analysis):
         Returns a DataFrame summarizing the profile statistics.
         Refreshes the local stats view to include results calculated after initialization.
         """
-        self.own_stats = self.project.registry.get_by_type(self.property_type)
+        self.own_records = self.project.registry.get_by_type(self.property_type)
 
         data_rows = []
-        for stat in self.own_stats:
+        for stat in self.own_records:
             row = {
                 "ID": stat.meta.organelle_id,
                 "axis": stat.meta.axis_used,

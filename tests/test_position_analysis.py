@@ -1,6 +1,6 @@
+import pytest
 from organelle_morphology.position import Position_Analysis
 import organelle_morphology.position
-
 import numpy as np
 
 
@@ -18,6 +18,8 @@ def test_density3D_cached(project_with_sources, mocker):
     density = posan.density3D(p.sources["synth_data"], (2, 3, 4))
     mock_coarsen.assert_called_once()
     assert density.shape == (118, 80, 83)
+    assert density.meta.dimensionality == 3
+
     density_cached = posan.density3D(p.sources["synth_data"], (2, 3, 4))
     mock_coarsen.assert_called_once()
     np.testing.assert_array_almost_equal(density_cached, density)
@@ -44,6 +46,7 @@ def test_density2D(project_with_sources):
     assert res3.shape == (34, 66)
     assert res4.shape == (34, 79)
     assert res5.shape == (34, 89)
+    assert res0.meta.dimensionality == 2
 
     # import matplotlib.pyplot as plt
     # fig, axes = plt.subplots(2, 3, figsize=(12, 8))
@@ -66,6 +69,7 @@ def test_density1D(project_with_sources):
 
     np.testing.assert_array_almost_equal(res0, res1)
     np.testing.assert_array_almost_equal(res0, res2)
+    assert res0.meta.dimensionality == 1
 
     # import matplotlib.pyplot as plt
     # fig, axes = plt.subplots(2, 3, figsize=(12, 8))
@@ -85,3 +89,23 @@ def test_save_stats(project_with_sources):
     assert out_dir.exists()
     assert len(list(out_dir.glob("*.npz"))) == 3
     assert len(list(out_dir.glob("*.yaml"))) == 3
+
+
+def test_plot(project_with_sources):
+    p = project_with_sources
+    posan = Position_Analysis(project=p)
+
+    posan.density1D(p.sources["synth_data"], (2, 3, 4), 1, 0.0, (0, 1))
+
+    for rec in posan.own_records:
+        if rec.meta.dimensionality == 3:
+            with pytest.raises(NotImplementedError):
+                posan.plot_density(rec)
+        elif rec.meta.dimensionality == 2:
+            ax = posan.plot_density(rec)
+            assert ax.title._text == "2D Density Plot - mito"
+        elif rec.meta.dimensionality == 1:
+            ax = posan.plot_density(rec)
+            assert ax.title._text == "1D Density Plot - mito"
+
+    fig, axes = posan.plot_multiple_densities(posan.own_records, 3, 1)

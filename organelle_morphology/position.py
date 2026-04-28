@@ -56,8 +56,7 @@ class Position_Analysis(Analysis):
         Returns:
             Dataframe of the metadata of all collected position analysis calculations
         """
-        self.update_project_stats()
-        return pd.DataFrame([s.meta for s in self.own_stats])
+        return pd.DataFrame([s.meta for s in self.own_records])
 
     def density3D(
         self,
@@ -182,7 +181,7 @@ class Position_Analysis(Analysis):
                 PositionProperties(density=density_1D),
                 PositionMeta(
                     source=source.org_name,
-                    dimensionality=2,
+                    dimensionality=1,
                     bin_resolution=bin_resolution,
                     axis_1d=axis,
                     rot_angle=rot_angle,
@@ -191,3 +190,69 @@ class Position_Analysis(Analysis):
             )
             self.project.registry.add(record)
         return source.cache[cache_key]
+
+    def plot_density(self, record: Record, ax=None):
+        """Plot density from a Position_Analysis record.
+
+        Args:
+            record: Record containing PositionProperties and PositionMeta
+            ax: matplotlib axes object to plot on (optional, creates new figure if None)
+
+        Returns:
+            matplotlib axes object with the plot
+        """
+        if ax is None:
+            _, ax = plt.subplots()
+        else:
+            _ = ax.figure
+
+        density = record.data.density
+
+        if len(density.shape) == 3:
+            raise NotImplementedError("3D plotting not implemented yet")
+        elif len(density.shape) == 2:
+            ax.imshow(density)
+            ax.set_title(f"2D Density Plot - {record.meta.source}")
+            ax.axis("auto")
+            return ax
+        elif len(density.shape) == 1:
+            ax.plot(density)
+            ax.set_title(f"1D Density Plot - {record.meta.source}")
+            return ax
+        else:
+            raise ValueError(f"Unsupported density shape: {density.shape}")
+
+    def plot_multiple_densities(
+        self, records: list[Record], nrows: int = 1, ncols: int = 1
+    ):
+        """Create subplots for multiple density records.
+
+        Args:
+            records: List of Record objects to plot
+            nrows: Number of rows for subplots
+            ncols: Number of columns for subplots
+
+        Returns:
+            matplotlib figure and axes objects
+        """
+        if ncols * nrows < len(records):
+            logger.warning(
+                "Not enough axes for all records, "
+                f"plotting only {ncols * nrows} first records"
+            )
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows))
+
+        if nrows * ncols == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten()
+
+        for i, record in enumerate(records):
+            if i < len(axes):
+                try:
+                    self.plot_density(record, axes[i])
+                except NotImplementedError as e:
+                    logger.info(e)
+
+        return fig, axes
