@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.6"
+__generated_with = "0.19.8"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -19,6 +19,7 @@ with app.setup:
     from organelle_morphology.analysis import Misc_Analysis
     from organelle_morphology.records import PropertyBlock
     import matplotlib.pyplot as plt
+    from organelle_morphology.position import Position_Analysis
 
 
 @app.cell
@@ -151,6 +152,19 @@ def _(project, run_add_source, sources):
         clipping = clipping if cl_switch.value else None
         project.clipping = clipping
         project.compression_level = level_ui.value
+        project.simplify = simplify_ui.value
+
+    def _get_simplify():
+        return project.simplify
+
+    simplify_ui = mo.ui.slider(
+        start=0.0,
+        stop=1.0,
+        step=0.02,
+        value=_get_simplify(),
+        label="Mesh simplification [%]",
+        show_value=True,
+    )
 
     change_settings_button = mo.ui.button(
         label="Update project settings", on_click=_update_clip_level
@@ -158,10 +172,11 @@ def _(project, run_add_source, sources):
 
     mo.vstack(
         [
-            mo.md("<h3>Change compression and clipping</h3>"),
+            mo.md("<h3>Change compression, simplification and clipping</h3>"),
             cl_switch,
             cl_d,
             level_ui,
+            simplify_ui,
             change_settings_button,
         ]
     )
@@ -172,7 +187,9 @@ def _(project, run_add_source, sources):
 def _(change_settings_button, project):
     change_settings_button
     mo.md(
-        f"<h3>Current settings</h3>Compression level: <b>{project.compression_level}</b><br>Clipping: <b>{project.clipping}</b>"
+        f"<h3>Current settings</h3>Compression level: <b>{project.compression_level}</b>"
+        f"<br>Clipping: <b>{project.clipping}</b>"
+        f"<br>Mesh simplification: <b>{project.simplify}</b>"
     )
     return
 
@@ -679,7 +696,6 @@ def profile_calc_ui_cell(sources):
     )
 
     profile_calc_ui_layout  # display the layout
-
     return (
         fixed_axis_dict,
         profile_ids_ui,
@@ -794,8 +810,8 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                 summary_formats = {}
                 for col in df_summary.columns:
                     if col in bool_cols:
-                        summary_formats[col] = (
-                            lambda x: f"{x * 100:.1f}%" if pd.notnull(x) else "-"
+                        summary_formats[col] = lambda x: (
+                            f"{x * 100:.1f}%" if pd.notnull(x) else "-"
                         )
                     elif col in float_cols:
                         summary_formats[col] = "{:.3f}".format
@@ -944,6 +960,128 @@ def plot_display_cell(
 @app.cell
 def _(sources):
     mo.stop(len(sources) < 1, "Add a source first!")
+    return
+
+
+@app.cell
+def _(project, sources):
+    pa = Position_Analysis(project)
+
+    pa_source_ui = mo.ui.dropdown(
+        options=[s.org_name for s in sources],
+        label="Organelle types",
+    )
+    res_hint = f"(Project resolution: {project.resolution})"
+    pa_resolution_ui = mo.md(
+        "Binning resolution [um] " + res_hint + ": <br>{x} {y} {z}"
+    ).batch(
+        x=mo.ui.number(start=0.0, stop=1.0, value=0.1),
+        y=mo.ui.number(start=0.0, stop=1.0, value=0.1),
+        z=mo.ui.number(start=0.0, stop=1.0, value=0.1),
+    )
+    pa_marginal_axis_ui = mo.ui.dropdown(
+        options=["x", "y", "z"],
+        value="z",
+        label="2D axis to average over",
+        allow_select_none=False,
+    )
+    pa_axis1d_ui = mo.ui.dropdown(
+        options=["x", "y", "z"],
+        value="x",
+        label="1D axis to measure along",
+        allow_select_none=False,
+    )
+    pa_rot_angle_ui = mo.ui.number(
+        start=-360, stop=360, value=0.0, label="Rotation angle of 3D volume [deg]"
+    )
+    pa_rot_axis_ui = mo.ui.dropdown(
+        options=["x", "y", "z"],
+        value="x",
+        label="Rotation Axis",
+        allow_select_none=False,
+    )
+    pa_run_button = mo.ui.run_button(label="Run position analysis")
+
+    pa_dim_tab_ui = mo.ui.tabs(
+        label="Dimensionality",
+        tabs={
+            "2D": pa_marginal_axis_ui,
+            "1D": pa_axis1d_ui,
+        },
+        value="2D",
+    )
+    mo.vstack(
+        [
+            mo.md("## Position Analysis"),
+            pa_source_ui,
+            pa_resolution_ui,
+            pa_dim_tab_ui,
+            mo.hstack(
+                [
+                    pa_rot_angle_ui,
+                    pa_rot_axis_ui,
+                ],
+                justify="start",
+            ),
+            pa_run_button,
+        ]
+    )
+    return (
+        pa,
+        pa_dim_tab_ui,
+        pa_marginal_axis_ui,
+        pa_resolution_ui,
+        pa_rot_angle_ui,
+        pa_rot_axis_ui,
+        pa_run_button,
+        pa_source_ui,
+    )
+
+
+@app.cell
+def _(pa):
+    pa.get_dataframe()
+    return
+
+
+@app.cell
+def _(
+    pa,
+    pa_dim_tab_ui,
+    pa_marginal_axis_ui,
+    pa_resolution_ui,
+    pa_rot_angle_ui,
+    pa_rot_axis_ui,
+    pa_run_button,
+    pa_source_ui,
+    sources,
+):
+    mo.stop(not pa_run_button.value, "Output of position analysis run")
+
+    pa_source = [s for s in sources if s.org_name == pa_source_ui.value][0]
+    pa_bin_res = (
+        pa_resolution_ui["x"].value,
+        pa_resolution_ui["y"].value,
+        pa_resolution_ui["z"].value,
+    )
+
+    if pa_dim_tab_ui.value == "2D":
+        pa_marginal_axis = {"x": 0, "y": 1, "z": 2}[pa_marginal_axis_ui.value]
+        pa_rot_axis = {"x": 0, "y": 1, "z": 2}[pa_rot_axis_ui.value]
+        print("axis", pa_rot_axis)
+        pa.density2D(
+            source=pa_source,
+            bin_resolution=pa_bin_res,
+            marginal_axis=pa_marginal_axis,
+            rot_angle=pa_rot_angle_ui.value,
+            rot_axis=pa_rot_axis,
+        )
+    return
+
+
+@app.cell
+def _(pa_dim_tab_ui):
+    pa_dim_tab_ui.value
     return
 
 

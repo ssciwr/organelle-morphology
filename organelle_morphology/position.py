@@ -22,24 +22,13 @@ class PositionMeta(PropertyBlock):
     marginal_axis_2d: Optional[int] = None
     axis_1d: Optional[int] = None
     rot_angle: Optional[float] = None
-    rot_axes: Optional[tuple[int, int]] = None
+    rot_axis: Optional[int] = None
+    axes_labels: Optional[list[str]] = None
 
 
 @dataclass
 class PositionProperties(PropertyBlock):
     density: np.ndarray
-
-    def get_plot(self):
-        if len(self.density.shape) == 3:
-            raise NotImplementedError()
-        elif len(self.density.shape) == 2:
-            return plt.imshow(self.density)
-        elif len(self.density.shape) == 1:
-            return plt.plot(self.density)
-
-    def plot(self):
-        self.get_plot()
-        plt.show()
 
 
 class Position_Analysis(Analysis):
@@ -105,7 +94,7 @@ class Position_Analysis(Analysis):
         bin_resolution: tuple[float, float, float],
         marginal_axis: int = 0,
         rot_angle: float = 0.0,
-        rot_axes: tuple[int, int] = (0, 1),
+        rot_axis: int = 2,
     ) -> np.ndarray:
         """Calculate the density of organelles in 2d.
 
@@ -113,20 +102,31 @@ class Position_Analysis(Analysis):
             source: The source containing the organelle of interest
             bin_resolution: binning resolution in micrometer
             marginal_axis: axis which will be averaged over.
-            rot_axes: Two axes defining a plane in which the input image can
-                be rotated.
+            rot_axis: Axes around which the 3d volume can be rotated
             rot_angle: Rotation angle to rotate the input image.
         """
 
         if marginal_axis not in [0, 1, 2]:
             raise ValueError("Marginal axis must be between 0 and 2")
         res = bin_resolution
-        cache_key = f"density2d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_{marginal_axis}_{rot_angle:.2f}_{rot_axes[0]}-{rot_axes[1]}"
+        cache_key = (
+            f"density2d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_"
+            f"{marginal_axis}_{rot_angle:.2f}_{rot_axis}"
+        )
         if cache_key not in source.cache:
             density = self.density3D(source, bin_resolution)
+            rot_axes = [0, 1, 2]
+            rot_axes.remove(rot_axis)
             density = rotate(density, rot_angle, rot_axes, reshape=True)
             density_2D = np.mean(density, axis=marginal_axis)
             source.cache[cache_key] = density_2D
+
+            axes_labels = None
+            if rot_angle == 0:
+                axes_labels = [0, 1, 2]
+                axes_labels.remove(marginal_axis)
+                axes_names = ["x", "y", "z"]
+                axes_labels = [axes_names[i] for i in axes_labels]
 
             record = Record(
                 PositionProperties(density=density_2D),
@@ -136,7 +136,8 @@ class Position_Analysis(Analysis):
                     bin_resolution=bin_resolution,
                     marginal_axis_2d=marginal_axis,
                     rot_angle=rot_angle,
-                    rot_axes=rot_axes,
+                    rot_axis=rot_axis,
+                    axes_labels=axes_labels,
                 ),
             )
             self.project.registry.add(record)
@@ -148,7 +149,7 @@ class Position_Analysis(Analysis):
         bin_resolution: tuple[float, float, float],
         axis: int = 0,
         rot_angle: float = 0.0,
-        rot_axes: tuple[int, int] = (0, 1),
+        rot_axis: int = 2,
     ):
         """Calculate the density of organelles along an axis.
 
@@ -157,13 +158,12 @@ class Position_Analysis(Analysis):
             bin_resolution: binning resolution in micrometers
             axis: axis along which the density will be calculated
             rot_angle: Rotation angle to rotate the input image.
-            rot_axes: Two axes defining a plane in which the input image can
-                be rotated.
+            rot_axis: Axes around which the 3d volume can be rotated
         """
         if axis not in [0, 1, 2]:
             raise ValueError("Axis must be between 0 and 2")
         res = bin_resolution
-        cache_key = f"density1d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_{axis}_{rot_angle:.2f}_{rot_axes[0]}-{rot_axes[1]}"
+        cache_key = f"density1d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_{axis}_{rot_angle:.2f}_{rot_axis}"
         if cache_key not in source.cache:
             marginal_axes = [0, 1, 2]
             marginal_axes.remove(axis)
@@ -172,10 +172,15 @@ class Position_Analysis(Analysis):
                 bin_resolution=bin_resolution,
                 marginal_axis=marginal_axes[1],
                 rot_angle=rot_angle,
-                rot_axes=rot_axes,
+                rot_axis=rot_axis,
             )
             density_1D = np.mean(density2d, axis=marginal_axes[0])
             source.cache[cache_key] = density_1D
+
+            axes_labels = None
+            if rot_angle == 0:
+                axes_names = ["x", "y", "z"]
+                axes_labels = [axes_names[axis]]
 
             record = Record(
                 PositionProperties(density=density_1D),
@@ -185,7 +190,8 @@ class Position_Analysis(Analysis):
                     bin_resolution=bin_resolution,
                     axis_1d=axis,
                     rot_angle=rot_angle,
-                    rot_axes=rot_axes,
+                    rot_axis=rot_axis,
+                    axes_labels=axes_labels,
                 ),
             )
             self.project.registry.add(record)
@@ -214,16 +220,28 @@ class Position_Analysis(Analysis):
             ax.imshow(density)
             ax.set_title(f"2D Density Plot - {record.meta.source}")
             ax.axis("auto")
+            if (labels := record.meta.axes_labels) is not None:
+                ax.set_xlabel(labels[1])
+            if (labels := record.meta.axes_labels) is not None:
+                ax.set_ylabel(labels[0])
             return ax
         elif len(density.shape) == 1:
             ax.plot(density)
             ax.set_title(f"1D Density Plot - {record.meta.source}")
+            if (labels := record.meta.axes_labels) is not None:
+                ax.set_xlabel(labels[0])
+            ax.set_ylabel("Mean density")
             return ax
         else:
             raise ValueError(f"Unsupported density shape: {density.shape}")
 
     def plot_multiple_densities(
-        self, records: list[Record], nrows: int = 1, ncols: int = 1
+        self,
+        records: list[Record],
+        nrows: int = 1,
+        ncols: int = 1,
+        sharex=True,
+        sharey=False,
     ):
         """Create subplots for multiple density records.
 
@@ -241,7 +259,13 @@ class Position_Analysis(Analysis):
                 f"plotting only {ncols * nrows} first records"
             )
 
-        fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows))
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(4 * ncols, 3 * nrows),
+            sharex=sharex,
+            sharey=sharey,
+        )
 
         if nrows * ncols == 1:
             axes = [axes]
@@ -255,4 +279,5 @@ class Position_Analysis(Analysis):
                 except NotImplementedError as e:
                     logger.info(e)
 
+        fig.tight_layout()
         return fig, axes

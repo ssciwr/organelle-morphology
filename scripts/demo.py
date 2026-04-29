@@ -20,7 +20,6 @@ from dask.base import compute
 from dask.distributed import LocalCluster, Client
 import organelle_morphology as om
 from organelle_morphology.util import color_delayed_trimesh_rgba, show
-from organelle_morphology.statistics import Stats
 from organelle_morphology.position import Position_Analysis
 
 viridis = mpl.colormaps.get("viridis")

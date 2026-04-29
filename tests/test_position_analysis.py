@@ -63,9 +63,9 @@ def test_density1D(project_with_sources):
     p = project_with_sources
     posan = Position_Analysis(project=p)
 
-    res0 = posan.density1D(p.sources["synth_data"], (2, 3, 4), 0, 0.0, (0, 1))
-    res1 = posan.density1D(p.sources["synth_data"], (2, 3, 4), 1, 90, (0, 1))
-    res2 = posan.density1D(p.sources["synth_data"], (2, 3, 4), 2, 90, (0, 2))
+    res0 = posan.density1D(p.sources["synth_data"], (2, 3, 4), 0, 0.0, rot_axis=2)
+    res1 = posan.density1D(p.sources["synth_data"], (2, 3, 4), 1, 90, rot_axis=2)
+    res2 = posan.density1D(p.sources["synth_data"], (2, 3, 4), 2, 90, rot_axis=1)
 
     np.testing.assert_array_almost_equal(res0, res1)
     np.testing.assert_array_almost_equal(res0, res2)
@@ -83,7 +83,7 @@ def test_save_stats(project_with_sources):
     p = project_with_sources
     posan = Position_Analysis(project=p)
 
-    posan.density1D(p.sources["synth_data"], (2, 3, 4), 0, 0.0, (0, 1))
+    posan.density1D(p.sources["synth_data"], (2, 3, 4), 0, 0.0, 2)
     posan.save_records()
     out_dir = p.path / "analysis" / "PositionProperties"
     assert out_dir.exists()
@@ -95,7 +95,7 @@ def test_plot(project_with_sources):
     p = project_with_sources
     posan = Position_Analysis(project=p)
 
-    posan.density1D(p.sources["synth_data"], (2, 3, 4), 1, 0.0, (0, 1))
+    posan.density1D(p.sources["synth_data"], (2, 3, 4), 1, 0.0, 2)
 
     for rec in posan.own_records:
         if rec.meta.dimensionality == 3:
@@ -109,3 +109,7 @@ def test_plot(project_with_sources):
             assert ax.title._text == "1D Density Plot - mito"
 
     fig, axes = posan.plot_multiple_densities(posan.own_records, 3, 1)
+
+    import matplotlib.pyplot as plt
+
+    plt.show()

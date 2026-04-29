@@ -444,7 +444,7 @@ class DataSource:
         if self._cache is None:
             cs = self.project.cache_settings
             cs["source"] = self.xml_path.stem
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             self._cache = cache
         return self._cache
@@ -508,14 +508,14 @@ class DataSource:
         @delayed(pure=False)
         def _write_frag_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             for key, value in key_values:
                 cache[key] = value
 
         @delayed(pure=True)
         def _get_fragment_cache(key, cs):
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             return cache[key]
 
@@ -578,20 +578,20 @@ class DataSource:
         @delayed(pure=False)
         def _write_mesh_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             for key, value in key_values:
                 cache[key] = value
 
         def _write_mesh_cache(key_value, cs):
             """Write multiple meshes to cache in a single operation"""
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             cache[key_value[0]] = compute(key_value[1])[0]
 
         @delayed(pure=True)
         def _get_mesh_cache(key, cs):
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             return cache[key]
 
@@ -842,7 +842,7 @@ class DataSource:
         @delayed
         def simplify_mesh(mesh, factor=0.1):
             """Simplify a trimesh object"""
-            mesh = mesh.simplify_quadric_decimation(factor, aggression=1)
+            mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
             return mesh
 
         # get some statistics
@@ -858,6 +858,8 @@ class DataSource:
         # Cleanup: Merge meshes crossing chunks
         meshes = {}
         duplicate_ids = all_ids[np.nonzero(id_amounts > 1)]
+        if simplify is None:
+            simplify = self.project.simplify
         for ind in duplicate_ids:
             chunk_idxs = ids_to_chunks[ind]
             loc_meshes = [meshes_chunked[idx][ind] for idx in chunk_idxs]

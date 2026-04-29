@@ -78,6 +78,7 @@ class Project:
 
         self._project_path = Path(project_path)
         self.clear_memory_cache()
+        self._simplify = 0.5
 
         self.path.mkdir(exist_ok=True)
 
@@ -110,6 +111,7 @@ class Project:
             "project_name": lambda: self.path.name,
             "clipping": lambda: str(self.clipping).replace("\n", ""),
             "level": lambda: str(self.compression_level),
+            "simplify": lambda: str(self.simplify),
             "disk": True,
             "cache_root": lambda: self.path,
             "cache_meshes": True,
@@ -173,10 +175,24 @@ class Project:
         if self._cache is None:
             cs = self.cache_settings
             active_sources = sorted(list(self.sources.keys()))
-            name = f"cache_{cs['project_name']}/proj_{active_sources}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/proj_{active_sources}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             self._cache = cache
         return self._cache
+
+    @property
+    def simplify(self):
+        return self._simplify
+
+    @simplify.setter
+    def simplify(self, simplify: float):
+        if 0.0 < simplify > 1.0:
+            raise ValueError(
+                "Simplify value must be between 0.0 and 1.0. "
+                "It is a percent value of how much to simplify."
+            )
+        self._simplify = simplify
+        self.clear_caches()
 
     def add_source(
         self,
@@ -247,8 +263,8 @@ class Project:
         res = None
         for s in self.sources.values():
             if res is None:
-                s.resolution
-            elif s != res:
+                res = s.resolution
+            elif s.resolution != res:
                 raise RuntimeError(
                     "Sources have different resolutions which is not supported!"
                 )
