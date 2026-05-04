@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.8"
+__generated_with = "0.21.1"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -16,7 +16,7 @@ with app.setup:
     from dask.base import compute
     import pandas as pd
     import traceback
-    from organelle_morphology.analysis import Misc_Analysis
+    from organelle_morphology.analysis import Misc_Analysis, Mcs_Analysis
     from organelle_morphology.records import PropertyBlock
     import matplotlib.pyplot as plt
     from organelle_morphology.position import Position_Analysis
@@ -233,8 +233,12 @@ def _(project):
 
 
 @app.cell
-def _(sources):
+def _(change_settings_button, project, sources):
     mo.stop(len(sources) < 1, "Add a source first!")
+
+    # trigger update
+    change_settings_button
+
     run_show_mesh = mo.ui.run_button(label="Show Mesh")
     mesh_id_filter = mo.ui.text(value="*", label="Organelle id filter")
     highlight_filter = mo.ui.text(value="", label="Highlight ids")
@@ -284,7 +288,7 @@ def _(sources):
             ),
             color_indiv_check,
             mo.hstack(
-                [mcs_checkbox, mo.md(f"(Resolution: {sources[0].resolution})")],
+                [mcs_checkbox, mo.md(f"(Resolution: {project.resolution})")],
                 justify="start",
             ),
             mcs_min_ui,
@@ -394,11 +398,10 @@ def _(sources):
     skel_form = mo.md(r"""
     ## Skeletonize
 
-    Method: {method}
-    id filter: {ids}
-    Recompute: {recompute}
-    Settings: {settings}
-
+    Method: {method}  
+    id filter: {ids}  
+    Recompute: {recompute}  
+    Settings: {settings}  
     """).batch(
         method=mo.ui.radio(
             options=["wavefront", "vertex cluster"], inline=True, value="wavefront"
@@ -576,11 +579,8 @@ def table_display_cell(filtered_distance_results, of_run_button):
     if of_run_button.value and not filtered_distance_results:
         table_display = mo.md("No results. Change filter to see results here.")
     elif of_run_button.value:
-        table_display = mo.ui.table(
-            filtered_distance_results,
-            selection=None,
-            pagination=False,
-            max_height=400,
+        table_display = pd.DataFrame.from_dict(
+            filtered_distance_results, orient="index"
         )
     table_display
     return
@@ -589,23 +589,82 @@ def table_display_cell(filtered_distance_results, of_run_button):
 @app.cell
 def mcs_calc_ui_cell(sources):
     mo.stop(len(sources) < 1, "")
-    mcs_distance_ui = mo.ui.number(value=10.0, label="Distance threshold")
+    mcs_max_dist_ui = mo.ui.number(value=0.10, label="Max distance threshold")
+    mcs_min_dist_ui = mo.ui.number(value=0.0, label="Min distance threshold")
+    mcs_filter1_ui = mo.ui.text(label="Labels 1", value="*")
+    mcs_filter2_ui = mo.ui.text(label="Labels 2", value="*")
+    mcs_overwrite_ui = mo.ui.checkbox(
+        value=False, label="Overwrite existing mcs results"
+    )
     run_mcs_btn = mo.ui.run_button(label="Calculate MCS")
     mcs_calc_ui_layout = mo.vstack(
-        [mo.md("## Membrane Contact Sites (MCS)"), mcs_distance_ui, run_mcs_btn]
+        [
+            mo.md("## Membrane Contact Sites (MCS)"),
+            mcs_max_dist_ui,
+            mcs_min_dist_ui,
+            mcs_filter1_ui,
+            mcs_filter2_ui,
+            mcs_overwrite_ui,
+            run_mcs_btn,
+        ]
     )
     mcs_calc_ui_layout
-    return mcs_distance_ui, run_mcs_btn
+    return (
+        mcs_filter1_ui,
+        mcs_filter2_ui,
+        mcs_max_dist_ui,
+        mcs_min_dist_ui,
+        mcs_overwrite_ui,
+        run_mcs_btn,
+    )
 
 
 @app.cell
-def mcs_execute_cell(mcs_distance_ui, project, run_mcs_btn):
+def mcs_execute_cell(
+    mcs_filter1_ui,
+    mcs_filter2_ui,
+    mcs_max_dist_ui,
+    mcs_min_dist_ui,
+    mcs_overwrite_ui,
+    project,
+    run_mcs_btn,
+):
     mo.stop(not run_mcs_btn.value, mo.md(""))
-    project.search_mcs(mcs_distance_ui.value)  # Calculate the contact sites
+    project.search_mcs(
+        min_distance=mcs_min_dist_ui.value,
+        max_distance=mcs_max_dist_ui.value,
+        ids_filter_1=mcs_filter1_ui.value,
+        ids_filter_2=mcs_filter2_ui.value,
+        overwrite_mcs_label=mcs_overwrite_ui.value,
+    )  # Calculate the contact sites
     mcs_execute_status = mo.md(
-        f"MCS successfully calculated for distance {mcs_distance_ui.value}."
+        f"MCS successfully calculated for distance {mcs_min_dist_ui.value}-{mcs_max_dist_ui.value}."
     )
+    mcs_analysis = Mcs_Analysis(project=project)
     mcs_execute_status
+    return (mcs_analysis,)
+
+
+@app.cell
+def mcs_analysis_set_filter(mcs_analysis):
+    mcs_an_filter_id = mo.ui.text(label="Filter ")
+    mcs_labels = {r.meta.mcs_label for r in mcs_analysis.own_records}
+    mo.md(f"""### MCS labels:
+    {"<br>".join(mcs_labels)}
+    """)
+    return
+
+
+@app.cell
+def mcs_analysis_overview(mcs_analysis, project):
+    mo.stop(not project.mcs_labels, mo.md("No MCS calculations run yet"))
+    mo.plain(mcs_analysis.get_mcs_overview())
+    return
+
+
+@app.cell
+def _(mcs_analysis):
+    mcs_analysis.get_mcs_properties()
     return
 
 
@@ -741,7 +800,7 @@ def profile_execute_cell(
                 mo.md(
                     f"**Success!** Profile properties computed using {profile_method_ui.value}."
                 ),
-                mo.ui.table(df, selection=None, pagination=False),
+                mo.ui.table(df, selection=None, pagination=True, page_size=25),
             ]
         )
 
@@ -843,7 +902,7 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                         mo.ui.table(
                             df_display,
                             selection=None,
-                            pagination=False,
+                            pagination=True,
                             max_height=400,
                             format_mapping=data_formats,
                             text_justify_columns={col: "right" for col in float_cols},
@@ -958,22 +1017,22 @@ def plot_display_cell(
 
 
 @app.cell
-def _(sources):
-    mo.stop(len(sources) < 1, "Add a source first!")
-    return
+def _(change_settings_button, project, sources):
+    mo.stop(len(sources) < 0, "Add a source first!")
 
+    # trigger updates
+    change_settings_button
 
-@app.cell
-def _(project, sources):
     pa = Position_Analysis(project)
 
     pa_source_ui = mo.ui.dropdown(
         options=[s.org_name for s in sources],
         label="Organelle types",
+        value=[s.org_name for s in sources][0],
     )
     res_hint = f"(Project resolution: {project.resolution})"
     pa_resolution_ui = mo.md(
-        "Binning resolution [um] " + res_hint + ": <br>{x} {y} {z}"
+        "Binning resolution [um]<br>" + res_hint + ": <br>{x} {y} {z}"
     ).batch(
         x=mo.ui.number(start=0.0, stop=1.0, value=0.1),
         y=mo.ui.number(start=0.0, stop=1.0, value=0.1),
@@ -1000,6 +1059,7 @@ def _(project, sources):
         label="Rotation Axis",
         allow_select_none=False,
     )
+
     pa_run_button = mo.ui.run_button(label="Run position analysis")
 
     pa_dim_tab_ui = mo.ui.tabs(
@@ -1028,6 +1088,7 @@ def _(project, sources):
     )
     return (
         pa,
+        pa_axis1d_ui,
         pa_dim_tab_ui,
         pa_marginal_axis_ui,
         pa_resolution_ui,
@@ -1039,14 +1100,46 @@ def _(project, sources):
 
 
 @app.cell
+def pa_plot_contolls(pa, pa_run_button):
+    mo.stop(not pa_run_button.value, "Run a position analysis")
+    pa_plot_densities_button = mo.ui.run_button(label="Plot densities")
+
+    pa_metas = []
+    for i, r in enumerate(pa.own_records):
+        pa_meta = r.meta.__dict__
+        pa_meta["index"] = i
+        pa_metas.append(pa_meta)
+
+    pa_records_table = mo.ui.table(pa_metas)
+
+    mo.vstack(
+        [
+            pa_records_table,
+            pa_plot_densities_button,
+        ]
+    )
+    return pa_plot_densities_button, pa_records_table
+
+
+@app.cell
 def _(pa):
-    pa.get_dataframe()
+    [r.meta for r in pa.own_records]
+    return
+
+
+@app.cell
+def _(pa, pa_plot_densities_button, pa_records_table):
+    mo.stop(not pa_plot_densities_button.value, "Density plots")
+    pa_idxs = [m["index"] for m in pa_records_table.value]
+    pa_records_filterd = [r for i, r in enumerate(pa.own_records) if i in pa_idxs]
+    mo.mpl.interactive(pa.plot_multiple_densities(pa_records_filterd)[0])
     return
 
 
 @app.cell
 def _(
     pa,
+    pa_axis1d_ui,
     pa_dim_tab_ui,
     pa_marginal_axis_ui,
     pa_resolution_ui,
@@ -1076,12 +1169,18 @@ def _(
             rot_angle=pa_rot_angle_ui.value,
             rot_axis=pa_rot_axis,
         )
-    return
-
-
-@app.cell
-def _(pa_dim_tab_ui):
-    pa_dim_tab_ui.value
+    if pa_dim_tab_ui.value == "1D":
+        pa_axis1d = {"x": 0, "y": 1, "z": 2}[pa_axis1d_ui.value]
+        pa_rot_axis = {"x": 0, "y": 1, "z": 2}[pa_rot_axis_ui.value]
+        pa.density1D(
+            source=pa_source,
+            bin_resolution=pa_bin_res,
+            axis=pa_axis1d,
+            rot_angle=pa_rot_angle_ui.value,
+            rot_axis=pa_rot_axis,
+        )
+    else:
+        "Unknown dimensionality"
     return
 
 

@@ -10,6 +10,7 @@ import dask.array as da
 
 from organelle_morphology.records import PropertyBlock, Record
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 logger = logging.getLogger(__name__)
 
@@ -60,29 +61,34 @@ class Position_Analysis(Analysis):
         """
         res = bin_resolution
         cache_key = f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}"
-        if cache_key not in source.cache:
-            binsize = (np.array(bin_resolution) // source.resolution).astype(int)
-            n_missing = (binsize - (source.data.shape % binsize)) % binsize
 
-            data = source.data.astype(bool)
-            data = da.pad(data, [(0, i) for i in n_missing])
+        pos_meta = PositionMeta(
+            source=source.org_name,
+            dimensionality=3,
+            bin_resolution=bin_resolution,
+            axes_labels=["x", "y", "z"],
+        )
+        if pos_meta not in [r.meta for r in self.own_records]:
+            if cache_key not in source.cache:
+                binsize = (np.array(bin_resolution) // source.resolution).astype(int)
+                n_missing = (binsize - (source.data.shape % binsize)) % binsize
 
-            logger.debug(f"Density3D calculation, binsize {binsize}")
-            density = da.coarsen(
-                np.mean,
-                data,
-                {a: b for a, b in zip((0, 1, 2), binsize)},
-                trim_excess=False,
-            ).compute()
-            source.cache[cache_key] = density
+                data = source.data.astype(bool)
+                data = da.pad(data, [(0, i) for i in n_missing])
 
+                logger.debug(f"Density3D calculation, binsize {binsize}")
+                density = da.coarsen(
+                    np.mean,
+                    data,
+                    {a: b for a, b in zip((0, 1, 2), binsize)},
+                    trim_excess=False,
+                ).compute()
+                source.cache[cache_key] = density
+
+            density = source.cache[cache_key]
             record = Record(
                 PositionProperties(density=density),
-                PositionMeta(
-                    source=source.org_name,
-                    dimensionality=3,
-                    bin_resolution=bin_resolution,
-                ),
+                pos_meta,
             )
             self.project.registry.add(record)
 
@@ -113,32 +119,35 @@ class Position_Analysis(Analysis):
             f"density2d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_"
             f"{marginal_axis}_{rot_angle:.2f}_{rot_axis}"
         )
-        if cache_key not in source.cache:
-            density = self.density3D(source, bin_resolution)
-            rot_axes = [0, 1, 2]
-            rot_axes.remove(rot_axis)
-            density = rotate(density, rot_angle, rot_axes, reshape=True)
-            density_2D = np.mean(density, axis=marginal_axis)
-            source.cache[cache_key] = density_2D
+        axes_labels = None
+        if rot_angle == 0:
+            axes_labels = [0, 1, 2]
+            axes_labels.remove(marginal_axis)
+            axes_names = ["x", "y", "z"]
+            axes_labels = [axes_names[i] for i in axes_labels]
 
-            axes_labels = None
-            if rot_angle == 0:
-                axes_labels = [0, 1, 2]
-                axes_labels.remove(marginal_axis)
-                axes_names = ["x", "y", "z"]
-                axes_labels = [axes_names[i] for i in axes_labels]
+        pos_meta = PositionMeta(
+            source=source.org_name,
+            dimensionality=2,
+            bin_resolution=bin_resolution,
+            marginal_axis_2d=marginal_axis,
+            rot_angle=rot_angle,
+            rot_axis=rot_axis,
+            axes_labels=axes_labels,
+        )
+        if pos_meta not in [r.meta for r in self.own_records]:
+            if cache_key not in source.cache:
+                density = self.density3D(source, bin_resolution)
+                rot_axes = [0, 1, 2]
+                rot_axes.remove(rot_axis)
+                density = rotate(density, rot_angle, rot_axes, reshape=True)
+                density_2D = np.mean(density, axis=marginal_axis)
+                source.cache[cache_key] = density_2D
 
+            density_2D = source.cache[cache_key]
             record = Record(
                 PositionProperties(density=density_2D),
-                PositionMeta(
-                    source=source.org_name,
-                    dimensionality=2,
-                    bin_resolution=bin_resolution,
-                    marginal_axis_2d=marginal_axis,
-                    rot_angle=rot_angle,
-                    rot_axis=rot_axis,
-                    axes_labels=axes_labels,
-                ),
+                pos_meta,
             )
             self.project.registry.add(record)
         return source.cache[cache_key]
@@ -164,35 +173,39 @@ class Position_Analysis(Analysis):
             raise ValueError("Axis must be between 0 and 2")
         res = bin_resolution
         cache_key = f"density1d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_{axis}_{rot_angle:.2f}_{rot_axis}"
-        if cache_key not in source.cache:
-            marginal_axes = [0, 1, 2]
-            marginal_axes.remove(axis)
-            density2d = self.density2D(
-                source=source,
-                bin_resolution=bin_resolution,
-                marginal_axis=marginal_axes[1],
-                rot_angle=rot_angle,
-                rot_axis=rot_axis,
-            )
-            density_1D = np.mean(density2d, axis=marginal_axes[0])
-            source.cache[cache_key] = density_1D
 
-            axes_labels = None
-            if rot_angle == 0:
-                axes_names = ["x", "y", "z"]
-                axes_labels = [axes_names[axis]]
+        axes_labels = None
+        if rot_angle == 0:
+            axes_names = ["x", "y", "z"]
+            axes_labels = [axes_names[axis]]
+        pos_meta = PositionMeta(
+            source=source.org_name,
+            dimensionality=1,
+            bin_resolution=bin_resolution,
+            axis_1d=axis,
+            rot_angle=rot_angle,
+            rot_axis=rot_axis,
+            axes_labels=axes_labels,
+        )
 
-            record = Record(
-                PositionProperties(density=density_1D),
-                PositionMeta(
-                    source=source.org_name,
-                    dimensionality=1,
+        if pos_meta not in [r.meta for r in self.own_records]:
+            if cache_key not in source.cache:
+                marginal_axes = [0, 1, 2]
+                marginal_axes.remove(axis)
+                density2d = self.density2D(
+                    source=source,
                     bin_resolution=bin_resolution,
-                    axis_1d=axis,
+                    marginal_axis=marginal_axes[1],
                     rot_angle=rot_angle,
                     rot_axis=rot_axis,
-                    axes_labels=axes_labels,
-                ),
+                )
+                density_1D = np.mean(density2d, axis=marginal_axes[0])
+                source.cache[cache_key] = density_1D
+
+            density_1D = source.cache[cache_key]
+            record = Record(
+                PositionProperties(density=density_1D),
+                pos_meta,
             )
             self.project.registry.add(record)
         return source.cache[cache_key]
@@ -215,16 +228,36 @@ class Position_Analysis(Analysis):
         density = record.data.density
 
         if len(density.shape) == 3:
-            raise NotImplementedError("3D plotting not implemented yet")
+            if not (isinstance(ax, plt.Axes) and ax.name == "3d"):
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection="3d")
+
+            nonzero_mask = density != 0
+            if not nonzero_mask.any():
+                ax.set_title(f"3D Density Plot - {record.meta.source}")
+                return ax
+
+            coords = np.where(nonzero_mask)
+            x, y, z = coords[2], coords[1], coords[0]
+            densities = density[nonzero_mask]
+
+            ax.scatter(x, y, z, c=densities, cmap="viridis", s=20)
+            ax.set_title(f"3D Density Plot - {record.meta.source}")
+            if (labels := record.meta.axes_labels) is not None:
+                ax.set_xlabel(labels[2])
+                ax.set_ylabel(labels[1])
+                ax.set_zlabel(labels[0])
+            return ax
+
         elif len(density.shape) == 2:
             ax.imshow(density)
             ax.set_title(f"2D Density Plot - {record.meta.source}")
             ax.axis("auto")
             if (labels := record.meta.axes_labels) is not None:
                 ax.set_xlabel(labels[1])
-            if (labels := record.meta.axes_labels) is not None:
                 ax.set_ylabel(labels[0])
             return ax
+
         elif len(density.shape) == 1:
             ax.plot(density)
             ax.set_title(f"1D Density Plot - {record.meta.source}")
@@ -238,9 +271,9 @@ class Position_Analysis(Analysis):
     def plot_multiple_densities(
         self,
         records: list[Record],
-        nrows: int = 1,
-        ncols: int = 1,
-        sharex=True,
+        nrows: Optional[int] = None,
+        ncols: Optional[int] = None,
+        sharex=False,
         sharey=False,
     ):
         """Create subplots for multiple density records.
@@ -253,6 +286,15 @@ class Position_Analysis(Analysis):
         Returns:
             matplotlib figure and axes objects
         """
+        if nrows is None and ncols is None:
+            ncols = int(np.ceil(np.sqrt(len(records))))
+            nrows = int(np.ceil(len(records) / ncols))
+        elif nrows is None and ncols is not None:
+            nrows = int(np.ceil(len(records) / ncols))
+        elif ncols is None and nrows is not None:
+            ncols = int(np.ceil(len(records) / nrows))
+        assert ncols is not None and nrows is not None
+
         if ncols * nrows < len(records):
             logger.warning(
                 "Not enough axes for all records, "
@@ -274,10 +316,13 @@ class Position_Analysis(Analysis):
 
         for i, record in enumerate(records):
             if i < len(axes):
-                try:
-                    self.plot_density(record, axes[i])
-                except NotImplementedError as e:
-                    logger.info(e)
+                if record.meta.dimensionality == 3:
+                    # For 3D plots, ensure we have 3D axes
+                    if not (isinstance(axes[i], plt.Axes) and axes[i].name == "3d"):
+                        # Replace with 3D axis
+                        axes[i].remove()
+                        axes[i] = fig.add_subplot(nrows, ncols, i + 1, projection="3d")
+                self.plot_density(record, axes[i])
 
         fig.tight_layout()
         return fig, axes

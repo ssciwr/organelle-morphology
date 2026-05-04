@@ -9,6 +9,7 @@ import uuid
 import numpy as np
 import pandas as pd
 
+from organelle_morphology.organelle import McsData
 from organelle_morphology.records import PropertyBlock
 
 if TYPE_CHECKING:
@@ -22,6 +23,12 @@ class Analysis(ABC):
     """Analysis base class. Specific analysis workflows should subclass this."""
 
     def __init__(self, project: Project, property_type: type[PropertyBlock]):
+        """Instantiate new Analysis
+
+        Args:
+            project: The project
+            property_type: The PropertyBlock class of the data (not meta data)
+        """
         self.project = project
         self.property_type = property_type
 
@@ -87,11 +94,20 @@ class Analysis(ABC):
 class Mcs_Analysis(Analysis):
     """Methods to calculate mcs statistics"""
 
+    def __init__(self, project):
+        super().__init__(project=project, property_type=McsData)
+
     def __post_init__(self):
         self.mcs_labels = {s.meta.mcs_label for s in self.own_records}
         self.set_filters()
 
     def set_filters(self, ids: str = "*", mcs_labels: Optional[list[str]] = None):
+        """Filter records for everything in this analysis.
+
+        Args:
+            ids: Glob-style filter pattern for organelles, defaults to "*"
+            mcs_labels: Filter the MCS calculations, defaults to None
+        """
         self.ids = ids
         self.mcs_label_filter = mcs_labels
 
@@ -99,9 +115,6 @@ class Mcs_Analysis(Analysis):
         """The properties of the MCS between organelles
         Gathers data from all the organelles into one dataframe.
 
-        Args:
-            ids: Glob-style filter pattern for organelles, defaults to "*"
-            mcs_labels: Filter the MCS calculations, defaults to None
 
         Returns:
             pd.DataFrame

@@ -84,6 +84,10 @@ class PropertyBlock(ABC):
     Should be subclassed into a dataclass.
     If the dataclass should hold np arrays, use
     `@dataclass(eq=False)`
+
+
+    For data belonging to an organelle, set the metadata field
+    `organelle_id` to the organelle id.
     """
 
     def to_dict(self):

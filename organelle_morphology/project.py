@@ -376,11 +376,13 @@ class Project:
             mcs_label = self.search_mcs(max_distance=mcs_max, min_distance=mcs_min)
             mcs_orgs = self.mcs_queries[mcs_label]["organelles"]
             meshes = []
+            non_mcs_meshes = []
             for org in orgs:
                 if org.id in mcs_orgs:
                     meshes.append(org.get_mesh_mcs_colored(mcs_label))
                 else:
-                    meshes.append(org.mesh)
+                    non_mcs_meshes.append(org.mesh)
+            meshes.append(merge_meshes(non_mcs_meshes, color=-1, transp=transp))
             mmesh = merge_meshes(meshes, color=0, transp=transp)
             to_show = [mmesh.compute()]
 
@@ -503,71 +505,12 @@ class Project:
 
         return show(to_show)
 
-    def show_plotly(
-        self,
-        ids: str = "*",
-        show_curvature: bool = False,
-        show_skeleton: bool = False,
-        mcs_label: Optional[str] = None,
-        height: int = 800,
-    ):
-        orgs = self.get_organelles(ids=ids)
-
-        if mcs_label and mcs_label not in self._mcs_labels:
-            raise ValueError(
-                f"MCS label {mcs_label} not found in project please "
-                + "run search_mcs with the desired label first"
-            )
-
-        mcs_filter_ids = None
-        if mcs_label:
-            mcs_filter_ids = [org.id for org in orgs]
-
-        # draw figure
-        fig = go.Figure()
-        for org in orgs:
-            fig.add_traces(
-                org.plotly_mesh(
-                    show_curvature=show_curvature,
-                    show_skeleton=show_skeleton,
-                    mcs_label=mcs_label,
-                    mcs_filter_ids=mcs_filter_ids,
-                )
-            )
-            if show_skeleton and org.skeleton is not None:
-                fig.add_traces(org.plotly_skeleton())
-                sampled_path = org.sampled_skeleton[0]
-                try:
-                    sampled_scatter = go.Scatter3d(
-                        x=sampled_path[:, 0],
-                        y=sampled_path[:, 1],
-                        z=sampled_path[:, 2],
-                        mode="markers",
-                        name=f"sampled_path_{org.id}",
-                        marker=dict(size=1, color="red"),
-                    )
-                    fig.add_trace(sampled_scatter)
-                except ValueError:
-                    self.logger.warning(org.id, sampled_path, org.skeleton)
-                    raise ValueError("sampled_path is not valid")
-
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(title="", showticklabels=False, showgrid=False),
-                yaxis=dict(title="", showticklabels=False, showgrid=False),
-                zaxis=dict(title="", showticklabels=False, showgrid=False),
-                aspectmode="cube",
-            ),
-            height=height,
-        )
-
-        return fig
-
     def distance_filtering(
         self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="labels"
     ):
         """Filter the organelles based on the distance between two filtered organelle lists.
-              These can be from one or more types depending on the given filter.
+
+        These can be from one or more types depending on the given filter.
 
         Args:
             ids_source: Filter string for the source ids, defaults to "*"
@@ -590,7 +533,9 @@ class Project:
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         # Filter the DataFrame by row values
         filtered_df = distance_matrix[
-            distance_matrix.apply(lambda row: row.min() < filter_distance, axis=1)
+            distance_matrix.apply(
+                lambda row: row.loc[row >= 0].min() < filter_distance, axis=1
+            )
         ]
 
         # Convert the filtered DataFrame to a dictionary
@@ -600,7 +545,9 @@ class Project:
 
         for col in filtered_df_dict:
             for row, value in filtered_df_dict[col].items():
-                if value < filter_distance and col != row:  # exclude self-contact
+                if (
+                    0.0 <= value < filter_distance and col != row
+                ):  # exclude self-contact
                     # if (
                     #     attribute in ["names", "objects"]
                     #     and row in output_filtered_dict.keys()

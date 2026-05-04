@@ -98,7 +98,6 @@ class ProfileCalculator(Analysis):
         Returns a DataFrame summarizing the profile statistics.
         Refreshes the local stats view to include results calculated after initialization.
         """
-        self.own_records = self.project.registry.get_by_type(self.property_type)
 
         data_rows = []
         for stat in self.own_records:
@@ -257,7 +256,7 @@ class ProfileCalculator(Analysis):
 
         self._compute_and_format(all_tasks, "random", num_planes)
 
-    def calculate_skeleton_profiles(self, ids="er_*", sample_distance=0.1) -> None:
+    def calculate_skeleton_profiles(self, ids="*", sample_distance=0.1) -> None:
         """
         Calculates 2D profile perimeters and widths perpendicular to the organelle skeleton.
         """

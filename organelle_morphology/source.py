@@ -841,8 +841,24 @@ class DataSource:
     ) -> dict[int, Delayed]:
         @delayed
         def simplify_mesh(mesh, factor=0.1):
-            """Simplify a trimesh object"""
-            mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
+            """Try to simplify a trimesh object.
+
+            Can fail due to unknown issue in trimesh for larger
+            simplification values. In case of failure, the original
+            mesh is returned.
+            """
+            done = False
+            counter = 0
+            while not done or counter >= 10:
+                try:
+                    mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
+                    done = True
+                except IndexError:
+                    counter += 1
+                    factor = factor * 0.8
+            # if not done:
+            #     raise RuntimeError(f"Simplification failed after {counter} tries.")
+
             return mesh
 
         # get some statistics
