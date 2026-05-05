@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, List, Union
 import numpy as np
 import pandas as pd
 import trimesh
-import yaml
 from dask import delayed
 from dask.base import compute
 from scipy.spatial.distance import pdist
@@ -298,16 +297,3 @@ class ProfileCalculator(Analysis):
             all_tasks[org.id] = org_tasks
 
         self._compute_and_format(all_tasks, "skeleton", num_slices=None)
-
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.profile_calculations.ProfileData",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, ProfileData),
-    Loader=yaml.SafeLoader,
-)
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.profile_calculations.ProfileMetadata",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, ProfileMetadata),
-    Loader=yaml.SafeLoader,
-)

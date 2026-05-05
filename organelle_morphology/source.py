@@ -2,6 +2,7 @@ from collections import defaultdict
 import logging
 from typing import Optional
 from pathlib import Path
+
 import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
 

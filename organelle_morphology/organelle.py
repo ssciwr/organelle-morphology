@@ -9,7 +9,6 @@ import dask.array as da
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from trimesh import Trimesh
-import yaml
 
 import organelle_morphology
 from organelle_morphology.records import PropertyBlock, Record
@@ -82,20 +81,6 @@ class McsData(PropertyBlock):
     n_contacts_per_volume: float
     area_per_area: float
     area_per_volume: float
-
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsData",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsData),
-    Loader=yaml.SafeLoader,
-)
-
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMetadata",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsMetadata),
-    Loader=yaml.SafeLoader,
-)
 
 
 class Organelle:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import astuple, fields
 from pathlib import Path, PosixPath, WindowsPath
-from typing import TypeVar
+from typing import Optional, TypeVar
 from collections import defaultdict
 from typing import List, Type
 import uuid
@@ -90,6 +90,19 @@ class PropertyBlock(ABC):
     `organelle_id` to the organelle id.
     """
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        tag = (
+            f"tag:yaml.org,2002:python/object/apply:{cls.__module__}.{cls.__qualname__}"
+        )
+        yaml.add_constructor(
+            tag,
+            lambda loader, node, _cls=cls: PropertyBlock.yaml_constructor(
+                loader, node, _cls
+            ),
+            Loader=yaml.SafeLoader,
+        )
+
     def to_dict(self):
         return {field.name: getattr(self, field.name) for field in fields(self)}
 
@@ -131,6 +144,9 @@ class Record:
         self.meta = meta
         self.name = type(data).__name__
 
+        self.meta_sources: Optional[list[SourceMetadata]] = None  # noqa: F821
+        self.meta_project: Optional[ProjectMetadata] = None  # noqa: F821
+
     def to_dict(self):
         return {"data": self.data, "meta": self.meta, "name": self.name}
 
@@ -160,10 +176,18 @@ class Record:
             "data": processed_data,
             "meta": self.meta,
             "name": self.name,
+            "meta_sources": self.meta_sources,
+            "meta_project": self.meta_project,
         }
 
         processed_data.yaml_representor()
         self.meta.yaml_representor()
+
+        if self.meta_project is not None:
+            self.meta_project.yaml_representor()
+        if self.meta_sources is not None:
+            for ms in self.meta_sources:
+                ms.yaml_representor()
 
         filename.parent.mkdir(exist_ok=True, parents=True)
         with open(filename, "w") as f:
@@ -228,6 +252,10 @@ class RecordRegistry:
         """
         Add a new Record to the registry and index it.
         """
+
+        record.meta_sources = [s.metadata for s in self.project.sources.values()]
+        record.meta_project = self.project.metadata
+
         self._all_records.append(record)
 
         # Index by the class name of the data (e.g., "McsData", "ProfileData")

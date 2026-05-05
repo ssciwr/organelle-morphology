@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Optional
 import numpy as np
 from pathlib import Path
-import yaml
 from organelle_morphology.records import (
     PropertyBlock,
     Record,
@@ -16,13 +15,6 @@ class MockProp(PropertyBlock):
     mock_int: int
     mock_path: Path
     mock_np: Optional[np.ndarray | Path]
-
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:tests.test_records.MockProp",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, MockProp),
-    Loader=yaml.SafeLoader,
-)
 
 
 @pytest.fixture
