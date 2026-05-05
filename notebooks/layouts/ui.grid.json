@@ -49,15 +49,15 @@
           12,
           6,
           6,
-          27
+          24
         ]
       },
       {
         "position": [
           12,
-          33,
+          32,
           6,
-          8
+          9
         ]
       },
       {
@@ -263,14 +263,6 @@
         ]
       },
       {
-        "position": [
-          8,
-          235,
-          16,
-          25
-        ]
-      },
-      {
         "position": null
       },
       {
@@ -282,15 +274,27 @@
         ]
       },
       {
-        "position": null
-      },
-      {
         "position": [
           18,
           523,
           6,
           2
         ]
+      },
+      {
+        "position": null
+      },
+      {
+        "position": null
+      },
+      {
+        "position": null
+      },
+      {
+        "position": null
+      },
+      {
+        "position": null
       }
     ]
   }

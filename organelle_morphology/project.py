@@ -28,7 +28,6 @@ import numpy as np
 import pandas as pd
 
 from collections import defaultdict
-import plotly.graph_objects as go
 from sys import platform
 
 
@@ -41,7 +40,7 @@ clipping_type = (
 class ProjectMetadata(PropertyBlock):
     path: Path
     name: str
-    clipping: Optional[np.ndarray]
+    clipping: Optional[list[float]]
     compression: str
     sources: list[str]
     blacklist: list[str]
@@ -138,11 +137,11 @@ class Project:
             self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property
-    def metadata(self):
+    def metadata(self) -> ProjectMetadata:
         return ProjectMetadata(
             path=self.path,
             name=self.path.name,
-            clipping=self.clipping,
+            clipping=self.clipping.tolist() if self.clipping else None,
             compression=self.compression_level,
             sources=list(self.sources.keys()),
             blacklist=self.permanent_blacklist,
@@ -356,6 +355,9 @@ class Project:
         color_instances=False,
         mcs_min: Optional[float] = None,
         mcs_max: Optional[float] = None,
+        axis: bool = True,
+        rot_axis: Optional[str] = None,
+        rot_angle: Optional[float] = None,
     ):
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
@@ -502,6 +504,41 @@ class Project:
             )
             box_outline.colors = ((200, 50, 50, 255),)
             to_show.append(box_outline)
+
+        if axis:
+            size = max(np.array(source.metadata.size) * source.data_resolution)
+            to_show.append(
+                trimesh.creation.axis(axis_radius=size / 200, axis_length=size / 20)
+            )
+
+        if rot_axis is not None:
+            size = np.array(source.metadata.size) * source.data_resolution
+            center = size / 2
+
+            plane_axes = [0, 1, 2]
+            axis_names = ["x", "y", "z"]
+            plane_axes.remove(axis_names.index(rot_axis))
+            radius = np.linalg.norm(size[plane_axes]) / 2
+
+            u = np.zeros(3)
+            v = np.zeros(3)
+            u[plane_axes[0]] = 1.0
+            v[plane_axes[1]] = 1.0
+
+            def _line_in_plane(angle_deg):
+                theta = np.deg2rad(angle_deg)
+                direction = np.cos(theta) * u + np.sin(theta) * v
+                end = center + direction * radius
+                return trimesh.load_path(np.array([[center, end]]))
+
+            ref_line = _line_in_plane(0.0)
+            ref_line.colors = [(200, 200, 0, 255)]  # yellow = 0° reference
+            to_show.append(ref_line)
+
+            if rot_angle is not None and rot_angle % 360.0 != 0.0:
+                rot_line = _line_in_plane(rot_angle)
+                rot_line.colors = [(255, 100, 0, 255)]  # orange = current angle
+                to_show.append(rot_line)
 
         return show(to_show)
 
@@ -673,59 +710,6 @@ class Project:
     @property
     def mcs_queries(self):
         return self._mcs_labels
-
-    def hist_distance_matrix(
-        self,
-        ids_source="*",
-        ids_target="*",
-    ):
-        orgs_1 = self.get_organelle_ids(ids=ids_source)
-        orgs_2 = self.get_organelle_ids(ids=ids_target)
-        distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=distance_matrix.mean().values.flatten()))
-        fig.update_layout(
-            xaxis_title_text="Distance",
-            yaxis_title_text="Count",
-            title="Distance matrix histogram",
-        )
-        return fig
-
-    def hist_skeletons(self, ids="*", attribute="num_nodes"):
-        """Plot the histogram from the skeleton info.
-
-        :param ids: Filter id, defaults to "*"
-        :type ids: str, optional
-        :param attribute: which attribute to plot, defaults to "num_nodes".
-            can be:
-            "num_nodes": number of nodes in the skeleton
-            "num_branch_points": number of branch points in the skeleton
-            "end points": number of end points in the skeleton
-            "total_length": total length of the skeleton
-            "mean_length": mean length of the skeleton
-            "longest_path": longest path in the skeleton
-
-        :type attribute: str, optional
-        :return: _description_
-        :rtype: _type_
-        """
-        orgs = self.get_organelles(ids=ids)
-        # drop organelles without skeleton
-        valid_orgs = []
-        for org in orgs:
-            if org.skeleton is not None:
-                valid_orgs.append(org.id)
-
-        skeleton_info = self.skeleton_info.loc[valid_orgs]
-        data = skeleton_info[attribute].values
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=data))
-        fig.update_layout(
-            xaxis_title_text=attribute,
-            yaxis_title_text="Count",
-            title=f"{attribute} histogram",
-        )
-        return fig
 
     def calculate_profiles(
         self,

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.21.1"
+__generated_with = "0.19.11"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -20,6 +20,7 @@ with app.setup:
     from organelle_morphology.records import PropertyBlock
     import matplotlib.pyplot as plt
     from organelle_morphology.position import Position_Analysis
+    from collections import defaultdict
 
 
 @app.cell
@@ -272,6 +273,15 @@ def _(change_settings_button, project, sources):
     color_indiv_check = mo.ui.checkbox(label="Color individual organelles", value=False)
     popout_viewer_check = mo.ui.checkbox(label="High-quality viewer", value=False)
 
+    mesh_rot_axis_ui = mo.ui.dropdown(
+        options=["x", "y", "z"],
+        label="Show rotation around axis: ",
+        allow_select_none=True,
+    )
+    mesh_rot_angle_ui = mo.ui.number(
+        label="Angle", start=-360, stop=360, value=0, step=1
+    )
+
     mo.vstack(
         [
             mo.md("## Show Mesh"),
@@ -294,6 +304,8 @@ def _(change_settings_button, project, sources):
             mcs_min_ui,
             mcs_max_ui,
             box_dict,
+            mo.hstack([mesh_rot_axis_ui, mesh_rot_angle_ui], justify="start"),
+            mo.md("(yellow: reference 0°, orange: rotatated axis)"),
             mo.hstack(
                 [
                     run_show_mesh,
@@ -314,6 +326,8 @@ def _(change_settings_button, project, sources):
         mcs_max_ui,
         mcs_min_ui,
         mesh_id_filter,
+        mesh_rot_angle_ui,
+        mesh_rot_axis_ui,
         popout_viewer_check,
         run_show_mesh,
         skeleton_check,
@@ -332,6 +346,8 @@ def show_mesh(
     mcs_max_ui,
     mcs_min_ui,
     mesh_id_filter,
+    mesh_rot_angle_ui,
+    mesh_rot_axis_ui,
     popout_viewer_check,
     project,
     run_show_mesh,
@@ -375,6 +391,8 @@ def show_mesh(
         color_instances=color_indiv_check.value,
         mcs_min=mcs_min,
         mcs_max=mcs_max,
+        rot_axis=mesh_rot_axis_ui.value,
+        rot_angle=mesh_rot_angle_ui.value,
     )
     viewer = "marimo"
     if popout_viewer_check.value:
@@ -398,10 +416,10 @@ def _(sources):
     skel_form = mo.md(r"""
     ## Skeletonize
 
-    Method: {method}  
-    id filter: {ids}  
-    Recompute: {recompute}  
-    Settings: {settings}  
+    Method: {method}
+    id filter: {ids}
+    Recompute: {recompute}
+    Settings: {settings}
     """).batch(
         method=mo.ui.radio(
             options=["wavefront", "vertex cluster"], inline=True, value="wavefront"
@@ -647,7 +665,6 @@ def mcs_execute_cell(
 
 @app.cell
 def mcs_analysis_set_filter(mcs_analysis):
-    mcs_an_filter_id = mo.ui.text(label="Filter ")
     mcs_labels = {r.meta.mcs_label for r in mcs_analysis.own_records}
     mo.md(f"""### MCS labels:
     {"<br>".join(mcs_labels)}
@@ -1100,43 +1117,6 @@ def _(change_settings_button, project, sources):
 
 
 @app.cell
-def pa_plot_contolls(pa, pa_run_button):
-    mo.stop(not pa_run_button.value, "Run a position analysis")
-    pa_plot_densities_button = mo.ui.run_button(label="Plot densities")
-
-    pa_metas = []
-    for i, r in enumerate(pa.own_records):
-        pa_meta = r.meta.__dict__
-        pa_meta["index"] = i
-        pa_metas.append(pa_meta)
-
-    pa_records_table = mo.ui.table(pa_metas)
-
-    mo.vstack(
-        [
-            pa_records_table,
-            pa_plot_densities_button,
-        ]
-    )
-    return pa_plot_densities_button, pa_records_table
-
-
-@app.cell
-def _(pa):
-    [r.meta for r in pa.own_records]
-    return
-
-
-@app.cell
-def _(pa, pa_plot_densities_button, pa_records_table):
-    mo.stop(not pa_plot_densities_button.value, "Density plots")
-    pa_idxs = [m["index"] for m in pa_records_table.value]
-    pa_records_filterd = [r for i, r in enumerate(pa.own_records) if i in pa_idxs]
-    mo.mpl.interactive(pa.plot_multiple_densities(pa_records_filterd)[0])
-    return
-
-
-@app.cell
 def _(
     pa,
     pa_axis1d_ui,
@@ -1149,38 +1129,109 @@ def _(
     pa_source_ui,
     sources,
 ):
-    mo.stop(not pa_run_button.value, "Output of position analysis run")
+    if pa_run_button.value:
+        pa_source = [s for s in sources if s.org_name == pa_source_ui.value][0]
+        pa_bin_res = (
+            pa_resolution_ui["x"].value,
+            pa_resolution_ui["y"].value,
+            pa_resolution_ui["z"].value,
+        )
 
-    pa_source = [s for s in sources if s.org_name == pa_source_ui.value][0]
-    pa_bin_res = (
-        pa_resolution_ui["x"].value,
-        pa_resolution_ui["y"].value,
-        pa_resolution_ui["z"].value,
+        if pa_dim_tab_ui.value == "2D":
+            pa_marginal_axis = {"x": 0, "y": 1, "z": 2}[pa_marginal_axis_ui.value]
+            pa_rot_axis = {"x": 0, "y": 1, "z": 2}[pa_rot_axis_ui.value]
+            print("axis", pa_rot_axis)
+            pa.density2D(
+                source=pa_source,
+                bin_resolution=pa_bin_res,
+                marginal_axis=pa_marginal_axis,
+                rot_angle=pa_rot_angle_ui.value,
+                rot_axis=pa_rot_axis,
+            )
+        if pa_dim_tab_ui.value == "1D":
+            pa_axis1d = {"x": 0, "y": 1, "z": 2}[pa_axis1d_ui.value]
+            pa_rot_axis = {"x": 0, "y": 1, "z": 2}[pa_rot_axis_ui.value]
+            pa.density1D(
+                source=pa_source,
+                bin_resolution=pa_bin_res,
+                axis=pa_axis1d,
+                rot_angle=pa_rot_angle_ui.value,
+                rot_axis=pa_rot_axis,
+            )
+        else:
+            "Unknown dimensionality"
+
+    pa_plot_densities_button = mo.ui.run_button(label="Plot densities")
+
+    pa_metas = []
+    for i, r in enumerate(pa.own_records):
+        pa_meta = r.meta.__dict__
+        pa_meta["index"] = i
+        pa_metas.append(pa_meta)
+
+    pa_records_table = mo.ui.table(pa_metas)
+
+    mo.vstack(
+        [
+            mo.md("Select which entries to plot. 3D plots are expensive to show"),
+            pa_records_table,
+            pa_plot_densities_button,
+        ]
     )
+    return pa_plot_densities_button, pa_records_table
 
-    if pa_dim_tab_ui.value == "2D":
-        pa_marginal_axis = {"x": 0, "y": 1, "z": 2}[pa_marginal_axis_ui.value]
-        pa_rot_axis = {"x": 0, "y": 1, "z": 2}[pa_rot_axis_ui.value]
-        print("axis", pa_rot_axis)
-        pa.density2D(
-            source=pa_source,
-            bin_resolution=pa_bin_res,
-            marginal_axis=pa_marginal_axis,
-            rot_angle=pa_rot_angle_ui.value,
-            rot_axis=pa_rot_axis,
-        )
-    if pa_dim_tab_ui.value == "1D":
-        pa_axis1d = {"x": 0, "y": 1, "z": 2}[pa_axis1d_ui.value]
-        pa_rot_axis = {"x": 0, "y": 1, "z": 2}[pa_rot_axis_ui.value]
-        pa.density1D(
-            source=pa_source,
-            bin_resolution=pa_bin_res,
-            axis=pa_axis1d,
-            rot_angle=pa_rot_angle_ui.value,
-            rot_axis=pa_rot_axis,
-        )
-    else:
-        "Unknown dimensionality"
+
+@app.cell
+def _(pa, pa_plot_densities_button, pa_records_table):
+    mo.stop(not pa_plot_densities_button.value, "Density plots")
+    pa_idxs = [m["index"] for m in pa_records_table.value]
+    pa_records_filterd = [r for i, r in enumerate(pa.own_records) if i in pa_idxs]
+    mo.mpl.interactive(pa.plot_multiple_densities(pa_records_filterd)[0])
+    return
+
+
+@app.cell
+def _(project):
+    project.registry.save_all_to_yaml()
+    return
+
+
+@app.cell
+def _(project, records_update_button):
+    records_update_button.value
+    [r.meta for r in project.records]
+    record_counts = defaultdict(int)
+    for rec in project.records:
+        record_counts[rec.name] += 1
+    return (record_counts,)
+
+
+@app.cell
+def _():
+    records_update_button = mo.ui.button(
+        label="Update records",
+    )
+    records_save_button = mo.ui.run_button(label="Save all records")
+    return records_save_button, records_update_button
+
+
+@app.cell
+def _(project, records_save_button):
+    mo.stop(not records_save_button.value, "Save all records")
+    project.registry.save_all_to_yaml()
+    return
+
+
+@app.cell
+def _(record_counts, records_save_button, records_update_button):
+    mo.vstack(
+        [
+            mo.md("## Analysis Records"),
+            mo.ui.table(record_counts, selection=None),
+            records_update_button,
+            records_save_button,
+        ]
+    )
     return
 
 

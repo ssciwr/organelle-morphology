@@ -67,22 +67,17 @@ def test_registry_save_load_real_records(project_with_sources):
     """Test bulk saving and loading using actual production records."""
     project = project_with_sources
 
-    # Generate some profiles to populate the registry with ProfileData & ProfileMetadata
     project.calculate_profiles(method="Fixed Axis", ids="mito_0007", num_slices=3)
 
-    # Keep copy of original records for comparison
     original_records = project.registry.get_all().copy()
     assert len(original_records) > 0, "Pipeline failed to generate records."
 
-    # Save to the pytests temp path
     project.registry.save_all_to_yaml()
     assert (project.path / "analysis").exists()
 
-    # Clear the registry
     project.registry.clear()
     assert len(project.registry.get_all()) == 0
 
-    # Load the records back and check them
     project.registry.load_all_from_yaml()
     loaded_records = project.registry.get_all()
     assert len(loaded_records) == len(original_records)

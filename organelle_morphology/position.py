@@ -10,7 +10,6 @@ import dask.array as da
 
 from organelle_morphology.records import PropertyBlock, Record
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +135,8 @@ class Position_Analysis(Analysis):
             axes_labels=axes_labels,
         )
         if pos_meta not in [r.meta for r in self.own_records]:
+            density = self.density3D(source, bin_resolution)
             if cache_key not in source.cache:
-                density = self.density3D(source, bin_resolution)
                 rot_axes = [0, 1, 2]
                 rot_axes.remove(rot_axis)
                 density = rotate(density, rot_angle, rot_axes, reshape=True)
@@ -189,16 +188,17 @@ class Position_Analysis(Analysis):
         )
 
         if pos_meta not in [r.meta for r in self.own_records]:
+            # restore also 2d/3d from cache
+            marginal_axes = [0, 1, 2]
+            marginal_axes.remove(axis)
+            density2d = self.density2D(
+                source=source,
+                bin_resolution=bin_resolution,
+                marginal_axis=marginal_axes[1],
+                rot_angle=rot_angle,
+                rot_axis=rot_axis,
+            )
             if cache_key not in source.cache:
-                marginal_axes = [0, 1, 2]
-                marginal_axes.remove(axis)
-                density2d = self.density2D(
-                    source=source,
-                    bin_resolution=bin_resolution,
-                    marginal_axis=marginal_axes[1],
-                    rot_angle=rot_angle,
-                    rot_axis=rot_axis,
-                )
                 density_1D = np.mean(density2d, axis=marginal_axes[0])
                 source.cache[cache_key] = density_1D
 
@@ -286,6 +286,8 @@ class Position_Analysis(Analysis):
         Returns:
             matplotlib figure and axes objects
         """
+        if not records:
+            return plt.subplots()
         if nrows is None and ncols is None:
             ncols = int(np.ceil(np.sqrt(len(records))))
             nrows = int(np.ceil(len(records) / ncols))
