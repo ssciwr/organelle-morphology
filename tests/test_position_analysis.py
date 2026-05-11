@@ -1,4 +1,3 @@
-import pytest
 from organelle_morphology.position import Position_Analysis
 import organelle_morphology.position
 import numpy as np
@@ -109,6 +108,5 @@ def test_plot(project_with_sources):
 
     fig, axes = posan.plot_multiple_densities(posan.own_records, 3, 1)
 
-    import matplotlib.pyplot as plt
-
-    plt.show()
+    # import matplotlib.pyplot as plt
+    # plt.show()

@@ -1,22 +1,20 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC
+from collections import defaultdict
 from dataclasses import astuple, fields
 from pathlib import Path, PosixPath, WindowsPath
-from typing import Optional, TypeVar
-from collections import defaultdict
-from typing import List, Type
-import uuid
-import numpy as np
+from typing import TYPE_CHECKING, Hashable, List, Optional, Type, TypeVar
 
-import logging
+import numpy as np
 import yaml
-from typing import TYPE_CHECKING
 
 from organelle_morphology.util import numpy_to_python
 
 if TYPE_CHECKING:
-    from organelle_morphology.project import Project
+    from organelle_morphology.project import Project, ProjectMetadata
+    from organelle_morphology.source import SourceMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +37,22 @@ yaml.add_constructor(
 
 yaml.add_representer(PosixPath, represent_path, Dumper=yaml.SafeDumper)
 yaml.add_representer(WindowsPath, represent_path, Dumper=yaml.SafeDumper)
+
+
+def represent_tuple(dumper: yaml.Dumper, data: tuple):
+    return dumper.represent_sequence("tag:yaml.org,2002:python/tuple", data)
+
+
+def construct_tuple(loader, node):
+    return tuple(loader.construct_sequence(node))
+
+
+yaml.add_representer(tuple, represent_tuple, Dumper=yaml.SafeDumper)
+yaml.add_constructor(
+    "tag:yaml.org,2002:python/tuple",
+    construct_tuple,
+    Loader=yaml.SafeLoader,
+)
 
 
 def array_safe_eq(a, b) -> bool:
@@ -85,6 +99,8 @@ class PropertyBlock(ABC):
     If the dataclass should hold np arrays, use
     `@dataclass(eq=False)`
 
+    Metadata must be hashable, therefor set frozen=True and
+    ensure no mutable fields are used (lists,..)
 
     For data belonging to an organelle, set the metadata field
     `organelle_id` to the organelle id.
@@ -134,7 +150,14 @@ class Record:
         name: name of data
     """
 
-    def __init__(self, data: AnyPropertyBlock, meta: AnyPropertyBlock):
+    def __init__(
+        self,
+        data: AnyPropertyBlock,
+        meta: AnyPropertyBlock,
+        project: Optional[Project],
+        meta_sources: Optional[tuple[SourceMetadata]] = None,
+        meta_project: Optional[ProjectMetadata] = None,
+    ):
         """
         Args:
             data: dataclass inheriting from PropertyBlock, contains the data
@@ -144,8 +167,20 @@ class Record:
         self.meta = meta
         self.name = type(data).__name__
 
-        self.meta_sources: Optional[list[SourceMetadata]] = None  # noqa: F821
-        self.meta_project: Optional[ProjectMetadata] = None  # noqa: F821
+        if project is not None:
+            self.meta_sources: tuple[SourceMetadata, ...] = tuple(  # noqa: F821
+                [s.metadata for s in project.sources.values()]
+            )
+            self.meta_project: ProjectMetadata = project.metadata  # noqa: F821
+        else:
+            if meta_sources is None or meta_project is None:
+                raise ValueError(
+                    "Project or both of meta_sources and meta_project must be given!"
+                )
+            self.meta_sources = meta_sources
+            self.meta_project = meta_project
+
+        assert isinstance(self.meta, Hashable), f"meta of {self.name} must be hashable!"
 
     def to_dict(self):
         return {"data": self.data, "meta": self.meta, "name": self.name}
@@ -215,21 +250,48 @@ class Record:
                         logger.warning(f"Restoring {obj} failed!\n{e}")
                         pass  # Keep original value if restoration fails
 
-        if not all([k in yaml_dict for k in ["data", "meta", "name"]]):
+        if not all(
+            [
+                k in yaml_dict
+                for k in ["data", "meta", "name", "meta_sources", "meta_project"]
+            ]
+        ):
             raise ValueError(f"YAML file could not be parsed: {filename}")
 
-        return cls(data=yaml_dict["data"], meta=yaml_dict["meta"])
+        return cls(
+            data=yaml_dict["data"],
+            meta=yaml_dict["meta"],
+            project=None,
+            meta_sources=yaml_dict["meta_sources"],
+            meta_project=yaml_dict["meta_project"],
+        )
+
+    def get_hash(self):
+        return hash(
+            (
+                hash(self.meta),
+                hash(self.name),
+                hash(self.meta_project),
+                hash(self.meta_sources),
+            )
+        )
 
     def __eq__(self, value: object, /) -> bool:
-        if data := getattr(value, "data"):
-            if data != self.data:
+        if name := getattr(value, "name"):
+            if name != self.name:
                 return False
         if meta := getattr(value, "meta"):
             if meta != self.meta:
                 return False
-        if name := getattr(value, "name"):
-            if name != self.name:
+        if proj := getattr(value, "meta_project"):
+            if proj != self.meta_project:
                 return False
+        if sources := getattr(value, "meta_sources"):
+            if sources != self.meta_sources:
+                return False
+        # if data := getattr(value, "data"):
+        #     if data != self.data:
+        #         return False
         return True
 
 
@@ -253,8 +315,12 @@ class RecordRegistry:
         Add a new Record to the registry and index it.
         """
 
-        record.meta_sources = [s.metadata for s in self.project.sources.values()]
-        record.meta_project = self.project.metadata
+        assert isinstance(record.meta_sources, Hashable), (
+            "source meta must be hashable!"
+        )
+        assert isinstance(record.meta_project, Hashable), (
+            "project meta must be hashable!"
+        )
 
         self._all_records.append(record)
 
@@ -314,7 +380,7 @@ class RecordRegistry:
         for rec in self._all_records:
             dir: Path = self.project.path / "analysis" / rec.name
             dir.mkdir(exist_ok=True, parents=True)
-            rec.save_yaml(dir / f"{uuid.uuid4()}.yaml")
+            rec.save_yaml(dir / f"{rec.get_hash()}.yaml")
 
         self.logger.info(f"Saved {len(self._all_records)} records in project directory")
 

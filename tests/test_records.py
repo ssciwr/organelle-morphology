@@ -1,15 +1,14 @@
 from dataclasses import dataclass
-from typing import Optional
-import numpy as np
 from pathlib import Path
-from organelle_morphology.records import (
-    PropertyBlock,
-    Record,
-)
+from typing import Optional
+
+import numpy as np
 import pytest
 
+from organelle_morphology.records import PropertyBlock, Record
 
-@dataclass(eq=False)
+
+@dataclass(eq=False, unsafe_hash=True)
 class MockProp(PropertyBlock):
     mock_str: str
     mock_int: int
@@ -34,13 +33,13 @@ def mock_prop_np():
     )
 
 
-def test_stat_to_dict(mock_prop):
-    stat = Record(data=mock_prop, meta=mock_prop)
+def test_stat_to_dict(mock_prop, project_with_sources):
+    stat = Record(data=mock_prop, meta=mock_prop, project=project_with_sources)
     assert isinstance(stat.to_dict(), dict)
 
 
-def test_stat_save_load(mock_prop, tmp_path):
-    stat = Record(data=mock_prop, meta=mock_prop)
+def test_stat_save_load(mock_prop, tmp_path, project_with_sources):
+    stat = Record(data=mock_prop, meta=mock_prop, project=project_with_sources)
     file = tmp_path / "stat.yaml"
     assert not file.exists()
     stat.save_yaml(file)
@@ -51,8 +50,8 @@ def test_stat_save_load(mock_prop, tmp_path):
     assert loaded_stat.meta == stat.meta
 
 
-def test_stat_save_load_np(mock_prop, mock_prop_np, tmp_path):
-    rec = Record(data=mock_prop_np, meta=mock_prop)
+def test_stat_save_load_np(mock_prop, mock_prop_np, tmp_path, project_with_sources):
+    rec = Record(data=mock_prop_np, meta=mock_prop, project=project_with_sources)
     file = tmp_path / "stat.yaml"
     assert not file.exists()
     rec.save_yaml(file)
@@ -74,6 +73,11 @@ def test_registry_save_load_real_records(project_with_sources):
 
     project.registry.save_all_to_yaml()
     assert (project.path / "analysis").exists()
+    assert len(list((project.path / "analysis").iterdir())) == 1
+
+    # test overwriting
+    project.registry.save_all_to_yaml()
+    assert len(list((project.path / "analysis").iterdir())) == 1
 
     project.registry.clear()
     assert len(project.registry.get_all()) == 0

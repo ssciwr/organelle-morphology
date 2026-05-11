@@ -1,50 +1,47 @@
+import logging
+from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
+from sys import platform
 from typing import Optional
 
-from organelle_morphology.records import PropertyBlock, RecordRegistry
-from organelle_morphology.util import setup_logging
-import logging
+import numpy as np
+import pandas as pd
+import trimesh
 from dask.base import compute
 from dask.delayed import Delayed
+from dask.distributed import Client, LocalCluster
 from trimesh import Trimesh
-import trimesh
+
+from organelle_morphology.distance_calculations import (
+    generate_distance_matrix,
+    generate_mcs,
+)
 from organelle_morphology.organelle import Organelle
+from organelle_morphology.records import PropertyBlock, RecordRegistry
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
     corners_to_edges,
     merge_meshes,
+    setup_logging,
     show,
 )
-from organelle_morphology.distance_calculations import (
-    generate_distance_matrix,
-    generate_mcs,
-)
-
-from pathlib import Path
-from dask.distributed import Client, LocalCluster
-
-import numpy as np
-import pandas as pd
-
-from collections import defaultdict
-from sys import platform
-
 
 clipping_type = (
     tuple[tuple[float, float, float], tuple[float, float, float]] | list[list[float]]
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProjectMetadata(PropertyBlock):
     path: Path
     name: str
-    clipping: Optional[list[float]]
+    clipping: Optional[clipping_type]
     compression: str
-    sources: list[str]
-    blacklist: list[str]
-    whitelist: list[str]
+    sources: tuple[str, ...]
+    blacklist: tuple[str, ...]
+    whitelist: tuple[str, ...]
 
 
 class Project:
@@ -141,11 +138,11 @@ class Project:
         return ProjectMetadata(
             path=self.path,
             name=self.path.name,
-            clipping=self.clipping.tolist() if self.clipping else None,
+            clipping=tuple(self.clipping.tolist()) if self.clipping else None,
             compression=self.compression_level,
-            sources=list(self.sources.keys()),
-            blacklist=self.permanent_blacklist,
-            whitelist=self.permanent_whitelist,
+            sources=tuple(self.sources.keys()),
+            blacklist=tuple(self.permanent_blacklist),
+            whitelist=tuple(self.permanent_whitelist),
         )
 
     @property

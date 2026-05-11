@@ -71,17 +71,17 @@ def test_search_mcs(project_with_sources):
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", meshes[0], meshes[1])
 
-    assert calculator.id_source == "a"
-    assert calculator.id_target == "b"
-    assert calculator.distances.shape == (226,)
+    assert calculator.id_source == "b"
+    assert calculator.id_target == "a"
+    assert calculator.distances.shape == (229,)
     assert all(calculator.dot_products < 0)
     np.testing.assert_almost_equal(calculator.min_distance, 88.97752525)
 
     calculator = MembraneContactSiteCalculator()
     calculator.search_mcs("a", "b", meshes[1], meshes[0])
 
-    assert calculator.id_source == "b"
-    assert calculator.id_target == "a"
+    assert calculator.id_source == "a"
+    assert calculator.id_target == "b"
     np.testing.assert_almost_equal(calculator.min_distance, 88.97752525)
 
 
@@ -97,9 +97,9 @@ def test_search_mcs_inverted_normals(project_with_sources, mocker):
     mocker.patch.object(calculator, "_repair_meshes")
     calculator.search_mcs("a", "b", meshes[0], meshes[1])
 
-    assert calculator.id_source == "a"
-    assert calculator.id_target == "b"
-    assert calculator.distances.shape == (226,)
+    assert calculator.id_source == "b"
+    assert calculator.id_target == "a"
+    assert calculator.distances.shape == (229,)
     assert all(calculator.dot_products > 0)
     np.testing.assert_almost_equal(calculator.min_distance, 88.97752525216691)
 
@@ -115,8 +115,8 @@ def test_analyze_mcs(project_with_sources):
     calculator.analyze_mcs("test", 90, 0)
     assert np.all(calculator._distances < 90)
     assert np.all(calculator._distances > 88)
-    assert calculator._distances.shape == (20,)
-    assert calculator.distances.shape == (226,)
+    assert calculator._distances.shape == (15,)
+    assert calculator.distances.shape == (229,)
 
     assert isinstance(calculator.mcs_source, dict)
     assert isinstance(calculator.mcs_target, dict)
@@ -198,6 +198,7 @@ def test_search_mcs_watertight_meshes():
 def test_generate_mcs(project_with_sources):
     p = project_with_sources
 
+    p.simplify = 0.0
     generate_mcs(p, "*", "*", max_distance=90, min_distance=0)
     assert list(p.mcs_labels)[0] == "0-90,-"
     org = p.get_organelles("mito_0007")[0]

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.11"
+__generated_with = "0.19.8"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -17,10 +17,11 @@ with app.setup:
     import pandas as pd
     import traceback
     from organelle_morphology.analysis import Misc_Analysis, Mcs_Analysis
-    from organelle_morphology.records import PropertyBlock
     import matplotlib.pyplot as plt
     from organelle_morphology.position import Position_Analysis
     from collections import defaultdict
+
+    project_loaded = []
 
 
 @app.cell
@@ -33,36 +34,69 @@ def _():
 
 @app.cell
 def _():
-    # Inputs
-    path_ui = mo.ui.file_browser(
+    project_path_ui = mo.ui.file_browser(
         selection_mode="directory", multiple=False, label="Project directory"
     )
 
-    hint = mo.md(
+    project_hint_loading = mo.md(
         "<small>(To select a folder, click on the &nbsp;::lucide:folder::&nbsp; icon.)</small>"
     ).style(margin_top="-1.0rem")  # adjust margin if the text ever disappears
 
-    run_project = mo.ui.run_button(label="Load Project")
+    run_project_button = mo.ui.run_button(label="Load Project")
 
     mo.vstack(
         [
             mo.md("###Load/Create a Project"),
-            path_ui,
-            hint,
-            run_project,
+            project_path_ui,
+            project_hint_loading,
+            mo.hstack(
+                [
+                    run_project_button,
+                ],
+                justify="start",
+            ),
         ]
     )
-    return path_ui, run_project
+    return project_path_ui, run_project_button
 
 
 @app.cell
-def _(path_ui, run_project):
-    mo.stop(not run_project.value, "Load a project first")
-    mo.stop(not len(path_ui.value) > 0, "Select a project directory!")
+def _():
+    project_loaded
+    return
+
+
+@app.cell
+def project_load_old_records(run_project_button):
+    mo.stop(not run_project_button.value, "")
+
+    run_project_button.value
+    project_load_records_button = mo.ui.run_button(label="Load analysis records")
+    project_load_records_button
+    return (project_load_records_button,)
+
+
+@app.cell
+def _(project, project_load_records_button):
+    mo.stop(
+        not project_load_records_button.value,
+        f"Number of records loaded: {len(project.registry.get_all())}",
+    )
+
+    project.registry.load_all_from_yaml()
+    mo.md(f"Number of records loaded: {len(project.registry.get_all())}")
+    return
+
+
+@app.cell
+def _(project_path_ui, run_project_button):
+    mo.stop(not run_project_button.value, "Load a project first")
+    mo.stop(not len(project_path_ui.value) > 0, "Select a project directory!")
 
     project = om.Project(
-        project_path=path_ui.path(), clipping=None, compression_level="s3"
+        project_path=project_path_ui.path(), clipping=None, compression_level="s3"
     )
+    project_loaded.append(1)
     return (project,)
 
 
@@ -264,6 +298,8 @@ def _(change_settings_button, project, sources):
     mcs_checkbox = mo.ui.checkbox(label="MCS", value=False)
     mcs_min_ui = mo.ui.number(label="Min dist", value=0.0, step=0.001)
     mcs_max_ui = mo.ui.number(label="Max dist", value=0.1, step=0.001)
+    mcs_filter_1_ui = mo.ui.text(value="*", label="Filter 1")
+    mcs_filter_2_ui = mo.ui.text(value="*", label="Filter 2")
 
     rad = sources[0].curvature_radius
 
@@ -297,12 +333,26 @@ def _(change_settings_button, project, sources):
                 justify="start",
             ),
             color_indiv_check,
+            mo.md(f"{mcs_checkbox} (Resolution: {project.resolution})"),
             mo.hstack(
-                [mcs_checkbox, mo.md(f"(Resolution: {project.resolution})")],
+                [
+                    mo.vstack(
+                        [
+                            mcs_min_ui,
+                            mcs_max_ui,
+                        ],
+                        align="start",
+                    ),
+                    mo.vstack(
+                        [
+                            mcs_filter_1_ui,
+                            mcs_filter_2_ui,
+                        ],
+                        align="start",
+                    ),
+                ],
                 justify="start",
             ),
-            mcs_min_ui,
-            mcs_max_ui,
             box_dict,
             mo.hstack([mesh_rot_axis_ui, mesh_rot_angle_ui], justify="start"),
             mo.md("(yellow: reference 0°, orange: rotatated axis)"),
@@ -831,7 +881,7 @@ def profile_execute_cell(
 
 
 @app.cell
-def prop_selector_cell(project):
+def prop_selector_cell(PropertyBlock, project):
     stats = Misc_Analysis(project, PropertyBlock)
     available_properties = (
         stats.get_mesh_properties()
@@ -854,7 +904,13 @@ def prop_selector_cell(project):
 
 
 @app.cell
-def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
+def prop_display_cell(
+    PropertyBlock,
+    calc_stats_btn,
+    mesh_id_filter,
+    project,
+    prop_selector,
+):
     stats_output = mo.md('Click on "Calculate Statistics" to show properties.')
 
     if calc_stats_btn.value:
@@ -1186,13 +1242,34 @@ def _(pa, pa_plot_densities_button, pa_records_table):
     mo.stop(not pa_plot_densities_button.value, "Density plots")
     pa_idxs = [m["index"] for m in pa_records_table.value]
     pa_records_filterd = [r for i, r in enumerate(pa.own_records) if i in pa_idxs]
-    mo.mpl.interactive(pa.plot_multiple_densities(pa_records_filterd)[0])
+    if any([r.meta.dimensionality == 3 for r in pa_records_filterd]):
+        mo.output.replace(
+            mo.mpl.interactive(pa.plot_multiple_densities(pa_records_filterd)[0])
+        )
+    else:
+        mo.output.replace(pa.plot_multiple_densities(pa_records_filterd)[0])
     return
 
 
 @app.cell
-def _(project):
-    project.registry.save_all_to_yaml()
+def _(record_counts, records_save_button, records_update_button):
+    record_count_to_table = []
+    if len(record_counts):
+        record_count_to_table = record_counts
+
+    mo.vstack(
+        [
+            mo.md("## Analysis Records"),
+            mo.ui.table(record_count_to_table, selection=None),
+            mo.hstack(
+                [
+                    records_update_button,
+                    records_save_button,
+                ],
+                justify="start",
+            ),
+        ]
+    )
     return
 
 
@@ -1203,6 +1280,8 @@ def _(project, records_update_button):
     record_counts = defaultdict(int)
     for rec in project.records:
         record_counts[rec.name] += 1
+
+    record_counts
     return (record_counts,)
 
 
@@ -1219,19 +1298,12 @@ def _():
 def _(project, records_save_button):
     mo.stop(not records_save_button.value, "Save all records")
     project.registry.save_all_to_yaml()
+    print("Saved successfully!")
     return
 
 
 @app.cell
-def _(record_counts, records_save_button, records_update_button):
-    mo.vstack(
-        [
-            mo.md("## Analysis Records"),
-            mo.ui.table(record_counts, selection=None),
-            records_update_button,
-            records_save_button,
-        ]
-    )
+def _():
     return
 
 

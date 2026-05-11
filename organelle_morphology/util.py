@@ -1,19 +1,18 @@
-from pathlib import Path
-from typing import Optional, Iterable
 import logging
-import networkx
+import pickle
+import time
+from collections import defaultdict, deque
+from pathlib import Path
+from typing import Iterable, Optional
 
+import matplotlib as mpl
+import networkx
+import numpy as np
+import trimesh
+import xdg
 from dask.base import compute
 from dask.delayed import Delayed, delayed
 from trimesh import Trimesh
-import trimesh
-import matplotlib as mpl
-import xdg
-import pickle
-from collections import defaultdict, deque
-import time
-import numpy as np
-
 
 logger = logging.getLogger(__name__)
 CACHE_DIR = xdg.xdg_cache_home() / "organelle_morphology"
@@ -392,6 +391,13 @@ def boxes_overlap(box1, box2):
         return False
 
     return True
+
+
+def dict_lists_to_tuples(d: dict) -> dict:
+    for k, v in d.items():
+        if isinstance(v, list):
+            d[k] = tuple(v)
+    return d
 
 
 def numpy_to_python(obj):

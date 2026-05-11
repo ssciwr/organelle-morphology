@@ -1,20 +1,21 @@
+import logging
 from dataclasses import dataclass
 from typing import Optional
+
+import dask.array as da
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.ndimage import rotate
-from organelle_morphology.analysis import Analysis
-from organelle_morphology.source import DataSource
-import logging
-import dask.array as da
 
+from organelle_morphology.analysis import Analysis
 from organelle_morphology.records import PropertyBlock, Record
-import matplotlib.pyplot as plt
+from organelle_morphology.source import DataSource
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class PositionMeta(PropertyBlock):
     source: str
     dimensionality: int
@@ -23,7 +24,7 @@ class PositionMeta(PropertyBlock):
     axis_1d: Optional[int] = None
     rot_angle: Optional[float] = None
     rot_axis: Optional[int] = None
-    axes_labels: Optional[list[str]] = None
+    axes_labels: Optional[tuple[str, ...]] = None
 
 
 @dataclass
@@ -65,7 +66,7 @@ class Position_Analysis(Analysis):
             source=source.org_name,
             dimensionality=3,
             bin_resolution=bin_resolution,
-            axes_labels=["x", "y", "z"],
+            axes_labels=("x", "y", "z"),
         )
         if pos_meta not in [r.meta for r in self.own_records]:
             if cache_key not in source.cache:
@@ -86,8 +87,7 @@ class Position_Analysis(Analysis):
 
             density = source.cache[cache_key]
             record = Record(
-                PositionProperties(density=density),
-                pos_meta,
+                PositionProperties(density=density), pos_meta, project=self.project
             )
             self.project.registry.add(record)
 
@@ -123,7 +123,7 @@ class Position_Analysis(Analysis):
             axes_labels = [0, 1, 2]
             axes_labels.remove(marginal_axis)
             axes_names = ["x", "y", "z"]
-            axes_labels = [axes_names[i] for i in axes_labels]
+            axes_labels = tuple([axes_names[i] for i in axes_labels])
 
         pos_meta = PositionMeta(
             source=source.org_name,
@@ -145,8 +145,7 @@ class Position_Analysis(Analysis):
 
             density_2D = source.cache[cache_key]
             record = Record(
-                PositionProperties(density=density_2D),
-                pos_meta,
+                PositionProperties(density=density_2D), pos_meta, project=self.project
             )
             self.project.registry.add(record)
         return source.cache[cache_key]
@@ -176,7 +175,7 @@ class Position_Analysis(Analysis):
         axes_labels = None
         if rot_angle == 0:
             axes_names = ["x", "y", "z"]
-            axes_labels = [axes_names[axis]]
+            axes_labels = tuple([axes_names[axis]])
         pos_meta = PositionMeta(
             source=source.org_name,
             dimensionality=1,
@@ -204,8 +203,7 @@ class Position_Analysis(Analysis):
 
             density_1D = source.cache[cache_key]
             record = Record(
-                PositionProperties(density=density_1D),
-                pos_meta,
+                PositionProperties(density=density_1D), pos_meta, project=self.project
             )
             self.project.registry.add(record)
         return source.cache[cache_key]

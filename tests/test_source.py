@@ -195,6 +195,7 @@ def test_calculate_mesh_clipped(project_with_sources, mocker, chunksize):
 @pytest.mark.parametrize("rep", range(20))
 def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
     p = project_with_sources
+    p.simplify = 0.0
     s = list(p.sources.values())[0]
 
     o1 = np.random.randint(4) + 1

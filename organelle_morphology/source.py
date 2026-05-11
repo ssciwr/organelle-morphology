@@ -48,17 +48,17 @@ class Data_level:
     level: str
     chunks: tuple
     chunks_per_dimension: list
-    downsamplingFactor: list[int]
+    downsamplingFactor: tuple[int]
     data: z5py.dataset.Dataset
 
 
-@dataclass
+@dataclass(frozen=True)
 class SourceMetadata(PropertyBlock):
     data_root: Path
-    downsampling: list[list[int]]
-    levels: list[str]
+    downsampling: tuple[tuple[int, ...], ...]
+    levels: tuple[str, ...]
     size: tuple[int, ...]
-    resolution: list[float]
+    resolution: tuple[float, ...]
     name: str
     coarse_level: str
 
@@ -137,11 +137,11 @@ class DataSource:
                     level=name_parts[2],
                     chunks=obj.chunks,
                     chunks_per_dimension=obj.chunks_per_dimension,
-                    downsamplingFactor=obj.attrs["downsamplingFactors"],
+                    downsamplingFactor=tuple(obj.attrs["downsamplingFactors"]),
                     data=obj,
                 )
 
-                tp.downsamplingFactors.append(obj.attrs["downsamplingFactors"])
+                tp.downsamplingFactors.append(tuple(obj.attrs["downsamplingFactors"]))
                 tp.levels.append(name_parts[2])
 
                 setattr(tp, name_parts[2], dl)
@@ -221,10 +221,10 @@ class DataSource:
 
         self._metadata = SourceMetadata(
             data_root=self.xml_path / filename,
-            downsampling=self.timepoint.downsamplingFactors,
-            levels=self.timepoint.levels,
+            downsampling=tuple(self.timepoint.downsamplingFactors),
+            levels=tuple(self.timepoint.levels),
             size=tuple([int(i) for i in size.split(" ")][::-1]),
-            resolution=resolution,
+            resolution=tuple(resolution),
             name=name,
             coarse_level=coarse_level,
         )

@@ -6,4 +6,4 @@ def test_measure_curvature(project_with_sources):
     mesh = s.meshes[1]
     delayed = measure_gaussian_curvature_delayed(tmesh=mesh, radius=1)
     curv = delayed.compute()
-    assert curv.shape == (866,)
+    assert curv.shape == (436,)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -25,20 +25,20 @@ logger = logging.getLogger(__name__)
 class ProfileData(PropertyBlock):
     """Physical measurements of the 2D profile."""
 
-    perimeters: List[float]
-    widths: List[float]
-    ratios: List[float]  # width / perimeter ratio for every slice
+    perimeters: list[float]
+    widths: list[float]
+    ratios: list[float]  # width / perimeter ratio for every slice
     mean_perimeter: float  # mean across all slices for one organelle
     mean_width: float
     mean_ratio: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProfileMetadata(PropertyBlock):
     """Context for the profile calculation."""
 
     organelle_id: str
-    axis_used: Union[str, tuple]
+    axis_used: str | tuple
     num_slices_attempted: int
 
 
@@ -191,7 +191,9 @@ class ProfileCalculator(Analysis):
             )
 
             # Register the result in the central project registry
-            self.project.registry.add(Record(data=data, meta=meta))
+            self.project.registry.add(
+                Record(data=data, meta=meta, project=self.project)
+            )
 
     def calculate_profile_lengths(self, ids="er_*", axis="z", num_slices=20) -> None:
         """Calculates 2D profile metrics along a given fixed axis."""
