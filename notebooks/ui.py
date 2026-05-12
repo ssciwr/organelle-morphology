@@ -5,6 +5,7 @@ app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
     layout_file="layouts/ui.grid.json",
+    auto_download=["html"],
 )
 
 with app.setup:
@@ -19,9 +20,8 @@ with app.setup:
     from organelle_morphology.analysis import Misc_Analysis, Mcs_Analysis
     import matplotlib.pyplot as plt
     from organelle_morphology.position import Position_Analysis
+    from organelle_morphology.records import PropertyBlock
     from collections import defaultdict
-
-    project_loaded = []
 
 
 @app.cell
@@ -61,12 +61,6 @@ def _():
 
 
 @app.cell
-def _():
-    project_loaded
-    return
-
-
-@app.cell
 def project_load_old_records(run_project_button):
     mo.stop(not run_project_button.value, "")
 
@@ -96,7 +90,6 @@ def _(project_path_ui, run_project_button):
     project = om.Project(
         project_path=project_path_ui.path(), clipping=None, compression_level="s3"
     )
-    project_loaded.append(1)
     return (project,)
 
 
@@ -334,25 +327,7 @@ def _(change_settings_button, project, sources):
             ),
             color_indiv_check,
             mo.md(f"{mcs_checkbox} (Resolution: {project.resolution})"),
-            mo.hstack(
-                [
-                    mo.vstack(
-                        [
-                            mcs_min_ui,
-                            mcs_max_ui,
-                        ],
-                        align="start",
-                    ),
-                    mo.vstack(
-                        [
-                            mcs_filter_1_ui,
-                            mcs_filter_2_ui,
-                        ],
-                        align="start",
-                    ),
-                ],
-                justify="start",
-            ),
+            mo.md(f"{mcs_min_ui} {mcs_max_ui}<br>{mcs_filter_1_ui} {mcs_filter_2_ui}"),
             box_dict,
             mo.hstack([mesh_rot_axis_ui, mesh_rot_angle_ui], justify="start"),
             mo.md("(yellow: reference 0°, orange: rotatated axis)"),
@@ -382,6 +357,11 @@ def _(change_settings_button, project, sources):
         run_show_mesh,
         skeleton_check,
     )
+
+
+@app.cell
+def _():
+    return
 
 
 @app.cell
@@ -881,7 +861,7 @@ def profile_execute_cell(
 
 
 @app.cell
-def prop_selector_cell(PropertyBlock, project):
+def prop_selector_cell(project):
     stats = Misc_Analysis(project, PropertyBlock)
     available_properties = (
         stats.get_mesh_properties()
@@ -904,13 +884,7 @@ def prop_selector_cell(PropertyBlock, project):
 
 
 @app.cell
-def prop_display_cell(
-    PropertyBlock,
-    calc_stats_btn,
-    mesh_id_filter,
-    project,
-    prop_selector,
-):
+def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
     stats_output = mo.md('Click on "Calculate Statistics" to show properties.')
 
     if calc_stats_btn.value:

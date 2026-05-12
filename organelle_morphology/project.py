@@ -138,7 +138,9 @@ class Project:
         return ProjectMetadata(
             path=self.path,
             name=self.path.name,
-            clipping=tuple(self.clipping.tolist()) if self.clipping else None,
+            clipping=tuple(self.clipping.tolist())
+            if self.clipping is not None
+            else None,
             compression=self.compression_level,
             sources=tuple(self.sources.keys()),
             blacklist=tuple(self.permanent_blacklist),
