@@ -111,6 +111,7 @@ class Project:
             "disk": True,
             "cache_root": lambda: self.path,
             "cache_meshes": True,
+            "cache_fragments": False,
         }
 
         # debug help
