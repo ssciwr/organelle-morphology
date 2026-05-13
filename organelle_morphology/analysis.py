@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional
 
 import numpy as np
@@ -43,10 +41,7 @@ class Analysis(ABC):
         return self.project.registry.get_by_type(self.property_type)
 
     def save_records(self):
-        for rec in self.project.records:
-            dir: Path = self.project.path / "analysis" / rec.name
-            dir.mkdir(exist_ok=True, parents=True)
-            rec.save_yaml(dir / f"{uuid.uuid4()}.yaml")
+        self.project.registry.save_all_to_yaml()
 
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:
