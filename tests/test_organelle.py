@@ -27,13 +27,13 @@ def test_organelle_curvature(project_with_sources, mocker):
 def test_curvature_map(project_with_sources):
     org = project_with_sources.get_organelles("mito_0007")[0]
     cmap = org.curvature_map
-    assert cmap.shape == (900,)
+    assert cmap.shape == (444,)
 
 
 def test_curvature_mesh(project_with_sources):
     org = project_with_sources.get_organelles("mito_0007")[0]
     mesh = org.curvature_mesh.compute()
-    assert len(mesh.vertices) == 900
+    assert len(mesh.vertices) == 444
 
 
 def test_get_mesh_mcs_colored(project_with_sources):

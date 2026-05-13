@@ -19,6 +19,11 @@ def test_distance_matrix(project_with_sources):
         assert row.loc[df.index[3]] == df.loc[df.index[3], ind]
         assert row.pop(ind) == -1.0
         assert np.all(row >= 0.0)
+    project_with_sources.simplify = 0.0
+    project_with_sources.max_distance = 500
+    df_base = generate_distance_matrix(project_with_sources)
+    assert (df_base - df).abs().max().max() < 0.1
+    assert (df_base - df).abs().max().mean() < 0.01
 
 
 def test_distance_matrix_incomplete(project_with_sources):
@@ -66,6 +71,7 @@ def test_get_min_dist():
 def test_search_mcs(project_with_sources):
     p = project_with_sources
     s = p.sources["synth_data"]
+    p.simplify = 0.0
     meshes = [s.meshes[i].compute() for i in (7, 3)]
 
     calculator = MembraneContactSiteCalculator()
@@ -87,6 +93,7 @@ def test_search_mcs(project_with_sources):
 
 def test_search_mcs_inverted_normals(project_with_sources, mocker):
     p = project_with_sources
+    p.simplify = 0.0
     s = p.sources["synth_data"]
     meshes = [s.meshes[i].compute() for i in (7, 3)]
 
@@ -107,6 +114,7 @@ def test_search_mcs_inverted_normals(project_with_sources, mocker):
 def test_analyze_mcs(project_with_sources):
     p = project_with_sources
     s = p.sources["synth_data"]
+    p.simplify = 0.0
     meshes = [s.meshes[i].compute() for i in (7, 3)]
 
     calculator = MembraneContactSiteCalculator()
@@ -198,6 +206,7 @@ def test_search_mcs_watertight_meshes():
 def test_generate_mcs(project_with_sources):
     p = project_with_sources
 
+    p.simplify = 0.0
     generate_mcs(p, "*", "*", max_distance=90, min_distance=0)
     assert list(p.mcs_labels)[0] == "0-90,-"
     org = p.get_organelles("mito_0007")[0]

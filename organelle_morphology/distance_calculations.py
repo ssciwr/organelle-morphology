@@ -1,19 +1,16 @@
 import logging
+from multiprocessing import Pool
 from time import time
+
+import numpy as np
+import pandas as pd
+import trimesh
+from dask.base import compute
 from dask.delayed import delayed
 from dask.distributed import span
 from scipy.spatial import KDTree
-import trimesh
-
-import numpy as np
-
-from multiprocessing import Pool
-import pandas as pd
-
 
 import organelle_morphology
-from dask.base import compute
-
 from organelle_morphology.util import boxes_overlap
 
 logger = logging.getLogger(__name__)

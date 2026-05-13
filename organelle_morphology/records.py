@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC
-from dataclasses import fields
-from pathlib import Path, PosixPath, WindowsPath
-from typing import TypeVar
 from collections import defaultdict
-from typing import List, Type
+from dataclasses import astuple, fields
+from pathlib import Path, PosixPath, WindowsPath
+from typing import TYPE_CHECKING, Hashable, List, Optional, Type, TypeVar
+
+import numpy as np
+import yaml
+
 from organelle_morphology.util import numpy_to_python
 
-import logging
-import yaml
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from organelle_morphology.project import Project
+    from organelle_morphology.project import Project, ProjectMetadata
+    from organelle_morphology.source import SourceMetadata
+
+logger = logging.getLogger(__name__)
 
 
 def construct_path(loader, node):
@@ -36,6 +39,45 @@ yaml.add_representer(PosixPath, represent_path, Dumper=yaml.SafeDumper)
 yaml.add_representer(WindowsPath, represent_path, Dumper=yaml.SafeDumper)
 
 
+def represent_tuple(dumper: yaml.Dumper, data: tuple):
+    return dumper.represent_sequence("tag:yaml.org,2002:python/tuple", data)
+
+
+def construct_tuple(loader, node):
+    return tuple(loader.construct_sequence(node))
+
+
+yaml.add_representer(tuple, represent_tuple, Dumper=yaml.SafeDumper)
+yaml.add_constructor(
+    "tag:yaml.org,2002:python/tuple",
+    construct_tuple,
+    Loader=yaml.SafeLoader,
+)
+
+
+def array_safe_eq(a, b) -> bool:
+    """Check if a and b are equal, even if they are numpy arrays"""
+    if a is b:
+        return True
+    if isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
+        return a.shape == b.shape and (a == b).all()
+    try:
+        return a == b
+    except TypeError:
+        return NotImplemented
+
+
+def dc_eq(dc1, dc2) -> bool:
+    """Checks if two dataclasses which hold numpy arrays are equal"""
+    if dc1 is dc2:
+        return True
+    if dc1.__class__ is not dc2.__class__:
+        return NotImplemented  # better than False
+    t1 = astuple(dc1)
+    t2 = astuple(dc2)
+    return all(array_safe_eq(a1, a2) for a1, a2 in zip(t1, t2))
+
+
 def represent_property_block(dumper, obj):
     """Represent PropertyBlock objects with their class tag"""
     # Get the class name and module for YAML reconstruction
@@ -51,7 +93,31 @@ def represent_property_block(dumper, obj):
 
 
 class PropertyBlock(ABC):
-    """Base class for (Meta)Data containers"""
+    """Base class for (Meta)Data containers
+
+    Should be subclassed into a dataclass.
+    If the dataclass should hold np arrays, use
+    `@dataclass(eq=False)`
+
+    Metadata must be hashable, therefor set frozen=True and
+    ensure no mutable fields are used (lists,..)
+
+    For data belonging to an organelle, set the metadata field
+    `organelle_id` to the organelle id.
+    """
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        tag = (
+            f"tag:yaml.org,2002:python/object/apply:{cls.__module__}.{cls.__qualname__}"
+        )
+        yaml.add_constructor(
+            tag,
+            lambda loader, node, _cls=cls: PropertyBlock.yaml_constructor(
+                loader, node, _cls
+            ),
+            Loader=yaml.SafeLoader,
+        )
 
     def to_dict(self):
         return {field.name: getattr(self, field.name) for field in fields(self)}
@@ -67,6 +133,9 @@ class PropertyBlock(ABC):
             self.__class__, represent_property_block, Dumper=yaml.SafeDumper
         )
 
+    def __eq__(self, other):
+        return dc_eq(self, other)
+
 
 AnyPropertyBlock = TypeVar("AnyPropertyBlock", bound=PropertyBlock)
 
@@ -81,7 +150,14 @@ class Record:
         name: name of data
     """
 
-    def __init__(self, data: AnyPropertyBlock, meta: AnyPropertyBlock):
+    def __init__(
+        self,
+        data: AnyPropertyBlock,
+        meta: AnyPropertyBlock,
+        project: Optional[Project],
+        meta_sources: Optional[tuple[SourceMetadata]] = None,
+        meta_project: Optional[ProjectMetadata] = None,
+    ):
         """
         Args:
             data: dataclass inheriting from PropertyBlock, contains the data
@@ -91,35 +167,131 @@ class Record:
         self.meta = meta
         self.name = type(data).__name__
 
+        if project is not None:
+            self.meta_sources: tuple[SourceMetadata, ...] = tuple(  # noqa: F821
+                [s.metadata for s in project.sources.values()]
+            )
+            self.meta_project: ProjectMetadata = project.metadata  # noqa: F821
+        else:
+            if meta_sources is None or meta_project is None:
+                raise ValueError(
+                    "Project or both of meta_sources and meta_project must be given!"
+                )
+            self.meta_sources = meta_sources
+            self.meta_project = meta_project
+
+        assert isinstance(self.meta, Hashable), f"meta of {self.name} must be hashable!"
+
     def to_dict(self):
         return {"data": self.data, "meta": self.meta, "name": self.name}
 
     def save_yaml(self, filename: Path):
         to_save = self.to_dict()
-        self.data.yaml_representor()
+
+        array_paths = []
+
+        # Process data fields for numpy arrays
+        data_fields = fields(to_save["data"])
+        data_dict = {}
+        for field in data_fields:
+            obj = getattr(to_save["data"], field.name)
+            if isinstance(obj, np.ndarray):
+                # Save array to npz file
+                array_filename = filename.with_name(f"{filename.stem}_{field.name}.npz")
+                np.savez_compressed(array_filename, array=obj)
+                data_dict[field.name] = array_filename
+                array_paths.append(array_filename)
+            else:
+                data_dict[field.name] = obj
+
+        data_class = to_save["data"].__class__
+        processed_data = data_class(**data_dict)
+
+        processed_dict = {
+            "data": processed_data,
+            "meta": self.meta,
+            "name": self.name,
+            "meta_sources": self.meta_sources,
+            "meta_project": self.meta_project,
+        }
+
+        processed_data.yaml_representor()
         self.meta.yaml_representor()
+
+        if self.meta_project is not None:
+            self.meta_project.yaml_representor()
+        if self.meta_sources is not None:
+            for ms in self.meta_sources:
+                ms.yaml_representor()
+
+        filename.parent.mkdir(exist_ok=True, parents=True)
         with open(filename, "w") as f:
-            yaml.safe_dump(to_save, f)
+            yaml.safe_dump(processed_dict, f)
 
     @classmethod
     def from_yaml(cls, filename: Path):
         with open(filename) as f:
             yaml_dict = yaml.safe_load(f)
-        if not all([k in yaml_dict for k in ["data", "meta", "name"]]):
+
+        # Restore numpy arrays from files
+        # Process data fields
+        if hasattr(yaml_dict["data"], "__dict__"):
+            data_fields = fields(yaml_dict["data"])
+            for field in data_fields:
+                obj = getattr(yaml_dict["data"], field.name)
+                if isinstance(obj, Path) and obj.suffix == ".npz":
+                    if not obj.exists():
+                        obj = filename.parent / obj.name
+                    try:
+                        data = np.load(obj)
+                        restored_array = data["array"]
+                        setattr(yaml_dict["data"], field.name, restored_array)
+                    except Exception as e:
+                        logger.warning(f"Restoring {obj} failed!\n{e}")
+                        pass  # Keep original value if restoration fails
+
+        if not all(
+            [
+                k in yaml_dict
+                for k in ["data", "meta", "name", "meta_sources", "meta_project"]
+            ]
+        ):
             raise ValueError(f"YAML file could not be parsed: {filename}")
 
-        return cls(data=yaml_dict["data"], meta=yaml_dict["meta"])
+        return cls(
+            data=yaml_dict["data"],
+            meta=yaml_dict["meta"],
+            project=None,
+            meta_sources=yaml_dict["meta_sources"],
+            meta_project=yaml_dict["meta_project"],
+        )
+
+    def get_hash(self):
+        return hash(
+            (
+                hash(self.meta),
+                hash(self.name),
+                hash(self.meta_project),
+                hash(self.meta_sources),
+            )
+        )
 
     def __eq__(self, value: object, /) -> bool:
-        if data := getattr(value, "data"):
-            if data != self.data:
+        if name := getattr(value, "name"):
+            if name != self.name:
                 return False
         if meta := getattr(value, "meta"):
             if meta != self.meta:
                 return False
-        if name := getattr(value, "name"):
-            if name != self.name:
+        if proj := getattr(value, "meta_project"):
+            if proj != self.meta_project:
                 return False
+        if sources := getattr(value, "meta_sources"):
+            if sources != self.meta_sources:
+                return False
+        # if data := getattr(value, "data"):
+        #     if data != self.data:
+        #         return False
         return True
 
 
@@ -142,6 +314,14 @@ class RecordRegistry:
         """
         Add a new Record to the registry and index it.
         """
+
+        assert isinstance(record.meta_sources, Hashable), (
+            "source meta must be hashable!"
+        )
+        assert isinstance(record.meta_project, Hashable), (
+            "project meta must be hashable!"
+        )
+
         self._all_records.append(record)
 
         # Index by the class name of the data (e.g., "McsData", "ProfileData")
@@ -175,7 +355,7 @@ class RecordRegistry:
     def summary(self) -> dict[str, int]:
         """
         Generate meta-statistics about the currently stored records.
-        Replaces the old Project.get_stat_stats() method.
+        Replaces the old Project.get_record_stats() method.
 
         Returns:
             dict: Number of each Record type available.
@@ -193,51 +373,30 @@ class RecordRegistry:
         self.logger.info(desc)
         return dict(stat_count)
 
-    def save_all_to_yaml(self, filepath: Path | str) -> None:
+    def save_all_to_yaml(self) -> None:
         """
-        Saves all records in the registry to a single YAML file.
+        Saves all records in the registry as YAML files.
         """
-        filepath = Path(filepath)
+        for rec in self._all_records:
+            dir: Path = self.project.path / "analysis" / rec.name
+            dir.mkdir(exist_ok=True, parents=True)
+            rec.save_yaml(dir / f"{rec.get_hash()}.yaml")
 
-        # Ensure all PropertyBlock subclasses are registered with YAML
-        for record in self._all_records:
-            record.data.yaml_representor()
-            record.meta.yaml_representor()
+        self.logger.info(f"Saved {len(self._all_records)} records in project directory")
 
-        # Collect all records in their dict representations
-        to_save = [record.to_dict() for record in self._all_records]
-
-        with open(filepath, "w") as f:
-            yaml.safe_dump(to_save, f)
-
-        self.logger.info(f"Saved {len(self._all_records)} records to {filepath}")
-
-    def load_all_from_yaml(self, filepath: Path | str) -> None:
+    def load_all_from_yaml(self) -> None:
         """
         Loads records from a YAML file and adds them to the registry.
         """
 
-        filepath = Path(filepath)
-        if not filepath.exists():
-            raise FileNotFoundError(f"Record file not found: {filepath}")
+        files = list((self.project.path / "analysis").rglob("*.yaml"))
 
-        # Load the raw list of dictionaries from the YAML file
-        with open(filepath, "r") as f:
-            loaded_data = yaml.safe_load(f)
-
-        if not isinstance(loaded_data, list):
-            raise ValueError(f"Expected a list of records in {filepath}")
-
-        # Reconstruct Record objects and add them to the registry
+        logger.info(f"Found {len(files)} record files.")
         count = 0
-        for yaml_dict in loaded_data:
-            if not all(k in yaml_dict for k in ["data", "meta", "name"]):
-                self.logger.warning("Skipping invalid record entry found in file.")
-                continue
-
-            # Reconstructs with yaml_constructors
-            record = Record(data=yaml_dict["data"], meta=yaml_dict["meta"])
-            self.add(record)
-            count += 1
-
-        self.logger.info(f"Successfully loaded {count} records from {filepath}")
+        for file in files:
+            try:
+                self.add(Record.from_yaml(file))
+                count += 1
+            except ValueError as e:
+                logger.warning(e)
+        self.logger.info(f"Successfully loaded {count} records")

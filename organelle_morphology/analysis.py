@@ -1,25 +1,36 @@
 from __future__ import annotations
 
+import logging
+import uuid
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, List, Optional
 
 import numpy as np
 import pandas as pd
 
+from organelle_morphology.organelle import McsData
 from organelle_morphology.records import PropertyBlock
 
 if TYPE_CHECKING:
     from organelle_morphology.organelle import Organelle
     from organelle_morphology.project import Project
 
+logger = logging.getLogger(__name__)
+
 
 class Analysis(ABC):
     """Analysis base class. Specific analysis workflows should subclass this."""
 
     def __init__(self, project: Project, property_type: type[PropertyBlock]):
+        """Instantiate new Analysis
+
+        Args:
+            project: The project
+            property_type: The PropertyBlock class of the data (not meta data)
+        """
         self.project = project
         self.property_type = property_type
-        self.update_project_stats()
 
         self.__post_init__()
 
@@ -27,8 +38,15 @@ class Analysis(ABC):
         """Run after initialization of base class, used for subclass specific init"""
         pass
 
-    def update_project_stats(self):
-        self.own_stats = self.project.registry.get_by_type(self.property_type)
+    @property
+    def own_records(self):
+        return self.project.registry.get_by_type(self.property_type)
+
+    def save_records(self):
+        for rec in self.project.records:
+            dir: Path = self.project.path / "analysis" / rec.name
+            dir.mkdir(exist_ok=True, parents=True)
+            rec.save_yaml(dir / f"{uuid.uuid4()}.yaml")
 
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:
@@ -76,11 +94,20 @@ class Analysis(ABC):
 class Mcs_Analysis(Analysis):
     """Methods to calculate mcs statistics"""
 
+    def __init__(self, project):
+        super().__init__(project=project, property_type=McsData)
+
     def __post_init__(self):
-        self.mcs_labels = {s.meta.mcs_label for s in self.own_stats}
+        self.mcs_labels = {s.meta.mcs_label for s in self.own_records}
         self.set_filters()
 
     def set_filters(self, ids: str = "*", mcs_labels: Optional[list[str]] = None):
+        """Filter records for everything in this analysis.
+
+        Args:
+            ids: Glob-style filter pattern for organelles, defaults to "*"
+            mcs_labels: Filter the MCS calculations, defaults to None
+        """
         self.ids = ids
         self.mcs_label_filter = mcs_labels
 
@@ -88,9 +115,6 @@ class Mcs_Analysis(Analysis):
         """The properties of the MCS between organelles
         Gathers data from all the organelles into one dataframe.
 
-        Args:
-            ids: Glob-style filter pattern for organelles, defaults to "*"
-            mcs_labels: Filter the MCS calculations, defaults to None
 
         Returns:
             pd.DataFrame
@@ -101,7 +125,7 @@ class Mcs_Analysis(Analysis):
 
         mcs_properties = {}
 
-        for stat in self.own_stats:
+        for stat in self.own_records:
             for label in self.mcs_labels:
                 if self.mcs_label_filter and (label not in self.mcs_label_filter):
                     continue
@@ -334,7 +358,7 @@ class Misc_Analysis(Analysis):
             return {}
 
         res = {}
-        for stat in self.own_stats:
+        for stat in self.own_records:
             if stat.meta.organelle_id == organelle.id:
                 mcs_label = stat.meta.mcs_label
                 # For each requested base property (e.g., "n_contacts")

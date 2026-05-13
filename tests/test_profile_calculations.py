@@ -80,6 +80,7 @@ def test_calculate_random_profiles(project_with_sources):
 def test_calculate_skeleton_profiles(project_with_sources):
     """Regression-Test the 2D profile length with skeleton profiles."""
     # Generate the skeleton first, very large step size for numerical stability
+    project_with_sources.simplify = 0.0
     project_with_sources.skeletonize_wavefront(ids="mito_0007", step_size=20)
 
     calculator = ProfileCalculator(project_with_sources)

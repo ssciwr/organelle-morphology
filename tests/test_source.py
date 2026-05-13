@@ -195,6 +195,7 @@ def test_calculate_mesh_clipped(project_with_sources, mocker, chunksize):
 @pytest.mark.parametrize("rep", range(20))
 def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
     p = project_with_sources
+    p.simplify = 0.0
     s = list(p.sources.values())[0]
 
     o1 = np.random.randint(4) + 1
@@ -289,3 +290,15 @@ def test_mcs_dicts(project_with_sources):
         k in mcs_dicts["0.0-10,-"]["mito_0019"]["mito_0015"].keys()
         for k in ["area", "distances", "vertices_index"]
     )
+
+
+def test_get_centroid(project_with_sources):
+    p = project_with_sources
+    center = p.sources["synth_data"].centroid
+    np.testing.assert_allclose(center, [126.11414925, 138.18867658, 186.33403298])
+
+
+def test_get_coarse_centroid(project_with_sources):
+    p = project_with_sources
+    center = p.sources["synth_data"].global_coarse_centroid
+    np.testing.assert_allclose(center, [120.444444, 129.666667, 180.666667])

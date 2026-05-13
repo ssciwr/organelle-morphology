@@ -1,51 +1,47 @@
+import logging
+from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
+from sys import platform
 from typing import Optional
 
-from organelle_morphology.records import PropertyBlock, RecordRegistry
-from organelle_morphology.util import setup_logging
-import logging
+import numpy as np
+import pandas as pd
+import trimesh
 from dask.base import compute
 from dask.delayed import Delayed
+from dask.distributed import Client, LocalCluster
 from trimesh import Trimesh
-import trimesh
+
+from organelle_morphology.distance_calculations import (
+    generate_distance_matrix,
+    generate_mcs,
+)
 from organelle_morphology.organelle import Organelle
+from organelle_morphology.records import PropertyBlock, RecordRegistry
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
     corners_to_edges,
     merge_meshes,
+    setup_logging,
     show,
 )
-from organelle_morphology.distance_calculations import (
-    generate_distance_matrix,
-    generate_mcs,
-)
-
-from pathlib import Path
-from dask.distributed import Client, LocalCluster
-
-import numpy as np
-import pandas as pd
-
-from collections import defaultdict
-import plotly.graph_objects as go
-from sys import platform
-
 
 clipping_type = (
     tuple[tuple[float, float, float], tuple[float, float, float]] | list[list[float]]
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProjectMetadata(PropertyBlock):
     path: Path
     name: str
-    clipping: Optional[np.ndarray]
+    clipping: Optional[clipping_type]
     compression: str
-    sources: list[str]
-    blacklist: list[str]
-    whitelist: list[str]
+    sources: tuple[str, ...]
+    blacklist: tuple[str, ...]
+    whitelist: tuple[str, ...]
 
 
 class Project:
@@ -78,6 +74,7 @@ class Project:
 
         self._project_path = Path(project_path)
         self.clear_memory_cache()
+        self._simplify = 0.5
 
         self.path.mkdir(exist_ok=True)
 
@@ -110,6 +107,7 @@ class Project:
             "project_name": lambda: self.path.name,
             "clipping": lambda: str(self.clipping).replace("\n", ""),
             "level": lambda: str(self.compression_level),
+            "simplify": lambda: str(self.simplify),
             "disk": True,
             "cache_root": lambda: self.path,
             "cache_meshes": True,
@@ -136,15 +134,17 @@ class Project:
             self.logger.debug(f"Set logging level to: {loglevel}")
 
     @property
-    def metadata(self):
+    def metadata(self) -> ProjectMetadata:
         return ProjectMetadata(
             path=self.path,
             name=self.path.name,
-            clipping=self.clipping,
+            clipping=tuple(self.clipping.tolist())
+            if self.clipping is not None
+            else None,
             compression=self.compression_level,
-            sources=list(self.sources.keys()),
-            blacklist=self.permanent_blacklist,
-            whitelist=self.permanent_whitelist,
+            sources=tuple(self.sources.keys()),
+            blacklist=tuple(self.permanent_blacklist),
+            whitelist=tuple(self.permanent_whitelist),
         )
 
     @property
@@ -173,10 +173,24 @@ class Project:
         if self._cache is None:
             cs = self.cache_settings
             active_sources = sorted(list(self.sources.keys()))
-            name = f"cache_{cs['project_name']}/proj_{active_sources}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/proj_{active_sources}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             self._cache = cache
         return self._cache
+
+    @property
+    def simplify(self):
+        return self._simplify
+
+    @simplify.setter
+    def simplify(self, simplify: float):
+        if 0.0 < simplify > 1.0:
+            raise ValueError(
+                "Simplify value must be between 0.0 and 1.0. "
+                "It is a percent value of how much to simplify."
+            )
+        self._simplify = simplify
+        self.clear_caches()
 
     def add_source(
         self,
@@ -241,6 +255,18 @@ class Project:
             )
         self.sources[xml_path.stem] = source_obj
         return source_obj
+
+    @property
+    def resolution(self):
+        res = None
+        for s in self.sources.values():
+            if res is None:
+                res = s.resolution
+            elif s.resolution != res:
+                raise RuntimeError(
+                    "Sources have different resolutions which is not supported!"
+                )
+        return res
 
     def skeletonize_wavefront(
         self,
@@ -328,6 +354,9 @@ class Project:
         color_instances=False,
         mcs_min: Optional[float] = None,
         mcs_max: Optional[float] = None,
+        axis: bool = True,
+        rot_axis: Optional[str] = None,
+        rot_angle: Optional[float] = None,
     ):
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
@@ -348,11 +377,13 @@ class Project:
             mcs_label = self.search_mcs(max_distance=mcs_max, min_distance=mcs_min)
             mcs_orgs = self.mcs_queries[mcs_label]["organelles"]
             meshes = []
+            non_mcs_meshes = []
             for org in orgs:
                 if org.id in mcs_orgs:
                     meshes.append(org.get_mesh_mcs_colored(mcs_label))
                 else:
-                    meshes.append(org.mesh)
+                    non_mcs_meshes.append(org.mesh)
+            meshes.append(merge_meshes(non_mcs_meshes, color=-1, transp=transp))
             mmesh = merge_meshes(meshes, color=0, transp=transp)
             to_show = [mmesh.compute()]
 
@@ -473,73 +504,49 @@ class Project:
             box_outline.colors = ((200, 50, 50, 255),)
             to_show.append(box_outline)
 
+        if axis:
+            size = max(np.array(source.metadata.size) * source.data_resolution)
+            to_show.append(
+                trimesh.creation.axis(axis_radius=size / 200, axis_length=size / 20)
+            )
+
+        if rot_axis is not None:
+            size = np.array(source.metadata.size) * source.data_resolution
+            center = size / 2
+
+            plane_axes = [0, 1, 2]
+            axis_names = ["x", "y", "z"]
+            plane_axes.remove(axis_names.index(rot_axis))
+            radius = np.linalg.norm(size[plane_axes]) / 2
+
+            u = np.zeros(3)
+            v = np.zeros(3)
+            u[plane_axes[0]] = 1.0
+            v[plane_axes[1]] = 1.0
+
+            def _line_in_plane(angle_deg):
+                theta = np.deg2rad(angle_deg)
+                direction = np.cos(theta) * u + np.sin(theta) * v
+                end = center + direction * radius
+                return trimesh.load_path(np.array([[center, end]]))
+
+            ref_line = _line_in_plane(0.0)
+            ref_line.colors = [(200, 200, 0, 255)]  # yellow = 0° reference
+            to_show.append(ref_line)
+
+            if rot_angle is not None and rot_angle % 360.0 != 0.0:
+                rot_line = _line_in_plane(rot_angle)
+                rot_line.colors = [(255, 100, 0, 255)]  # orange = current angle
+                to_show.append(rot_line)
+
         return show(to_show)
-
-    def show_plotly(
-        self,
-        ids: str = "*",
-        show_curvature: bool = False,
-        show_skeleton: bool = False,
-        mcs_label: Optional[str] = None,
-        height: int = 800,
-    ):
-        orgs = self.get_organelles(ids=ids)
-
-        if mcs_label and mcs_label not in self._mcs_labels:
-            raise ValueError(
-                f"MCS label {mcs_label} not found in project please "
-                + "run search_mcs with the desired label first"
-            )
-
-        mcs_filter_ids = None
-        if mcs_label:
-            mcs_filter_ids = [org.id for org in orgs]
-
-        # draw figure
-        fig = go.Figure()
-        for org in orgs:
-            fig.add_traces(
-                org.plotly_mesh(
-                    show_curvature=show_curvature,
-                    show_skeleton=show_skeleton,
-                    mcs_label=mcs_label,
-                    mcs_filter_ids=mcs_filter_ids,
-                )
-            )
-            if show_skeleton and org.skeleton is not None:
-                fig.add_traces(org.plotly_skeleton())
-                sampled_path = org.sampled_skeleton[0]
-                try:
-                    sampled_scatter = go.Scatter3d(
-                        x=sampled_path[:, 0],
-                        y=sampled_path[:, 1],
-                        z=sampled_path[:, 2],
-                        mode="markers",
-                        name=f"sampled_path_{org.id}",
-                        marker=dict(size=1, color="red"),
-                    )
-                    fig.add_trace(sampled_scatter)
-                except ValueError:
-                    self.logger.warning(org.id, sampled_path, org.skeleton)
-                    raise ValueError("sampled_path is not valid")
-
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(title="", showticklabels=False, showgrid=False),
-                yaxis=dict(title="", showticklabels=False, showgrid=False),
-                zaxis=dict(title="", showticklabels=False, showgrid=False),
-                aspectmode="cube",
-            ),
-            height=height,
-        )
-
-        return fig
 
     def distance_filtering(
         self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="labels"
     ):
         """Filter the organelles based on the distance between two filtered organelle lists.
-              These can be from one or more types depending on the given filter.
+
+        These can be from one or more types depending on the given filter.
 
         Args:
             ids_source: Filter string for the source ids, defaults to "*"
@@ -562,7 +569,9 @@ class Project:
         distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
         # Filter the DataFrame by row values
         filtered_df = distance_matrix[
-            distance_matrix.apply(lambda row: row.min() < filter_distance, axis=1)
+            distance_matrix.apply(
+                lambda row: row.loc[row >= 0].min() < filter_distance, axis=1
+            )
         ]
 
         # Convert the filtered DataFrame to a dictionary
@@ -572,7 +581,9 @@ class Project:
 
         for col in filtered_df_dict:
             for row, value in filtered_df_dict[col].items():
-                if value < filter_distance and col != row:  # exclude self-contact
+                if (
+                    0.0 <= value < filter_distance and col != row
+                ):  # exclude self-contact
                     # if (
                     #     attribute in ["names", "objects"]
                     #     and row in output_filtered_dict.keys()
@@ -699,59 +710,6 @@ class Project:
     def mcs_queries(self):
         return self._mcs_labels
 
-    def hist_distance_matrix(
-        self,
-        ids_source="*",
-        ids_target="*",
-    ):
-        orgs_1 = self.get_organelle_ids(ids=ids_source)
-        orgs_2 = self.get_organelle_ids(ids=ids_target)
-        distance_matrix = self.distance_matrix.loc[orgs_1, orgs_2]
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=distance_matrix.mean().values.flatten()))
-        fig.update_layout(
-            xaxis_title_text="Distance",
-            yaxis_title_text="Count",
-            title="Distance matrix histogram",
-        )
-        return fig
-
-    def hist_skeletons(self, ids="*", attribute="num_nodes"):
-        """Plot the histogram from the skeleton info.
-
-        :param ids: Filter id, defaults to "*"
-        :type ids: str, optional
-        :param attribute: which attribute to plot, defaults to "num_nodes".
-            can be:
-            "num_nodes": number of nodes in the skeleton
-            "num_branch_points": number of branch points in the skeleton
-            "end points": number of end points in the skeleton
-            "total_length": total length of the skeleton
-            "mean_length": mean length of the skeleton
-            "longest_path": longest path in the skeleton
-
-        :type attribute: str, optional
-        :return: _description_
-        :rtype: _type_
-        """
-        orgs = self.get_organelles(ids=ids)
-        # drop organelles without skeleton
-        valid_orgs = []
-        for org in orgs:
-            if org.skeleton is not None:
-                valid_orgs.append(org.id)
-
-        skeleton_info = self.skeleton_info.loc[valid_orgs]
-        data = skeleton_info[attribute].values
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=data))
-        fig.update_layout(
-            xaxis_title_text=attribute,
-            yaxis_title_text="Count",
-            title=f"{attribute} histogram",
-        )
-        return fig
-
     def calculate_profiles(
         self,
         method: str,
@@ -855,7 +813,7 @@ class Project:
         df = pd.DataFrame(properties).T
         return df
 
-    def n_oranelles(self) -> dict[str, int]:
+    def n_organelles(self) -> dict[str, int]:
         counts = {}
         for s in self.sources.values():
             counts[s.org_name] = len(self.get_organelles(s.org_name + "*"))
@@ -1149,7 +1107,7 @@ class Project:
     def records(self):
         return self.registry.get_all()
 
-    def get_stat_stats(self):
+    def get_record_stats(self):
         return self.registry.summary()
 
     def clear_memory_cache(self):

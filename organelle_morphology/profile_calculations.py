@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import trimesh
-import yaml
 from dask import delayed
 from dask.base import compute
 from scipy.spatial.distance import pdist
@@ -26,20 +25,20 @@ logger = logging.getLogger(__name__)
 class ProfileData(PropertyBlock):
     """Physical measurements of the 2D profile."""
 
-    perimeters: List[float]
-    widths: List[float]
-    ratios: List[float]  # width / perimeter ratio for every slice
+    perimeters: list[float]
+    widths: list[float]
+    ratios: list[float]  # width / perimeter ratio for every slice
     mean_perimeter: float  # mean across all slices for one organelle
     mean_width: float
     mean_ratio: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProfileMetadata(PropertyBlock):
     """Context for the profile calculation."""
 
     organelle_id: str
-    axis_used: Union[str, tuple]
+    axis_used: str | tuple
     num_slices_attempted: int
 
 
@@ -98,10 +97,9 @@ class ProfileCalculator(Analysis):
         Returns a DataFrame summarizing the profile statistics.
         Refreshes the local stats view to include results calculated after initialization.
         """
-        self.own_stats = self.project.registry.get_by_type(self.property_type)
 
         data_rows = []
-        for stat in self.own_stats:
+        for stat in self.own_records:
             row = {
                 "ID": stat.meta.organelle_id,
                 "axis": stat.meta.axis_used,
@@ -193,7 +191,9 @@ class ProfileCalculator(Analysis):
             )
 
             # Register the result in the central project registry
-            self.project.registry.add(Record(data=data, meta=meta))
+            self.project.registry.add(
+                Record(data=data, meta=meta, project=self.project)
+            )
 
     def calculate_profile_lengths(self, ids="er_*", axis="z", num_slices=20) -> None:
         """Calculates 2D profile metrics along a given fixed axis."""
@@ -257,7 +257,7 @@ class ProfileCalculator(Analysis):
 
         self._compute_and_format(all_tasks, "random", num_planes)
 
-    def calculate_skeleton_profiles(self, ids="er_*", sample_distance=0.1) -> None:
+    def calculate_skeleton_profiles(self, ids="*", sample_distance=0.1) -> None:
         """
         Calculates 2D profile perimeters and widths perpendicular to the organelle skeleton.
         """
@@ -299,16 +299,3 @@ class ProfileCalculator(Analysis):
             all_tasks[org.id] = org_tasks
 
         self._compute_and_format(all_tasks, "skeleton", num_slices=None)
-
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.profile_calculations.ProfileData",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, ProfileData),
-    Loader=yaml.SafeLoader,
-)
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.profile_calculations.ProfileMetadata",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, ProfileMetadata),
-    Loader=yaml.SafeLoader,
-)

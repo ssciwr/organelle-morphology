@@ -147,10 +147,11 @@ def test_show_plain(project_with_sources, mocker):
     p.show()
     mock_util_show.assert_called_once()
     to_show = mock_util_show.call_args[0][0]
-    assert len(to_show) == 2
-    assert isinstance(to_show[0], Trimesh)
-    assert isinstance(to_show[1], Path3D)
-    assert 15 < len(np.unique(to_show[0].visual.vertex_colors, axis=0)) < 30
+    assert len(to_show) == 3
+    assert isinstance(to_show[0], Trimesh)  # mesh
+    assert isinstance(to_show[1], Path3D)  # box
+    assert isinstance(to_show[2], Trimesh)  # axes
+    assert 15 < len(np.unique(to_show[0].visual.vertex_colors, axis=0)) < 40
 
 
 def test_show_skeleton(project_with_sources, mocker):
@@ -161,9 +162,10 @@ def test_show_skeleton(project_with_sources, mocker):
     p.show(skeleton=True)
     mock_util_show.assert_called_once()
     to_show = mock_util_show.call_args[0][0]
-    assert len(to_show) == 2
+    assert len(to_show) == 3
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
+    assert isinstance(to_show[2], Trimesh)  # axes
     assert np.all(to_show[0].visual.vertex_colors[:, -1] == 100)
 
 
@@ -179,9 +181,10 @@ def test_show_curvature(project_with_sources, mocker):
     mock_curvature.assert_called_once()
     mock_util_show.assert_called_once()
     to_show = mock_util_show.call_args[0][0]
-    assert len(to_show) == 2
+    assert len(to_show) == 3
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
+    assert isinstance(to_show[2], Trimesh)
 
 
 def test_show_highlight(project_with_sources, mocker):
@@ -208,7 +211,7 @@ def test_show_domain_box_off(project_with_sources, mocker):
     p.show(domain_box=False)
 
     to_show = mock_util_show.call_args[0][0]
-    assert len(to_show) == 1
+    assert len(to_show) == 2
     assert isinstance(to_show[0], Trimesh)
 
 
@@ -219,7 +222,7 @@ def test_show_box(project_with_sources, mocker):
     p.show(box=((0, 0, 0), (0.5, 0.5, 0.5)))
 
     to_show = mock_util_show.call_args[0][0]
-    assert len(to_show) == 3
+    assert len(to_show) == 4
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
     assert isinstance(to_show[2], Path3D)
@@ -233,7 +236,7 @@ def test_show_clipping_box(project_with_sources, mocker):
     p.show()
 
     to_show = mock_util_show.call_args[0][0]
-    assert len(to_show) == 3
+    assert len(to_show) == 4
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
     assert isinstance(to_show[2], Path3D)
@@ -394,9 +397,9 @@ def test_clear_caches(project_with_sources, mocker):
 
 
 def test_stat_stats(project, mocker):
-    assert project.get_stat_stats() == {}
+    assert project.get_record_stats() == {}
 
-    stat = Record(mocker.sentinel, mocker.sentinel)
+    stat = Record(mocker.sentinel, mocker.sentinel, project=project)
     project.registry.add(stat)
 
-    assert project.get_stat_stats()["_Sentinel"] == 1
+    assert project.get_record_stats()["_Sentinel"] == 1

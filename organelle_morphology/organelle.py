@@ -1,15 +1,15 @@
-from dataclasses import InitVar, dataclass, fields
 import logging
+from collections import defaultdict
+from dataclasses import InitVar, dataclass, fields
 from pathlib import Path
 from typing import Optional
-from dask.delayed import Delayed, delayed
+
+import dask.array as da
+import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
-import dask.array as da
-from collections import defaultdict
-import matplotlib.pyplot as plt
+from dask.delayed import Delayed, delayed
 from trimesh import Trimesh
-import yaml
 
 import organelle_morphology
 from organelle_morphology.records import PropertyBlock, Record
@@ -30,14 +30,15 @@ def organelle_types() -> list[str]:
     return list(organelle_registry.keys())
 
 
-@dataclass
+@dataclass(frozen=True)
 class OrganelleMetadata(PropertyBlock):
     source: Path
     label: int
     id: str
 
 
-@dataclass
+# unsafe hash instead of frozen due to __post_init__
+@dataclass(unsafe_hash=True)
 class McsMetadata(PropertyBlock):
     mcs_label: str
     max_dist: float
@@ -59,12 +60,12 @@ class McsMetadata(PropertyBlock):
                 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class MeshData(PropertyBlock):
     volume: float
     area: float
-    centroid: list[float]
-    inertia: list[float]
+    centroid: tuple[float]
+    inertia: tuple[float]
     water_tight: bool
     sphericity: float
     flatness_ratio: float
@@ -82,20 +83,6 @@ class McsData(PropertyBlock):
     n_contacts_per_volume: float
     area_per_area: float
     area_per_volume: float
-
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsData",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsData),
-    Loader=yaml.SafeLoader,
-)
-
-
-yaml.add_constructor(
-    "tag:yaml.org,2002:python/object/apply:organelle_morphology.organelle.McsMetadata",
-    lambda loader, node: PropertyBlock.yaml_constructor(loader, node, McsMetadata),
-    Loader=yaml.SafeLoader,
-)
 
 
 class Organelle:
@@ -447,7 +434,7 @@ class Organelle:
             min_dist=entries["meta"]["min_distance"],
             max_dist=entries["meta"]["max_distance"],
         )
-        stat = Record(mcs_props, mcs_meta)
+        stat = Record(mcs_props, mcs_meta, project=self.project)
         self.project.registry.add(stat)
 
     @property
@@ -504,8 +491,8 @@ def get_mesh_properties_delayed(mesh: Trimesh) -> MeshData:
     return MeshData(
         volume=(mesh.volume).item(),
         area=(mesh.area).item(),
-        centroid=(mesh.centroid).tolist(),
-        inertia=(mesh.moment_inertia).tolist(),
+        centroid=tuple((mesh.centroid).tolist()),
+        inertia=tuple((mesh.moment_inertia).tolist()),
         water_tight=mesh.is_watertight,
         sphericity=((36 * np.pi * mesh.volume**2) ** (1 / 3) / mesh.area).item(),
         flatness_ratio=(

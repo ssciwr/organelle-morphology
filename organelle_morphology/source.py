@@ -2,6 +2,7 @@ from collections import defaultdict
 import logging
 from typing import Optional
 from pathlib import Path
+
 import organelle_morphology
 from organelle_morphology.organelle import Organelle, organelle_registry
 
@@ -47,17 +48,17 @@ class Data_level:
     level: str
     chunks: tuple
     chunks_per_dimension: list
-    downsamplingFactor: list[int]
+    downsamplingFactor: tuple[int]
     data: z5py.dataset.Dataset
 
 
-@dataclass
+@dataclass(frozen=True)
 class SourceMetadata(PropertyBlock):
     data_root: Path
-    downsampling: list[list[int]]
-    levels: list[str]
+    downsampling: tuple[tuple[int, ...], ...]
+    levels: tuple[str, ...]
     size: tuple[int, ...]
-    resolution: list[float]
+    resolution: tuple[float, ...]
     name: str
     coarse_level: str
 
@@ -136,11 +137,11 @@ class DataSource:
                     level=name_parts[2],
                     chunks=obj.chunks,
                     chunks_per_dimension=obj.chunks_per_dimension,
-                    downsamplingFactor=obj.attrs["downsamplingFactors"],
+                    downsamplingFactor=tuple(obj.attrs["downsamplingFactors"]),
                     data=obj,
                 )
 
-                tp.downsamplingFactors.append(obj.attrs["downsamplingFactors"])
+                tp.downsamplingFactors.append(tuple(obj.attrs["downsamplingFactors"]))
                 tp.levels.append(name_parts[2])
 
                 setattr(tp, name_parts[2], dl)
@@ -220,10 +221,10 @@ class DataSource:
 
         self._metadata = SourceMetadata(
             data_root=self.xml_path / filename,
-            downsampling=self.timepoint.downsamplingFactors,
-            levels=self.timepoint.levels,
+            downsampling=tuple(self.timepoint.downsamplingFactors),
+            levels=tuple(self.timepoint.levels),
             size=tuple([int(i) for i in size.split(" ")][::-1]),
-            resolution=resolution,
+            resolution=tuple(resolution),
             name=name,
             coarse_level=coarse_level,
         )
@@ -328,7 +329,7 @@ class DataSource:
     def clipping_corners_data(self, corners):
         self._clip_low_corner_data, self._clip_high_corner_data = corners
 
-    def get_data(self, compression_level: Optional[str], clipping=None) -> Array:
+    def get_data(self, compression_level: Optional[str] = None, clipping=None) -> Array:
         """Get data of this source as array.
 
         Sets self.clipping_corners and self.clipping_corners_data, if
@@ -369,12 +370,18 @@ class DataSource:
         c_high_d = np.ceil(upper_corner * data.shape).astype(int)
         cube_slice = tuple(slice(low, high, 1) for low, high in zip(c_low_d, c_high_d))
 
-        self._scaling_factors = self.resolution
-        self.clipping_corners_data = (c_low_d, c_high_d)
-        self.clipping_corners = (
-            c_low_d * self._scaling_factors,
-            c_high_d * self._scaling_factors,
-        )
+        if clipping is None and compression_level is None:
+            self._scaling_factors = self.resolution
+            self.clipping_corners_data = (c_low_d, c_high_d)
+            self.clipping_corners = (
+                c_low_d * self._scaling_factors,
+                c_high_d * self._scaling_factors,
+            )
+        else:
+            self.logger.debug(
+                "Getting non-default data,"
+                "clipping corners and scaling_factor are not updated!"
+            )
 
         return data[cube_slice]
 
@@ -411,6 +418,22 @@ class DataSource:
         )
 
     @property
+    def coarse_resolution(self) -> tuple[float]:
+        """Return the resolution of our data at the coarsest compression level."""
+
+        return tuple(
+            (
+                r * d
+                for r, d in zip(
+                    self.data_resolution,
+                    getattr(
+                        self.timepoint, self.metadata.coarse_level
+                    ).downsamplingFactor,
+                )
+            )
+        )
+
+    @property
     def cache(self):
         """Get the cache for this source.
 
@@ -422,10 +445,31 @@ class DataSource:
         if self._cache is None:
             cs = self.project.cache_settings
             cs["source"] = self.xml_path.stem
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             self._cache = cache
         return self._cache
+
+    @property
+    def centroid(self) -> np.ndarray:
+        if self._centroid is None:
+            self._centroid = (
+                np.mean(self.data.nonzero(), axis=1) * self.resolution
+            ) + self.clipping_corners[0]
+
+        return self._centroid
+
+    @property
+    def global_coarse_centroid(self):
+        if self._global_coarse_centroid is None:
+            data = self.get_data(
+                compression_level=self.metadata.coarse_level,
+                clipping=[[0, 0, 0], [1, 1, 1]],
+            )
+            self._global_coarse_centroid = (
+                np.mean(data.nonzero(), axis=1) * self.coarse_resolution
+            )
+        return self._global_coarse_centroid
 
     @property
     def labels(self) -> list[int]:
@@ -465,14 +509,14 @@ class DataSource:
         @delayed(pure=False)
         def _write_frag_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             for key, value in key_values:
                 cache[key] = value
 
         @delayed(pure=True)
         def _get_fragment_cache(key, cs):
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             return cache[key]
 
@@ -535,20 +579,20 @@ class DataSource:
         @delayed(pure=False)
         def _write_mesh_cache_batch(key_values, cs):
             """Write multiple meshes to cache in a single operation"""
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             for key, value in key_values:
                 cache[key] = value
 
         def _write_mesh_cache(key_value, cs):
             """Write multiple meshes to cache in a single operation"""
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             cache[key_value[0]] = compute(key_value[1])[0]
 
         @delayed(pure=True)
         def _get_mesh_cache(key, cs):
-            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}/{cs['clipping']}"
+            name = f"cache_{cs['project_name']}/{cs['source']}/{cs['level']}-{cs['simplify']}/{cs['clipping']}"
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             return cache[key]
 
@@ -798,8 +842,24 @@ class DataSource:
     ) -> dict[int, Delayed]:
         @delayed
         def simplify_mesh(mesh, factor=0.1):
-            """Simplify a trimesh object"""
-            mesh = mesh.simplify_quadric_decimation(factor, aggression=1)
+            """Try to simplify a trimesh object.
+
+            Can fail due to unknown issue in trimesh for larger
+            simplification values. In case of failure, the original
+            mesh is returned.
+            """
+            done = False
+            counter = 0
+            while not done or counter >= 10:
+                try:
+                    mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
+                    done = True
+                except IndexError:
+                    counter += 1
+                    factor = factor * 0.8
+            # if not done:
+            #     raise RuntimeError(f"Simplification failed after {counter} tries.")
+
             return mesh
 
         # get some statistics
@@ -815,6 +875,8 @@ class DataSource:
         # Cleanup: Merge meshes crossing chunks
         meshes = {}
         duplicate_ids = all_ids[np.nonzero(id_amounts > 1)]
+        if simplify is None:
+            simplify = self.project.simplify
         for ind in duplicate_ids:
             chunk_idxs = ids_to_chunks[ind]
             loc_meshes = [meshes_chunked[idx][ind] for idx in chunk_idxs]
@@ -857,6 +919,8 @@ class DataSource:
         self._scaling_factors = None
         self._curv_radius = None
         self._mcs_dicts = {}
+        self._centroid = None
+        self._global_coarse_centroid = None
 
     @property
     def mcs_dicts(self) -> dict:

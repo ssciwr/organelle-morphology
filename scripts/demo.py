@@ -20,7 +20,7 @@ from dask.base import compute
 from dask.distributed import LocalCluster, Client
 import organelle_morphology as om
 from organelle_morphology.util import color_delayed_trimesh_rgba, show
-from organelle_morphology.statistics import Stats
+from organelle_morphology.position import Position_Analysis
 
 viridis = mpl.colormaps.get("viridis")
 # %%
@@ -118,6 +118,16 @@ p.compression_level = "s1"
 print(len(s.labels))
 mmesh = merge_meshes(list(s.meshes.values()), color=0).compute()
 show(mmesh)
+
+# %% Position analysis
+p.clipping = None
+p.clipping = [[0.6,0.5,0.3], [0.8,1,0.8]]
+p.compression_level = "s3"
+
+pa = Position_Analysis(p)
+density1d = pa.density1D(s, bin_resolution=(0.1,0.1,0.1), axis=0)
+
+
 
 # %% Project API
 p.clipping = [[0.6,0.5,0], [1,1,1]]
