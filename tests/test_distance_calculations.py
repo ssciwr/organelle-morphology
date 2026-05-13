@@ -19,6 +19,11 @@ def test_distance_matrix(project_with_sources):
         assert row.loc[df.index[3]] == df.loc[df.index[3], ind]
         assert row.pop(ind) == -1.0
         assert np.all(row >= 0.0)
+    project_with_sources.simplify = 0.0
+    project_with_sources.max_distance = 500
+    df_base = generate_distance_matrix(project_with_sources)
+    assert (df_base - df).abs().max().max() < 0.1
+    assert (df_base - df).abs().max().mean() < 0.01
 
 
 def test_distance_matrix_incomplete(project_with_sources):
