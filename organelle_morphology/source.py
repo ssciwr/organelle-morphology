@@ -520,8 +520,9 @@ class DataSource:
             cache = Cache(cache_name=name, disk=cs["disk"], cache_root=cs["cache_root"])
             return cache[key]
 
+        use_cache = self.project.cache_settings["cache_fragments"]
         if self._fragments_chunked is None:
-            if "ids_to_chunks" not in self.cache:
+            if "ids_to_chunks" not in self.cache or not use_cache:
                 ids_to_chunks, meshes_chunked_d = self.calculate_mesh()
 
                 self.cache["ids_to_chunks"] = ids_to_chunks
@@ -530,23 +531,24 @@ class DataSource:
                 cs = self.project.cache_settings.copy()
                 cs["source"] = self.xml_path.stem
 
-                delayed_saves = []
-                batch_size = 1  # TODO: check optimal batch size over chunks
+                if use_cache:
+                    delayed_saves = []
+                    batch_size = 1  # TODO: check optimal batch size over chunks
 
-                tasks = []
-                for idx, meshes_in_chunk in np.ndenumerate(meshes_chunked_d):
-                    tasks.append((f"fragment_{idx}", meshes_in_chunk))
+                    tasks = []
+                    for idx, meshes_in_chunk in np.ndenumerate(meshes_chunked_d):
+                        tasks.append((f"fragment_{idx}", meshes_in_chunk))
 
-                for i in range(0, len(tasks), batch_size):
-                    to_save = tasks[i : i + batch_size]
-                    delayed_save = _write_frag_cache_batch(to_save, cs)
-                    delayed_saves.append(delayed_save)
+                    for i in range(0, len(tasks), batch_size):
+                        to_save = tasks[i : i + batch_size]
+                        delayed_save = _write_frag_cache_batch(to_save, cs)
+                        delayed_saves.append(delayed_save)
 
-                self.logger.debug(
-                    f"Saving {len(delayed_saves)} batches of mesh fragments"
-                )
-                compute(*delayed_saves, traverse=False)
-                self.logger.debug("Mesh fragments saved to cache")
+                    self.logger.debug(
+                        f"Saving {len(delayed_saves)} batches of mesh fragments"
+                    )
+                    compute(*delayed_saves, traverse=False)
+                    self.logger.debug("Mesh fragments saved to cache")
 
             else:
                 try:
