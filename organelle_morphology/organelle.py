@@ -371,6 +371,13 @@ class Organelle:
         volume = self.mesh_properties.volume
         surface = self.mesh_properties.area
 
+        if not ((volume > 0) or not surface > 0):
+            self.logger.debug(
+                f"Missing volume/surface in Organelle {self}. "
+                f"Volume: {volume}, Surface {surface}"
+            )
+            return
+
         len_dist_list = []
         mean_dist_list = []
         std_dist_list = []
