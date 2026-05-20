@@ -28,13 +28,22 @@ def test_distance_matrix(project_with_sources):
 
 def test_distance_matrix_incomplete(project_with_sources):
     project_with_sources.max_distance = 10
-    df = generate_distance_matrix(project_with_sources)
+    df = generate_distance_matrix(project_with_sources, domain_decomposition=True)
     assert isinstance(df, DataFrame)
     assert df.shape == (19, 19)
     assert (df < 0).sum().sum() == 347
     for ind, row in df.iterrows():
         assert row.loc[df.index[3]] == df.loc[df.index[3], ind]
         assert row.pop(ind) == -1.0
+
+
+def test_distance_matrix_incomplete_no_domain_decomp(project_with_sources):
+    project_with_sources.max_distance = 10
+    df = generate_distance_matrix(project_with_sources, domain_decomposition=False)
+    project_with_sources.clear_caches(True)
+    project_with_sources.max_distance = 10
+    df2 = generate_distance_matrix(project_with_sources, domain_decomposition=True)
+    assert np.all(df == df2)
 
 
 def test_distance_matrix_no_source(project):

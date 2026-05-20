@@ -284,7 +284,7 @@ def generate_distance_matrix(
         project.logger.info("Initializing distance matrix")
 
         organelles = np.array(project.organelles)
-        organelles_ids = np.array(project.organelle_ids)
+        organelles_ids = np.array([o.id for o in organelles])
         meshes = []
         bounding_boxes = []
         for organelle in organelles:
@@ -308,7 +308,6 @@ def generate_distance_matrix(
             columns=organelles_ids,
         )
 
-        # TODO: Better use data chunks instead of our own boxes
         if domain_decomposition:
             # domain decomposition into chunks of
             # size = size of clipped data in units of the resolution
@@ -355,7 +354,7 @@ def generate_distance_matrix(
                 box = (start, end)
                 tasks.append((box, bounding_boxes))
             # masks = list(map(lambda b: _check_overlap(b, bounding_boxes), tasks))
-            with Pool(processes=project.n_workers) as pool:
+            with Pool(processes=100) as pool:
                 masks = pool.starmap(_check_overlap, tasks, chunksize=100)
 
         else:
