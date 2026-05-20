@@ -1021,9 +1021,14 @@ class DataSource:
         if isinstance(ids, str):
             ids = [ids]
 
+        new_ids = []
+        for id_ in ids:
+            new_ids.extend(id_.split(","))
+        ids = new_ids
+
         for id_ in ids:
             # Filter the organelles with the given ids pattern
-            filtered_ids = fnmatch.filter(self._organelles.keys(), id_)
+            filtered_ids = fnmatch.filter(self._organelles.keys(), id_.strip())
 
             if permanent_blacklist is not None:
                 filtered_ids = [
