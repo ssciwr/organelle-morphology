@@ -20,6 +20,7 @@ dependencies:
   - scipy
   - scikit-image
   - z5py
+  - zensical
   - pip:
       - python-fcl
       - setuptools==65.7.0
