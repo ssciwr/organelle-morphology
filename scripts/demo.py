@@ -74,7 +74,7 @@ p.clipping = [[0.6,0.5,0.5], [1,1,1]]
 p.compression_level = "s2"
 p.max_distance = 0.01
 t0 = time()
-generate_distance_matrix(project=p,chunk_dd=False)
+generate_distance_matrix(project=p,domain_decomposition=False,chunk_dd=True)
 t_chunks = time() - t0
 print("chunks: ", t_chunks )
 print("domains: ", t_dd )
@@ -90,11 +90,11 @@ t_dd_s1 = time() - t0
 print("Done in: ", t_dd_s1 )
 
 p.clear_caches(True)
-p.clipping = [[0.67,0.45,0.5], [0.73,0.8,0.6]]
+p.clipping = [[0.60,0.45,0.5], [0.75,0.8,0.6]]
 p.compression_level = "s1"
 p.max_distance = 0.01
 t0 = time()
-generate_distance_matrix(project=p,chunk_dd=False)
+generate_distance_matrix(project=p,domain_decomposition=False,chunk_dd=True)
 t_chunks_s1 = time() - t0
 print("chunks: ", t_chunks_s1 )
 print("domains: ", t_dd_s1 )
