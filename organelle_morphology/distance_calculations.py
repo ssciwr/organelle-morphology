@@ -370,7 +370,8 @@ def generate_distance_matrix(
 
         elif chunk_dd:
             # only do domain decomposition if max dist is within one chunk
-            if any([max_dist > r for r in source.resolution]):
+            chunksize = np.array(source.data.chunksize) * source.resolution
+            if any([max_dist > r for r in chunksize]):
                 masks = [np.ones((num_rows,))]
                 project.logger.debug("No domain decomposition as max_dist > chunksize")
             else:
