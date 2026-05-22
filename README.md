@@ -74,11 +74,11 @@ Open http://localhost:2718 in your local web browser.
 
 
 ### Option B: Run a Python script via Slurm
-For reproducable results it is best to use scripts.
-create a python script for your work, for inspiration see:
+For reproducable results it is best to use scripts. \
+Create a python script for your work, for inspiration see: \
 organelle-morphology/scripts/helix-demo.py
 
-To run that python script you need a slurm script, for inspiration see:
+To run that python script you need a slurm script, for inspiration see:\
 organelle-morphology/scripts/om-helix.slurm
 
 Submit your job to the cluster scheduler from the login node:
