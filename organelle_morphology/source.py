@@ -487,6 +487,16 @@ class DataSource:
             return ids_to_chunks
 
     @property
+    def chunks_to_ids(self):
+        if "chunks_to_ids " not in self.cache:
+            chunks_to_ids = defaultdict(list)
+            for id_, chunks in self.ids_to_chunks.items():
+                for chunk in chunks:
+                    chunks_to_ids[chunk].append(id_)
+            self.cache["chunks_to_ids"] = chunks_to_ids
+        return self.cache["chunks_to_ids"]
+
+    @property
     def mesh_fragments(self) -> tuple[dict[int, list[tuple[int]]], np.ndarray]:
         """Get the mesh fragments from cache, or calculate them.
 

@@ -110,6 +110,7 @@ class Organelle:
         self._sampled_skeleton = None
         self._skeleton_info = {}
         self._mcs = defaultdict(dict)
+        self._chunks = None
 
     @classmethod
     def construct(cls, source, labels: list[int]):
@@ -134,6 +135,12 @@ class Organelle:
         return OrganelleMetadata(
             source=self.source.xml_path, label=self.label, id=self._organelle_id
         )
+
+    @property
+    def chunks(self):
+        if self._chunks is None:
+            self._chunks = self.source.ids_to_chunks[self.label]
+        return self._chunks
 
     def plotly_skeleton(self):
         if self._skeleton is None:

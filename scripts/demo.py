@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from dask.base import compute
 from dask.distributed import LocalCluster, Client
 import organelle_morphology as om
+from organelle_morphology.distance_calculations import generate_distance_matrix
 from organelle_morphology.util import color_delayed_trimesh_rgba, show
 from organelle_morphology.position import Position_Analysis
 from organelle_morphology.analysis import Mcs_Analysis
@@ -57,6 +58,46 @@ p.compression_level = "s2"
 t0 = time()
 merge_meshes(list(s.meshes.values())).compute()
 print("Done in: ", time() - t0)
+
+# %% bench domain decomp
+p.clear_caches(True)
+p.clipping = [[0.6,0.5,0.5], [1,1,1]]
+p.compression_level = "s2"
+p.max_distance = 0.01
+t0 = time()
+generate_distance_matrix(project=p,domain_decomposition=True)
+t_dd = time() - t0
+print("Done in: ", t_dd )
+
+p.clear_caches(True)
+p.clipping = [[0.6,0.5,0.5], [1,1,1]]
+p.compression_level = "s2"
+p.max_distance = 0.01
+t0 = time()
+generate_distance_matrix(project=p,chunk_dd=False)
+t_chunks = time() - t0
+print("chunks: ", t_chunks )
+print("domains: ", t_dd )
+
+
+p.clear_caches(True)
+p.clipping = [[0.60,0.45,0.5], [0.75,0.8,0.6]]
+p.compression_level = "s1"
+p.max_distance = 0.01
+t0 = time()
+generate_distance_matrix(project=p,domain_decomposition=True)
+t_dd_s1 = time() - t0
+print("Done in: ", t_dd_s1 )
+
+p.clear_caches(True)
+p.clipping = [[0.67,0.45,0.5], [0.73,0.8,0.6]]
+p.compression_level = "s1"
+p.max_distance = 0.01
+t0 = time()
+generate_distance_matrix(project=p,chunk_dd=False)
+t_chunks_s1 = time() - t0
+print("chunks: ", t_chunks_s1 )
+print("domains: ", t_dd_s1 )
 
 
 # %% benchmark

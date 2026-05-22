@@ -221,6 +221,31 @@ def merge_delayed_trimeshes(tmeshes: list[Trimesh]):
     return tmesh
 
 
+def get_neighboring_chunks(index: tuple[int, ...], shape: tuple[int, ...]):
+    """Get all indeces of a give index within a defined matrix.
+
+    Args:
+        index: 3d index, get neighbors of this index
+        shape: 3d shape of the matrix
+    """
+    neighbors = []
+    x, y, z = index
+    dim_x, dim_y, dim_z = shape
+
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                if dx == 0 and dy == 0 and dz == 0:
+                    continue
+
+                nx, ny, nz = x + dx, y + dy, z + dz
+
+                if 0 <= nx < dim_x and 0 <= ny < dim_y and 0 <= nz < dim_z:
+                    neighbors.append((nx, ny, nz))
+
+    return neighbors
+
+
 def sample_skeleton(skeleton, path_sample_dist: float = 0.1):
     # the sample points are points along the skeleton arms
     # and the reference points are the vertices of the skeleton from which
