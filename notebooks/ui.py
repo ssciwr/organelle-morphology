@@ -143,14 +143,14 @@ def _(project, run_add_source, sources):
 
     cl_switch = mo.ui.switch(value=False, label="Clipping")
     cl_d = mo.md(
-        "Lower corner:<br>{low_x} {low_y} {low_z} <br>Higher corner:<br>{high_x} {high_y} {high_z}"
+        "Lower corner [%]:<br>{low_x} {low_y} {low_z} <br>Higher corner [%]:<br>{high_x} {high_y} {high_z}"
     ).batch(
-        low_x=mo.ui.number(start=0.0, stop=1.0, value=0.0),
-        low_y=mo.ui.number(start=0.0, stop=1.0, value=0.0),
-        low_z=mo.ui.number(start=0.0, stop=1.0, value=0.0),
-        high_x=mo.ui.number(start=0.0, stop=1.0, value=1.0),
-        high_y=mo.ui.number(start=0.0, stop=1.0, value=1.0),
-        high_z=mo.ui.number(start=0.0, stop=1.0, value=1.0),
+        low_x=mo.ui.number(start=0.0, stop=100, value=0),
+        low_y=mo.ui.number(start=0.0, stop=100, value=0),
+        low_z=mo.ui.number(start=0.0, stop=100, value=0),
+        high_x=mo.ui.number(start=0.0, stop=100, value=100),
+        high_y=mo.ui.number(start=0.0, stop=100, value=100),
+        high_z=mo.ui.number(start=0.0, stop=100, value=100),
     )
 
     def _get_levels():
@@ -167,14 +167,14 @@ def _(project, run_add_source, sources):
     def _update_clip_level(_):
         clipping = [
             [
-                cl_d["low_x"].value,
-                cl_d["low_y"].value,
-                cl_d["low_z"].value,
+                cl_d["low_x"].value / 100,
+                cl_d["low_y"].value / 100,
+                cl_d["low_z"].value / 100,
             ],
             [
-                cl_d["high_x"].value,
-                cl_d["high_y"].value,
-                cl_d["high_z"].value,
+                cl_d["high_x"].value / 100,
+                cl_d["high_y"].value / 100,
+                cl_d["high_z"].value / 100,
             ],
         ]
         clipping = clipping if cl_switch.value else None
@@ -274,12 +274,12 @@ def _(change_settings_button, project, sources):
     box_dict = mo.ui.dictionary(
         {
             "draw box": mo.ui.checkbox(value=False),
-            "lower_x": mo.ui.number(value=0.0, start=0.0, stop=1.0),
-            "lower_y": mo.ui.number(value=0.0, start=0.0, stop=1.0),
-            "lower_z": mo.ui.number(value=0.0, start=0.0, stop=1.0),
-            "upper_x": mo.ui.number(value=1.0, start=0.0, stop=1.0),
-            "upper_y": mo.ui.number(value=1.0, start=0.0, stop=1.0),
-            "upper_z": mo.ui.number(value=1.0, start=0.0, stop=1.0),
+            "lower_x": mo.ui.number(value=0, start=0.0, stop=100),
+            "lower_y": mo.ui.number(value=0, start=0.0, stop=100),
+            "lower_z": mo.ui.number(value=0, start=0.0, stop=100),
+            "upper_x": mo.ui.number(value=100, start=0.0, stop=100),
+            "upper_y": mo.ui.number(value=100, start=0.0, stop=100),
+            "upper_z": mo.ui.number(value=100, start=0.0, stop=100),
         },
         label="Box settings",
     )
@@ -360,11 +360,6 @@ def _(change_settings_button, project, sources):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def show_mesh(
     box_dict,
     color_indiv_check,
@@ -389,14 +384,14 @@ def show_mesh(
     if box_dict["draw box"].value:
         box = (
             (
-                box_dict["lower_x"].value,
-                box_dict["lower_y"].value,
-                box_dict["lower_z"].value,
+                box_dict["lower_x"].value / 100,
+                box_dict["lower_y"].value / 100,
+                box_dict["lower_z"].value / 100,
             ),
             (
-                box_dict["upper_x"].value,
-                box_dict["upper_y"].value,
-                box_dict["upper_z"].value,
+                box_dict["upper_x"].value / 100,
+                box_dict["upper_y"].value / 100,
+                box_dict["upper_z"].value / 100,
             ),
         )
     highlight = highlight_filter.value if highlight_filter.value else None
@@ -520,7 +515,8 @@ def _(cache_info_button, project):
 def _(box_dict, mesh_id_filter, project):
     def ids_in_box(_):
         orgs = project.get_organelles(ids=mesh_id_filter.value)
-        _scaling = np.array(list(project.sources.values())[0].metadata.size)
+        source = list(project.sources.values())[0]
+        _scaling = np.array(source.metadata.size) * source.data_resolution
         _box = (
             np.array(
                 (
@@ -529,7 +525,8 @@ def _(box_dict, mesh_id_filter, project):
                     box_dict["lower_z"].value,
                 )
             )
-            * _scaling,
+            * _scaling
+            * 0.01,
             np.array(
                 (
                     box_dict["upper_x"].value,
@@ -537,7 +534,8 @@ def _(box_dict, mesh_id_filter, project):
                     box_dict["upper_z"].value,
                 )
             )
-            * _scaling,
+            * _scaling
+            * 0.01,
         )
         result = []
         bbs = [(o, bounding_box_delayed(o.mesh)) for o in orgs]
@@ -568,7 +566,7 @@ def _(sources):
     mo.stop(len(sources) < 1, "Add a source first!")
     of_ids_source = mo.ui.text(label="Labels 1", value="*")
     of_ids_target = mo.ui.text(label="Labels 2", value="*")
-    of_filter_dist = mo.ui.number(label="Filter distance [um]", value=1)
+    of_filter_dist = mo.ui.number(label="Filter distance [um]", value=0.1)
     of_attribute = mo.ui.dropdown(
         label="Return type", options=["labels", "contacts", "objects"], value="labels"
     )
