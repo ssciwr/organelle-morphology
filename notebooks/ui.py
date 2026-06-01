@@ -273,13 +273,13 @@ def _(change_settings_button, project, sources):
 
     box_dict = mo.ui.dictionary(
         {
-            "draw box": mo.ui.checkbox(value=False),
-            "lower_x": mo.ui.number(value=0, start=0.0, stop=100),
-            "lower_y": mo.ui.number(value=0, start=0.0, stop=100),
-            "lower_z": mo.ui.number(value=0, start=0.0, stop=100),
-            "upper_x": mo.ui.number(value=100, start=0.0, stop=100),
-            "upper_y": mo.ui.number(value=100, start=0.0, stop=100),
-            "upper_z": mo.ui.number(value=100, start=0.0, stop=100),
+            "box_checkbox": mo.ui.checkbox(value=False),
+            "lower_x": mo.ui.number(value=0, start=0.0, stop=100, label="lower x"),
+            "lower_y": mo.ui.number(value=0, start=0.0, stop=100, label="lower y"),
+            "lower_z": mo.ui.number(value=0, start=0.0, stop=100, label="lower z"),
+            "upper_x": mo.ui.number(value=100, start=0.0, stop=100, label="upper x"),
+            "upper_y": mo.ui.number(value=100, start=0.0, stop=100, label="upper y"),
+            "upper_z": mo.ui.number(value=100, start=0.0, stop=100, label="upper z"),
         },
         label="Box settings",
     )
@@ -326,9 +326,19 @@ def _(change_settings_button, project, sources):
                 justify="start",
             ),
             color_indiv_check,
-            mo.md(f"{mcs_checkbox} (Resolution: {project.resolution})"),
-            mo.md(f"{mcs_min_ui} {mcs_max_ui}<br>{mcs_filter_1_ui} {mcs_filter_2_ui}"),
-            box_dict,
+            mo.md(f"{mcs_checkbox} (Resolution: {project.resolution}) [um]"),
+            mo.md(
+                f"{mcs_min_ui}[um]<br>{mcs_max_ui}[um]<br>{mcs_filter_1_ui}<br>{mcs_filter_2_ui}"
+            ),
+            mo.md(
+                f"Show helper box {box_dict['box_checkbox']}<br>"
+                f" * {box_dict['lower_x']}[%]<br>"
+                f" * {box_dict['lower_y']}[%]<br>"
+                f" * {box_dict['lower_z']}[%]<br>"
+                f" * {box_dict['upper_x']}[%]<br>"
+                f" * {box_dict['upper_y']}[%]<br>"
+                f" * {box_dict['upper_z']}[%]<br>"
+            ),
             mo.hstack([mesh_rot_axis_ui, mesh_rot_angle_ui], justify="start"),
             mo.md("(yellow: reference 0°, orange: rotatated axis)"),
             mo.hstack(
@@ -381,7 +391,7 @@ def show_mesh(
     mo.stop(not run_show_mesh.value, "Mesh will be displayed here")
 
     box = None
-    if box_dict["draw box"].value:
+    if box_dict["box_checkbox"].value:
         box = (
             (
                 box_dict["lower_x"].value / 100,
