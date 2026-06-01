@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.8"
+__generated_with = "0.21.1"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -872,7 +872,7 @@ def prop_selector_cell(project):
     # Convert the list of available_properties keys into a dictionary of checkboxes
     properties_checkboxes = {}
     for key in available_properties:
-        properties_checkboxes[key] = mo.ui.checkbox(value=True, label=f"{key}")
+        properties_checkboxes[key] = mo.ui.checkbox(value=False, label=f"{key}")
 
     prop_selector = mo.ui.dictionary(properties_checkboxes)
     calc_stats_btn = mo.ui.run_button(label="Calculate Statistics")
@@ -1273,16 +1273,6 @@ def _(project, records_save_button):
     mo.stop(not records_save_button.value, "Save all records")
     project.registry.save_all_to_yaml()
     print("Saved successfully!")
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
     return
 
 
