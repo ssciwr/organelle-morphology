@@ -1,7 +1,10 @@
 from organelle_morphology.util import (
+    block_to_coords,
     get_neighboring_chunks,
     measure_gaussian_curvature_delayed,
 )
+import numpy as np
+import dask.array as da
 
 
 def test_measure_curvature_parametrized(project_with_sources):
@@ -90,3 +93,18 @@ def test_small_matrix_1x1x1():
     assert len(neighbors) == 0, (
         f"1x1x1 matrix should have 0 neighbors, got {len(neighbors)}"
     )
+
+
+def test_block_to_coords():
+    data = da.from_array(np.empty((100, 60, 20)), chunks=18)
+    last_corner = [-1, -1, -1]
+    for block in np.ndindex(data.blocks.shape):
+        lc, uc = block_to_coords(block, (0.03, 0.02, 0.1), data, [10, 20, 30])
+        assert np.any([c > last_c for c, last_c in zip(lc, last_corner)])
+        assert len(lc) == 3
+        assert len(uc) == 3
+        assert np.all(lc < uc)
+        assert lc[0] >= 10
+        assert lc[1] >= 20
+        assert lc[2] >= 30
+        last_corner = lc

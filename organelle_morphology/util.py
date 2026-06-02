@@ -365,6 +365,20 @@ def bounding_box_delayed(mesh: Trimesh):
     return min, max
 
 
+def block_to_coords(block, resolution, data, offset=[0, 0, 0]):
+    resolution = np.array(resolution)
+    block_coords = [
+        of + (np.cumsum(cs) * res)
+        for cs, res, of in zip(data.chunks, resolution, offset)
+    ]
+    block_coords = [np.concat([[of], bc]) for bc, of in zip(block_coords, offset)]
+
+    lower_corner = [block_coords[d][b] for d, b in enumerate(block)]
+    upper_corner = [block_coords[d][b + 1] for d, b in enumerate(block)]
+
+    return lower_corner, upper_corner
+
+
 def show(meshes):
     """Set up a scene with proper camera settings and show it"""
     scene = trimesh.Scene()

@@ -313,7 +313,7 @@ class Organelle:
         return self._organelle_id
 
     @property
-    def bounding_box(self) -> Delayed:
+    def bounding_box(self) -> tuple[np.ndarray, np.ndarray]:
         return bounding_box_delayed(self.mesh).compute()
 
     @property
