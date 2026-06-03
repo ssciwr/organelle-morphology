@@ -294,6 +294,8 @@ def _(change_settings_button, project, sources):
     mcs_filter_1_ui = mo.ui.text(value="*", label="Filter 1")
     mcs_filter_2_ui = mo.ui.text(value="*", label="Filter 2")
 
+    color_volume_ui = mo.ui.number(label="Max volume", value=0.0, step=0.0001, start=0)
+
     rad = sources[0].curvature_radius
 
     curv_radius_slider = mo.ui.slider(
@@ -339,6 +341,7 @@ def _(change_settings_button, project, sources):
                 f" * {box_dict['upper_y']}[%]<br>"
                 f" * {box_dict['upper_z']}[%]<br>"
             ),
+            color_volume_ui,
             mo.hstack([mesh_rot_axis_ui, mesh_rot_angle_ui], justify="start"),
             mo.md("(yellow: reference 0°, orange: rotatated axis)"),
             mo.hstack(
@@ -353,6 +356,7 @@ def _(change_settings_button, project, sources):
     return (
         box_dict,
         color_indiv_check,
+        color_volume_ui,
         curv_radius_slider,
         curvature_check,
         highlight_filter,
@@ -373,6 +377,7 @@ def _(change_settings_button, project, sources):
 def show_mesh(
     box_dict,
     color_indiv_check,
+    color_volume_ui,
     curv_radius_slider,
     curvature_check,
     highlight_filter,
@@ -428,6 +433,7 @@ def show_mesh(
         mcs_max=mcs_max,
         rot_axis=mesh_rot_axis_ui.value,
         rot_angle=mesh_rot_angle_ui.value,
+        volume=color_volume_ui.value,
     )
     viewer = "marimo"
     if popout_viewer_check.value:

@@ -342,9 +342,7 @@ class Organelle:
         Causes a compute call, if you need this for many organelles,
         use `get_mesh_properties_delayed`
         """
-        if self._mesh_properties is None:
-            self._mesh_properties = get_mesh_properties_delayed(self.mesh).compute()
-        return self._mesh_properties
+        return self.source.mesh_properties[self.label]
 
     @property
     def curvature_map(self) -> np.ndarray:

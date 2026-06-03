@@ -22,6 +22,8 @@ from organelle_morphology.records import PropertyBlock, RecordRegistry
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import (
     Cache,
+    color_delayed_trimesh,
+    color_delayed_trimesh_vertices,
     corners_to_edges,
     merge_meshes,
     setup_logging,
@@ -358,6 +360,7 @@ class Project:
         axis: bool = True,
         rot_axis: Optional[str] = None,
         rot_angle: Optional[float] = None,
+        volume: Optional[float] = None,
     ):
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
@@ -417,6 +420,23 @@ class Project:
                     )
                 )
             to_show.extend(compute(*meshes))
+
+        elif volume:
+            meshes = []
+            for o in orgs:
+                if not o.mesh_properties.water_tight:
+                    meshes.append(
+                        color_delayed_trimesh_vertices(
+                            o.mesh, slice(None), [127, 127, 127, 255]
+                        )
+                    )
+                    continue
+                if o.mesh_properties.volume < volume:
+                    meshes.append(color_delayed_trimesh(o.mesh, -2, False))
+                else:
+                    meshes.append(color_delayed_trimesh(o.mesh, -5, False))
+            to_show.extend(compute(*meshes))
+
         else:  # not curvature or mcs
             if ids_highlight is not None:
                 orgs_highlight = self.get_organelles(ids_highlight)
@@ -458,9 +478,7 @@ class Project:
                             merge_meshes(ot_meshes, color=-(i + 1), transp=transp)
                         )
                     mmesh = merge_meshes(meshes, color=0)
-            self.logger.debug("About to compute `to_show`")
             to_show = [mmesh.compute()]
-            self.logger.debug("Computed `to_show`")
 
         if skeleton:
             for o in orgs:
