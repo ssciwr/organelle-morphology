@@ -63,6 +63,11 @@ def test_statistics_mcs_aggregation(project_with_sources):
         std_area=0.0,
         mean_dist=42.0,
         std_dist=0.0,
+        min_dist=0.1,
+        max_dist=0.1,
+        partners="other_one",
+        min_dist_per_org=[0.1],
+        max_dist_per_org=[0.1],
         n_contacts_per_area=0.1,
         n_contacts_per_volume=0.1,
         area_per_area=0.1,
@@ -78,10 +83,10 @@ def test_statistics_mcs_aggregation(project_with_sources):
     props = ["total_area", "mean_dist", "volume"]  # Request contact keys
     df = stats.get_dataframe(ids="mito_0001", properties=props)
 
-    assert df.iloc[0]["0-0.01-total_area"] == 150.5  # Verify
-    assert df.iloc[0]["0-0.01-mean_dist"] == 42.0  # Verify
+    assert df.iloc[0]["0-0.01-total_area"] == 150.5
+    assert df.iloc[0]["0-0.01-mean_dist"] == 42.0
 
-    summary_df = stats.get_summary_dataframe(df)  # Verify the summary
+    summary_df = stats.get_summary_dataframe(df)
     avg_row = summary_df[summary_df["Measure"] == "Average (or Share)"].iloc[0]
     assert avg_row["0-0.01-total_area"] == 150.5
 

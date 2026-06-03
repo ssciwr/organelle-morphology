@@ -40,8 +40,8 @@ def test_get_mesh_mcs_colored(project_with_sources):
     project_with_sources.search_mcs(10)
     o = project_with_sources.get_organelles("mito_0015")[0]
     mesh = o.get_mesh_mcs_colored().compute()
-    # has two different mcs
-    assert np.unique(mesh.visual.vertex_colors, axis=0).shape == (3, 4)
+    # has three different mcs
+    assert np.unique(mesh.visual.vertex_colors, axis=0).shape == (4, 4)
 
 
 def test_get_mesh_mcs_colored_missing(project_with_sources):

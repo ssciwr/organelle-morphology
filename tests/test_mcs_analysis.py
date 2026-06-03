@@ -52,7 +52,7 @@ def test_mcs(project_with_sources, rep):
 
     analysis = Mcs_Analysis(project_with_sources)
     props = analysis.get_mcs_properties()
-    assert props.shape == (10, 10)
+    assert props.shape == (11, 15)
 
     overview = analysis.get_mcs_overview()
     assert overview.shape == (10, 1)
