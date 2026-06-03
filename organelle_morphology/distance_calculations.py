@@ -13,7 +13,6 @@ from scipy.spatial import KDTree
 import organelle_morphology
 from organelle_morphology.util import (
     block_to_coords,
-    bounding_box_delayed,
     boxes_overlap,
     get_neighboring_chunks,
 )
@@ -53,7 +52,11 @@ def delayed_domain_min_dists(args):
 
 
 def make_domains(
-    size: np.ndarray, max_dist: float, start_corner: np.ndarray, meshes: np.ndarray
+    size: np.ndarray,
+    max_dist: float,
+    start_corner: np.ndarray,
+    meshes: np.ndarray,
+    client,
 ):
     """Decompose space into domains
 
@@ -67,11 +70,12 @@ def make_domains(
         list[list[bool]]: binary masks
     """
 
-    cube_size = max_dist * 100
-    stride = max_dist * 98
-    n_x_cubes = min(max(int(size[0] // stride), 1), 50)
-    n_y_cubes = min(max(int(size[1] // stride), 1), 50)
-    n_z_cubes = min(max(int(size[2] // stride), 1), 50)
+    stride = max_dist * 100
+    n_x_cubes = min(max(int(size[0] // stride), 1), 20)
+    n_y_cubes = min(max(int(size[1] // stride), 1), 20)
+    n_z_cubes = min(max(int(size[2] // stride), 1), 20)
+    cube_size = size / np.array([n_x_cubes, n_y_cubes, n_z_cubes])
+    cube_size += 2 * max_dist
 
     xs = np.linspace(
         start_corner[0],
@@ -100,13 +104,11 @@ def make_domains(
 
     logger.debug("Calculating bounding boxes")
     bounding_boxes = []
-    bounding_boxes = [bounding_box_delayed(m) for m in meshes]
     with span("dist_matrix_bounding_boxes"):
-        bounding_boxes = compute(bounding_boxes)[0]
         # with many meshes (20k) ~30% faster then computing directly:
-        # bounding_boxes = project.client.gather(
-        #     project.client.map(lambda m: m.compute().bounding_box.bounds, meshes)
-        # )
+        bounding_boxes = client.gather(
+            client.map(lambda m: m.compute().bounding_box.bounds, meshes)
+        )
     logger.debug(f"bounding_boxes {len(bounding_boxes)}")
     logger.debug("bounding boxes finished, stating overlap calculations")
 
@@ -384,17 +386,17 @@ def generate_distance_matrix(
             columns=organelles_ids,
         )
 
-        # if domain_decomposition and chunk_dd:
-        #     # TODO: automatically switch
-        #     domain_decomposition = False
-
         if domain_decomposition and not chunk_dd:
             # domain decomposition into chunks of
             # size = size of clipped data in units of the resolution [um]
             size = np.array(source.resolution) * source.data.shape
             clp_of = source.clipping_corners[0]  # lower corner clipping offset
             masks = make_domains(
-                size=size, max_dist=max_dist, start_corner=clp_of, meshes=meshes
+                size=size,
+                max_dist=max_dist,
+                start_corner=clp_of,
+                meshes=meshes,
+                client=project.client,
             )
 
         elif chunk_dd:
@@ -410,12 +412,21 @@ def generate_distance_matrix(
                 project.logger.debug(f"len domains {len(domains)}")
 
                 masks = [[] for _ in range(len(domains))]
-                for org in organelles:
-                    for i, idxs in enumerate(domains):
-                        if any([idx in org.chunks for idx in idxs]):
+                for i, idxs in enumerate(domains):
+                    has_org_in_center = False
+                    for org in organelles:
+                        # in central block of domain:
+                        if domain_idxs[i] in org.chunks:
                             masks[i].append(True)
+                            has_org_in_center = True
+                        # in neighbor block of domain:
+                        elif any([idx in org.chunks for idx in idxs]):
+                            masks[i].append(True)
+                        # not in domain:
                         else:
                             masks[i].append(False)
+                    if not has_org_in_center:
+                        masks[i] = []
 
                 project.logger.debug(f"Masks unfiltered: {len(masks)}")
                 m_mask = [any(m) for m in masks]
@@ -425,41 +436,44 @@ def generate_distance_matrix(
                 too_large = np.nonzero([len(np.nonzero(m)[0]) > 500 for m in masks])[0]
                 project.logger.debug(f"masks > 500: {len(too_large)}")
 
-                t0 = time()
-                clp_of = source.clipping_corners[0]  # lower corner clipping offset
-                for i in too_large[::-1]:
-                    mask = masks.pop(i)
-                    local_blocks = domains[i]
-                    local_meshes = meshes[mask]
+                if domain_decomposition:
+                    t0 = time()
+                    clp_of = source.clipping_corners[0]  # lower corner clipping offset
+                    for i in too_large[::-1]:
+                        mask = masks.pop(i)
+                        local_blocks = domains[i]
+                        local_meshes = meshes[mask]
 
-                    corners = np.array(
-                        [
-                            block_to_coords(b, source.resolution, source.data, clp_of)
-                            for b in local_blocks
-                        ]
-                    )
-                    lower_corner = corners.min(axis=0)[0]
-                    upper_corner = corners.max(axis=0)[1]
-                    size = upper_corner - lower_corner
+                        corners = np.array(
+                            [
+                                block_to_coords(
+                                    b, source.resolution, source.data, clp_of
+                                )
+                                for b in local_blocks
+                            ]
+                        )
+                        lower_corner = corners.min(axis=0)[0]
+                        upper_corner = corners.max(axis=0)[1]
+                        size = upper_corner - lower_corner
 
-                    local_masks = make_domains(
-                        size=size,
-                        max_dist=max_dist,
-                        start_corner=lower_corner,
-                        meshes=local_meshes,
-                    )
-                    for local_mask in local_masks:
-                        global_mask = np.zeros_like(meshes, dtype=bool)
-                        global_mask[mask] = local_mask
-                        masks.append(global_mask)
+                        local_masks = make_domains(
+                            size=size,
+                            max_dist=max_dist,
+                            start_corner=lower_corner,
+                            meshes=local_meshes,
+                        )
+                        for local_mask in local_masks:
+                            global_mask = np.zeros_like(meshes, dtype=bool)
+                            global_mask[mask] = local_mask
+                            masks.append(global_mask)
+
+                        project.logger.debug(
+                            f"decomposed {np.count_nonzero(mask)} orgs into {len(local_masks)}"
+                        )
 
                     project.logger.debug(
-                        f"decomposed {np.count_nonzero(mask)} orgs into {len(local_masks)}"
+                        f"Decomposed {len(too_large)} chunks into {len(masks)} domains in {time() - t0} s"
                     )
-
-                project.logger.debug(
-                    f"Decomposed {len(too_large)} chunks into {len(masks)} domains in {time() - t0} s"
-                )
 
         else:
             # no domain decomposition -> all to all

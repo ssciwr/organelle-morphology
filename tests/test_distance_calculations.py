@@ -48,15 +48,22 @@ def test_distance_matrix_incomplete_dd_compair(project_with_sources):
     df3 = generate_distance_matrix(
         project_with_sources, domain_decomposition=False, chunk_dd=True
     )
+    project_with_sources.clear_caches(True)
+    project_with_sources.max_distance = 10
+    df4 = generate_distance_matrix(
+        project_with_sources, domain_decomposition=True, chunk_dd=True
+    )
 
     idxs = np.nonzero((0 <= df) & (df <= 10))
     pairs = list(zip(*idxs))
 
     assert all([df.iloc[p] == df2.iloc[p] for p in pairs])
     assert all([df.iloc[p] == df3.iloc[p] for p in pairs])
+    assert all([df.iloc[p] == df4.iloc[p] for p in pairs])
 
     assert np.all(df == df2)
     assert np.all(df == df3)
+    assert np.all(df == df4)
 
 
 def test_distance_matrix_no_source(project):
