@@ -67,7 +67,7 @@ def test_corner_index_returns_7_neighbors():
 
 def test_edge_index_returns_11_neighbors():
     shape = (5, 5, 5)
-    edge_index = (0, 2, 2)  # On one face, not a corner
+    edge_index = (0, 0, 2)  # On one face, not a corner
     neighbors = get_neighboring_chunks(edge_index, shape)
 
     assert len(neighbors) == 11, (
@@ -77,11 +77,11 @@ def test_edge_index_returns_11_neighbors():
 
 def test_face_index_returns_17_neighbors():
     shape = (5, 5, 5)
-    face_index = (0, 0, 2)  # On edge between two faces
+    face_index = (0, 2, 2)  # On edge between two faces
     neighbors = get_neighboring_chunks(face_index, shape)
 
     assert len(neighbors) == 17, (
-        f"Edge-indexed face should have 17 neighbors, got {len(neighbors)}"
+        f"Face index should have 17 neighbors, got {len(neighbors)}"
     )
 
 
