@@ -399,6 +399,7 @@ def generate_distance_matrix(
                 client=project.client,
             )
 
+        # See #82 : usually slower than the regular domain decomposition
         elif chunk_dd:
             # only do domain decomposition if max dist is within one chunk
             chunksize = np.array(source.data.chunksize) * source.resolution
