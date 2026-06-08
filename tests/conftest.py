@@ -183,7 +183,7 @@ def project(project_path, client):  # noqa: F811
     """A fixture for a valid project instance"""
     project = Project(project_path, client=client)
     yield project
-    project.clear_caches(True)
+    project.clear_caches(True, silent=True)
 
 
 @pytest.fixture
@@ -191,4 +191,4 @@ def project_with_sources(project):
     """A fixture for a valid project instance, incl. added sources"""
     project.add_source("synth_data", "mito")
     yield project
-    project.clear_caches(True)
+    project.clear_caches(True, silent=True)
