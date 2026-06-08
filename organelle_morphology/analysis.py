@@ -157,8 +157,9 @@ class Mcs_Analysis(Analysis):
                     weights=x["n_contacts"],
                 )
             )
+            mean_min_dist_mcs = np.average(x["min_dist"], weights=x["n_contacts"])
 
-            # Calculate the sum, mean, and standard deviation for 'n_contacts' and 'total_area'
+            # Calculate per organelle
             total_contacts = x["n_contacts"].sum()
             mean_n_contacts = x["n_contacts"].mean()
             std_n_contacts = x["n_contacts"].std()
@@ -166,17 +167,25 @@ class Mcs_Analysis(Analysis):
             mean_total_area = x["total_area"].mean()
             std_total_area = x["total_area"].std()
 
+            mean_min_dist = x["min_dist"].mean()
+            mean_contacts_per_vol = x["n_contacts_per_volume"].mean()
+            mean_contacts_per_area = x["n_contacts_per_area"].mean()
+
             new_columns = [
                 ("overall", "total_contacts"),
                 ("overall", "total_area"),
-                ("per organelle", "mean_n_contacts"),
-                ("per organelle", "std_n_contacts"),
+                ("per organelle", "mean_contacts"),
+                ("per organelle", "std_contacts"),
                 ("per organelle", "mean_total_area"),
                 ("per organelle", "std_area"),
+                ("per organelle", "mean_contacts_per_volume"),
+                ("per organelle", "mean_contacts_per_area"),
+                ("per organelle", "mean_min_dist"),
                 ("per mcs", "mean_area"),
                 ("per mcs", "std_area"),
                 ("per mcs", "mean_dist"),
                 ("per mcs", "std_dist"),
+                ("per mcs", "mean_min_dist"),
             ]
             new_index = pd.MultiIndex.from_tuples(new_columns)
 
@@ -188,10 +197,14 @@ class Mcs_Analysis(Analysis):
                     std_n_contacts,
                     mean_total_area,
                     std_total_area,
+                    mean_contacts_per_vol,
+                    mean_contacts_per_area,
+                    mean_min_dist,
                     mean_area,
                     std_area,
                     mean_dist,
                     std_dist,
+                    mean_min_dist_mcs,
                 ],
                 index=new_index,
             )

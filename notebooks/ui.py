@@ -763,15 +763,13 @@ def mcs_analysis_set_filter(mcs_analysis):
 
 
 @app.cell
-def mcs_analysis_overview(mcs_analysis, project):
-    mo.stop(not project.mcs_labels, mo.md("No MCS calculations run yet"))
-    mo.plain(mcs_analysis.get_mcs_overview())
+def mcs_analysis_overview():
     return
 
 
 @app.cell
 def _(mcs_analysis):
-    mcs_analysis.get_mcs_properties()
+    mo.ui.table(mcs_analysis.get_mcs_properties(), selection=None)
     return
 
 
