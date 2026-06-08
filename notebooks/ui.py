@@ -294,7 +294,7 @@ def _(change_settings_button, project, sources):
     mcs_filter_1_ui = mo.ui.text(value="*", label="Filter 1")
     mcs_filter_2_ui = mo.ui.text(value="*", label="Filter 2")
 
-    color_volume_ui = mo.ui.number(label="Max volume", value=0.0, step=0.0001, start=0)
+    color_volume_ui = mo.ui.number(label="Min volume", value=0.0, step=0.0001, start=0)
 
     rad = sources[0].curvature_radius
 
@@ -328,9 +328,9 @@ def _(change_settings_button, project, sources):
                 justify="start",
             ),
             color_indiv_check,
-            mo.md(f"{mcs_checkbox} (Resolution: {project.resolution}) [um]"),
+            mo.md(f"{mcs_checkbox} (Resolution: {project.resolution}) [$um$]"),
             mo.md(
-                f"{mcs_min_ui}[um]<br>{mcs_max_ui}[um]<br>{mcs_filter_1_ui}<br>{mcs_filter_2_ui}"
+                f"{mcs_min_ui}[$um$]<br>{mcs_max_ui}[$um$]<br>{mcs_filter_1_ui}<br>{mcs_filter_2_ui}"
             ),
             mo.md(
                 f"Show helper box {box_dict['box_checkbox']}<br>"
@@ -439,6 +439,47 @@ def show_mesh(
     if popout_viewer_check.value:
         viewer = "gl"
     scene.show(viewer=viewer)
+    return
+
+
+@app.cell
+def set_volume_cutoff(project):
+    volume_cutoff_ui = mo.ui.number(
+        label="Minimum volume [$um^3$]", value=0.0, step=0.0001, start=0
+    )
+    volume_to_bl_button = mo.ui.run_button(label="Add to blacklist")
+    volume_clear_blacklist_button = mo.ui.button(
+        label="Clear blacklist", on_click=lambda _: project.clear_blacklist()
+    )
+    mo.md(
+        f"## Set minimum Volume<br>{volume_cutoff_ui}<br>"
+        f"{volume_to_bl_button} {volume_clear_blacklist_button}"
+    )
+    return volume_clear_blacklist_button, volume_cutoff_ui, volume_to_bl_button
+
+
+@app.cell
+def calc_blacklist(project, volume_cutoff_ui, volume_to_bl_button):
+    mo.stop(not volume_to_bl_button.value, "Add some organelles to the blacklist")
+    project.blacklist_by_volume(volume_cutoff_ui.value)
+    return
+
+
+@app.cell
+def show_blacklist(
+    project,
+    sources,
+    volume_clear_blacklist_button,
+    volume_to_bl_button,
+):
+    mo.stop(len(sources) < 1, "Blacklist is shown here")
+    volume_to_bl_button
+    volume_clear_blacklist_button
+
+    mo.md(
+        "<h2>Blacklisted Organelles</h2>"
+        f"Blocked: {len(project.permanent_blacklist)} Remaining: {len(project.organelles)}<br>"
+    )
     return
 
 
@@ -587,7 +628,7 @@ def _(sources):
     mo.stop(len(sources) < 1, "Add a source first!")
     of_ids_source = mo.ui.text(label="Labels 1", value="*")
     of_ids_target = mo.ui.text(label="Labels 2", value="*")
-    of_filter_dist = mo.ui.number(label="Filter distance [um]", value=0.1)
+    of_filter_dist = mo.ui.number(label="Filter distance [$um$]", value=0.1)
     of_attribute = mo.ui.dropdown(
         label="Return type", options=["labels", "contacts", "objects"], value="labels"
     )
@@ -1096,9 +1137,9 @@ def _(change_settings_button, project, sources):
         label="Organelle types",
         value=[s.org_name for s in sources][0],
     )
-    res_hint = f"(Project resolution: {project.resolution})"
+    res_hint = f"(Project resolution: {project.resolution} [$um$])"
     pa_resolution_ui = mo.md(
-        "Binning resolution [um]<br>" + res_hint + ": <br>{x} {y} {z}"
+        "Binning resolution [$um$]<br>" + res_hint + ": <br>{x} {y} {z}"
     ).batch(
         x=mo.ui.number(start=0.0, stop=1.0, value=0.1),
         y=mo.ui.number(start=0.0, stop=1.0, value=0.1),
