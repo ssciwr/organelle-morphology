@@ -876,39 +876,17 @@ class Project:
     def clear_blacklist(self):
         self.permanent_blacklist = []
 
-    def filter_organelles_by_size(self, organelle_type, cutoff):
-        """Take the largest entries of the specified organelle type
-        until their combined volume reaches the cutoff value.
-        Adds the remaining organelles to the permanent_blacklist.
+    def blacklist_by_volume(self, max_vol: float):
+        """Add organlles to the permanent blacklist based on their volume.
 
         Args:
-            organelle_type: The desired organelle type to perform the filter on.
-                e.g "mito" or "er".
-            cutoff: The cutoff value between 0 and 1.
+            max_vol: Max volume of organlles allowed. Smaller organelles are
+                added to the blacklist.
         """
-        geo_props = self.geometric_properties
-        self.logger.info(
-            f"Filtering organelles of type {organelle_type} to the largest "
-            f"organelles that make up {cutoff * 100}% of the total volume."
-        )
-
-        df_sorted = geo_props.loc[
-            geo_props.index.str.contains(organelle_type)
-        ].sort_values("voxel_volume", ascending=False)
-        df_sorted["cumulative_volume"] = df_sorted["voxel_volume"].cumsum()
-
-        # get the n largest organelles that make up the cutoff volume of the total volume
-        total_volume = df_sorted["voxel_volume"].sum()
-        cutoff_volume = total_volume * cutoff
-        df_filtered = df_sorted[df_sorted["cumulative_volume"] <= cutoff_volume]
-
-        self.logger.info(f"Filtering {len(df_filtered)} organelles.")
-
-        # now invert the filter to find the blacklisted organelles
-
-        self.permanent_blacklist = df_sorted.index.difference(
-            df_filtered.index
-        ).tolist()
+        for o in self.organelles:
+            if o.mesh_properties.volume < max_vol:
+                if o.id not in self.permanent_blacklist:
+                    self.permanent_blacklist.append(o.id)
 
     @property
     def clipping(

@@ -403,3 +403,15 @@ def test_stat_stats(project, mocker):
     project.registry.add(stat)
 
     assert project.get_record_stats()["_Sentinel"] == 1
+
+
+def test_blacklist_by_volume_clear(project_with_sources):
+    p = project_with_sources
+    assert len(p.organelles) == 19
+
+    p.blacklist_by_volume(900)
+    assert len(p.organelles) == 17
+    assert p.permanent_blacklist == ["mito_0003", "mito_0002"]
+
+    p.clear_blacklist()
+    assert len(p.organelles) == 19
