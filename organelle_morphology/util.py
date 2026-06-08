@@ -221,6 +221,31 @@ def merge_delayed_trimeshes(tmeshes: list[Trimesh]):
     return tmesh
 
 
+def get_neighboring_chunks(index: tuple[int, ...], shape: tuple[int, ...]):
+    """Get all indeces of a give index within a defined matrix.
+
+    Args:
+        index: 3d index, get neighbors of this index
+        shape: 3d shape of the matrix
+    """
+    neighbors = []
+    x, y, z = index
+    dim_x, dim_y, dim_z = shape
+
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                if dx == 0 and dy == 0 and dz == 0:
+                    continue
+
+                nx, ny, nz = x + dx, y + dy, z + dz
+
+                if 0 <= nx < dim_x and 0 <= ny < dim_y and 0 <= nz < dim_z:
+                    neighbors.append((nx, ny, nz))
+
+    return neighbors
+
+
 def sample_skeleton(skeleton, path_sample_dist: float = 0.1):
     # the sample points are points along the skeleton arms
     # and the reference points are the vertices of the skeleton from which
@@ -338,6 +363,20 @@ def bounding_box_delayed(mesh: Trimesh):
     min = np.min(mesh.vertices, axis=0)
     max = np.max(mesh.vertices, axis=0)
     return min, max
+
+
+def block_to_coords(block, resolution, data, offset=[0, 0, 0]):
+    resolution = np.array(resolution)
+    block_coords = [
+        of + (np.cumsum(cs) * res)
+        for cs, res, of in zip(data.chunks, resolution, offset)
+    ]
+    block_coords = [np.concat([[of], bc]) for bc, of in zip(block_coords, offset)]
+
+    lower_corner = [block_coords[d][b] for d, b in enumerate(block)]
+    upper_corner = [block_coords[d][b + 1] for d, b in enumerate(block)]
+
+    return lower_corner, upper_corner
 
 
 def show(meshes):

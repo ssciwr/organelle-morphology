@@ -11,7 +11,11 @@ from dask.distributed import span
 from scipy.spatial import KDTree
 
 import organelle_morphology
-from organelle_morphology.util import boxes_overlap
+from organelle_morphology.util import (
+    block_to_coords,
+    boxes_overlap,
+    get_neighboring_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,87 @@ def delayed_domain_min_dists(args):
 
             tasks.append(get_min_dist((id_1, id_2, mesh_1, mesh_2, max_dist)))
     return tasks
+
+
+def make_domains(
+    size: np.ndarray,
+    max_dist: float,
+    start_corner: np.ndarray,
+    meshes: np.ndarray,
+    client,
+):
+    """Decompose space into domains
+
+    Args:
+        size: max size of space to decompose.
+        max_dist: maximal contact distance which can be computed reliably.
+        start_corner: lowest corner of axis aligned bounding box of space.
+        meshes: list of meshes within the space to decompose.
+
+    Returns:
+        list[list[bool]]: binary masks
+    """
+
+    stride = max_dist * 100
+    n_x_cubes = min(max(int(size[0] // stride), 1), 20)
+    n_y_cubes = min(max(int(size[1] // stride), 1), 20)
+    n_z_cubes = min(max(int(size[2] // stride), 1), 20)
+    cube_size = size / np.array([n_x_cubes, n_y_cubes, n_z_cubes])
+    cube_size += 2 * max_dist
+
+    xs = np.linspace(
+        start_corner[0],
+        size[0] + start_corner[0],
+        n_x_cubes,
+        endpoint=False,
+    )
+    ys = np.linspace(
+        start_corner[1],
+        size[1] + start_corner[1],
+        n_y_cubes,
+        endpoint=False,
+    )
+    zs = np.linspace(
+        start_corner[2],
+        size[2] + start_corner[2],
+        n_z_cubes,
+        endpoint=False,
+    )
+
+    xg, yg, zg = np.meshgrid(xs, ys, zs)
+    xg, yg, zg = list(map(lambda a: a.flatten(), (xg, yg, zg)))
+
+    logger.debug(f"Cube size: {cube_size}")
+    logger.debug(f"n cubes: {n_x_cubes}, {n_y_cubes}, {n_z_cubes} => {len(xg)}")
+
+    logger.debug("Calculating bounding boxes")
+    bounding_boxes = []
+    with span("dist_matrix_bounding_boxes"):
+        # with many meshes (20k) ~30% faster then computing directly:
+        bounding_boxes = client.gather(
+            client.map(lambda m: m.compute().bounding_box.bounds, meshes)
+        )
+    logger.debug(f"bounding_boxes {len(bounding_boxes)}")
+    logger.debug("bounding boxes finished, stating overlap calculations")
+
+    tasks = []
+    for x, y, z in zip(xg, yg, zg):
+        start = np.array((x, y, z))
+        end = start + cube_size
+        box = (start, end)
+        tasks.append((box, bounding_boxes))
+    # masks = list(map(lambda b: _check_overlap(b, bounding_boxes), tasks))
+    t0 = time()
+    with Pool(processes=100) as pool:
+        masks = pool.starmap(_check_overlap, tasks, chunksize=100)
+    logger.debug(f"pool overlap: {time() - t0}")
+
+    # remove masks with only one organelle
+    filtered_masks = []
+    for m in masks:
+        if np.count_nonzero(m) > 1:
+            filtered_masks.append(m)
+    return filtered_masks
 
 
 class MembraneContactSiteCalculator:
@@ -261,6 +346,7 @@ class MembraneContactSiteCalculator:
 def generate_distance_matrix(
     project: "organelle_morphology.Project",
     domain_decomposition=True,
+    chunk_dd=False,
 ) -> pd.DataFrame:
     cache = project.cache
     max_dist = project.max_distance
@@ -284,19 +370,11 @@ def generate_distance_matrix(
         project.logger.info("Initializing distance matrix")
 
         organelles = np.array(project.organelles)
-        organelles_ids = np.array(project.organelle_ids)
+        organelles_ids = np.array([o.id for o in organelles])
         meshes = []
-        bounding_boxes = []
         for organelle in organelles:
             meshes.append(organelle.mesh)
-            # bounding_boxes.append(bounding_box_delayed(organelle.mesh))
-        with span("dist_matrix_bounding_boxes"):
-            # bounding_boxes = compute(bounding_boxes)[0]
-            # with many meshes (20k) ~30% faster then computing directly:
-            bounding_boxes = project.client.gather(
-                project.client.map(lambda m: m.compute().bounding_box.bounds, meshes)
-            )
-        print(f"bounding_boxes {len(bounding_boxes)}")
+        meshes = np.array(meshes)
 
         project.logger.info("Calculating distance matrix")
         num_rows = len(meshes)
@@ -308,55 +386,95 @@ def generate_distance_matrix(
             columns=organelles_ids,
         )
 
-        # TODO: Better use data chunks instead of our own boxes
-        if domain_decomposition:
+        if domain_decomposition and not chunk_dd:
             # domain decomposition into chunks of
-            # size = size of clipped data in units of the resolution
+            # size = size of clipped data in units of the resolution [um]
             size = np.array(source.resolution) * source.data.shape
-            cube_size = max_dist * 10
-            stride = max_dist * 9
-            clp_of = source.clipping_corners[0]
-            n_x_cubes = min(max(int(size[0] // cube_size), 1), 50)
-            n_y_cubes = min(max(int(size[1] // cube_size), 1), 50)
-            n_z_cubes = min(max(int(size[2] // cube_size), 1), 50)
-
-            xs = np.linspace(
-                clp_of[0],
-                size[0] + clp_of[0],
-                n_x_cubes,
-                endpoint=False,
-            )
-            ys = np.linspace(
-                clp_of[1],
-                size[1] + clp_of[1],
-                n_y_cubes,
-                endpoint=False,
-            )
-            zs = np.linspace(
-                clp_of[2],
-                size[2] + clp_of[2],
-                n_z_cubes,
-                endpoint=False,
+            clp_of = source.clipping_corners[0]  # lower corner clipping offset
+            masks = make_domains(
+                size=size,
+                max_dist=max_dist,
+                start_corner=clp_of,
+                meshes=meshes,
+                client=project.client,
             )
 
-            xg, yg, zg = np.meshgrid(xs, ys, zs)
-            xg, yg, zg = list(map(lambda a: a.flatten(), (xg, yg, zg)))
+        # See #82 : usually slower than the regular domain decomposition
+        elif chunk_dd:
+            # only do domain decomposition if max dist is within one chunk
+            chunksize = np.array(source.data.chunksize) * source.resolution
+            if any([max_dist > r for r in chunksize]):
+                masks = [np.ones((num_rows,))]
+                project.logger.debug("No domain decomposition as max_dist > chunksize")
+            else:
+                dshape = source.data.blocks.shape
+                domain_idxs = list(np.ndindex(dshape))
+                domains = [get_neighboring_chunks(idx, dshape) for idx in domain_idxs]
+                project.logger.debug(f"len domains {len(domains)}")
 
-            project.logger.debug(f"Cube size: {cube_size}")
-            project.logger.debug(
-                f"n cubes: {n_x_cubes}, {n_y_cubes}, {n_z_cubes} => {len(xg)}"
-            )
-            project.logger.debug(f"n organelles: {len(organelles)}")
+                masks = [[] for _ in range(len(domains))]
+                for i, idxs in enumerate(domains):
+                    has_org_in_center = False
+                    for org in organelles:
+                        # in central block of domain:
+                        if domain_idxs[i] in org.chunks:
+                            masks[i].append(True)
+                            has_org_in_center = True
+                        # in neighbor block of domain:
+                        elif any([idx in org.chunks for idx in idxs]):
+                            masks[i].append(True)
+                        # not in domain:
+                        else:
+                            masks[i].append(False)
+                    if not has_org_in_center:
+                        masks[i] = []
 
-            tasks = []
-            for x, y, z in zip(xg, yg, zg):
-                start = np.array((x, y, z))
-                end = start + stride
-                box = (start, end)
-                tasks.append((box, bounding_boxes))
-            # masks = list(map(lambda b: _check_overlap(b, bounding_boxes), tasks))
-            with Pool(processes=project.n_workers) as pool:
-                masks = pool.starmap(_check_overlap, tasks, chunksize=100)
+                project.logger.debug(f"Masks unfiltered: {len(masks)}")
+                m_mask = [any(m) for m in masks]
+                # primary masks over chunks
+                masks = [m for i, m in enumerate(masks) if i in np.nonzero(m_mask)[0]]
+
+                too_large = np.nonzero([len(np.nonzero(m)[0]) > 500 for m in masks])[0]
+                project.logger.debug(f"masks > 500: {len(too_large)}")
+
+                if domain_decomposition:
+                    t0 = time()
+                    clp_of = source.clipping_corners[0]  # lower corner clipping offset
+                    for i in too_large[::-1]:
+                        mask = masks.pop(i)
+                        local_blocks = domains[i]
+                        local_meshes = meshes[mask]
+
+                        corners = np.array(
+                            [
+                                block_to_coords(
+                                    b, source.resolution, source.data, clp_of
+                                )
+                                for b in local_blocks
+                            ]
+                        )
+                        lower_corner = corners.min(axis=0)[0]
+                        upper_corner = corners.max(axis=0)[1]
+                        size = upper_corner - lower_corner
+
+                        local_masks = make_domains(
+                            size=size,
+                            max_dist=max_dist,
+                            start_corner=lower_corner,
+                            meshes=local_meshes,
+                        )
+                        for local_mask in local_masks:
+                            global_mask = np.zeros_like(meshes, dtype=bool)
+                            global_mask[mask] = local_mask
+                            masks.append(global_mask)
+
+                        project.logger.debug(
+                            f"decomposed {np.count_nonzero(mask)} orgs into {len(local_masks)}"
+                        )
+
+                    project.logger.debug(
+                        f"Decomposed {len(too_large)} chunks into {len(masks)} domains in {time() - t0} s"
+                    )
 
         else:
             # no domain decomposition -> all to all
@@ -381,10 +499,18 @@ def generate_distance_matrix(
         project.logger.debug(f"n tasks get_min_dist: {len(tasks)}")
 
         with span("dist_matrix_min_dists"):
+            t0 = time()
             results = map(delayed_domain_min_dists, tasks)
+            t1 = time()
+            project.logger.debug(f"mapped delayed_min_dist, t {t1 - t0}")
             results = compute(results)[0]
+            t2 = time()
+            project.logger.debug(f"computed mapped, t {t2 - t1}")
             results = [r for res in results for r in res]
+            t3 = time()
+            project.logger.debug(f"iterated results, t {t3 - t2}")
 
+        project.logger.debug(f"Timings: {t1 - t0}, {t2 - t1}, {t3 - t2},")
         for res in results:
             distance_df.loc[res[0]] = res[1]
             distance_df.loc[res[0][::-1]] = res[1]

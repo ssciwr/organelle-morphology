@@ -79,6 +79,11 @@ class McsData(PropertyBlock):
     std_area: float
     mean_dist: float
     std_dist: float
+    min_dist: float
+    max_dist: float
+    partners: list[str]
+    min_dist_per_org: list[float]
+    max_dist_per_org: list[float]
     n_contacts_per_area: float
     n_contacts_per_volume: float
     area_per_area: float
@@ -110,6 +115,7 @@ class Organelle:
         self._sampled_skeleton = None
         self._skeleton_info = {}
         self._mcs = defaultdict(dict)
+        self._chunks = None
 
     @classmethod
     def construct(cls, source, labels: list[int]):
@@ -134,6 +140,12 @@ class Organelle:
         return OrganelleMetadata(
             source=self.source.xml_path, label=self.label, id=self._organelle_id
         )
+
+    @property
+    def chunks(self):
+        if self._chunks is None:
+            self._chunks = self.source.ids_to_chunks[self.label]
+        return self._chunks
 
     def plotly_skeleton(self):
         if self._skeleton is None:
@@ -306,7 +318,7 @@ class Organelle:
         return self._organelle_id
 
     @property
-    def bounding_box(self) -> Delayed:
+    def bounding_box(self) -> tuple[np.ndarray, np.ndarray]:
         return bounding_box_delayed(self.mesh).compute()
 
     @property
@@ -382,13 +394,18 @@ class Organelle:
         mean_dist_list = []
         std_dist_list = []
         area_list = []
+        partners = []
+        min_dist_list = []
+        max_dist_list = []
 
-        for entries in self.mcs[mcs_label].values():
-            mean_dist_list.append(np.mean(entries["distances"]))
-            std_dist_list.append(np.std(entries["distances"]))
-            len_dist_list.append(len(entries["distances"]))
-
-            area_list.append(entries["area"])
+        for partner, entry in self.mcs[mcs_label].items():
+            partners.append(partner)
+            mean_dist_list.append(np.mean(entry["distances"]))
+            std_dist_list.append(np.std(entry["distances"]))
+            len_dist_list.append(len(entry["distances"]))
+            min_dist_list.append(np.min(entry["distances"]))
+            max_dist_list.append(np.max(entry["distances"]))
+            area_list.append(entry["area"])
 
         mean_dist_list = np.array(mean_dist_list)
         std_dist_list = np.array(std_dist_list)
@@ -398,12 +415,16 @@ class Organelle:
                 "No distributions found for mcs %s in organelle %s", mcs_label, self
             )
             return
-        assert entries
+        assert entry
 
         mcs_dict["n_contacts"] = len(len_dist_list)
+        mcs_dict["partners"] = partners
 
-        mcs_dict["total_area"] = np.sum(entries["area"])
+        mcs_dict["total_area"] = np.sum(area_list)
         mcs_dict["mean_area"] = np.mean(area_list)
+
+        mcs_dict["min_dist"] = np.min(min_dist_list)
+        mcs_dict["max_dist"] = np.max(max_dist_list)
 
         if len(area_list) == 1:
             mcs_dict["std_area"] = 0
@@ -428,6 +449,9 @@ class Organelle:
         mcs_dict["mean_dist"] = overall_mean
         mcs_dict["std_dist"] = overall_std
 
+        mcs_dict["min_dist_per_org"] = min_dist_list
+        mcs_dict["max_dist_per_org"] = max_dist_list
+
         mcs_dict["n_contacts_per_area"] = mcs_dict["n_contacts"] / surface
         mcs_dict["n_contacts_per_volume"] = mcs_dict["n_contacts"] / volume
 
@@ -438,8 +462,8 @@ class Organelle:
         mcs_meta = McsMetadata(
             organelle_meta=self.metadata,
             mcs_label=mcs_label,
-            min_dist=entries["meta"]["min_distance"],
-            max_dist=entries["meta"]["max_distance"],
+            min_dist=entry["meta"]["min_distance"],
+            max_dist=entry["meta"]["max_distance"],
         )
         stat = Record(mcs_props, mcs_meta, project=self.project)
         self.project.registry.add(stat)

@@ -1058,7 +1058,7 @@ class Project:
             mesh = mesh.compute()
         return mesh
 
-    def get_caches(self) -> list[Cache]:
+    def get_caches(self, silent=False) -> list[Cache]:
         caches = []
         cs = self.cache_settings
         cache_dir = cs["cache_root"] / f"cache_{cs['project_name']}"
@@ -1100,8 +1100,9 @@ class Project:
                 if s._cache.cache_name not in cache_names:
                     caches.append(s.cache)
 
-        self.logger.info("\n".join(messages))
-        self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
+        if not silent:
+            self.logger.info("\n".join(messages))
+            self.logger.info(f"Found {len(caches)} caches for project {self.path.name}")
         return caches
 
     @property
@@ -1123,17 +1124,19 @@ class Project:
         self._cache = None
         self.registry = RecordRegistry(self)
 
-    def clear_caches(self, clear_disk=False):
+    def clear_caches(self, clear_disk=False, silent=False):
         """Clear all caches related to this project, optionally also from disk"""
 
         for source in self.sources.values():
             source.clear_memory_cache()
         self.clear_memory_cache()
-        self.logger.debug("Cleared memory cache of all sources.")
+        if not silent:
+            self.logger.debug("Cleared memory cache of all sources.")
 
         if clear_disk:
             # iterate over what is on disk rather than the currently loaded sources
             i = -1
-            for i, cache in enumerate(self.get_caches()):
+            for i, cache in enumerate(self.get_caches(silent=silent)):
                 cache.clear_disk_cache()
-            self.logger.info(f"Deleted {i + 1} caches from disk.")
+            if not silent:
+                self.logger.info(f"Deleted {i + 1} caches from disk.")

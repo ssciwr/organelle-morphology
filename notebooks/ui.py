@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.21.1"
+__generated_with = "0.23.5"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -567,7 +567,12 @@ def _(box_dict, mesh_id_filter, project):
 
     box_dict  # control flow
     mesh_id_filter  # control flow
-    mo.ui.button(on_click=ids_in_box, label="Get IDs of organelles in box", value=None)
+    get_ids_box_ui = mo.ui.button(on_click=ids_in_box, label="Get IDs", value=None)
+    mo.md(
+        "<h3>Show IDs of Organelles in the box.</h3>"
+        "Change the box in the `Show mesh` panel.<br>"
+        f"{get_ids_box_ui}"
+    )
     return
 
 
