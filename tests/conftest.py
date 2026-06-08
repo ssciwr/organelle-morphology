@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 
 
+from distributed import LocalCluster
 from distributed.utils_test import (
     client,  # noqa: F401
     loop,  # noqa: F401
@@ -160,21 +161,21 @@ def project_path(synthetic_data):
     return synthetic_data[0]
 
 
-# @pytest.fixture(scope="session")
-# def cluster():
-#     if resource is not None:
-#         resource.setrlimit(resource.RLIMIT_NOFILE, (10000, 10000))
-#
-#     cluster = LocalCluster(dashboard_address=None)
-#     yield cluster
-#     cluster.close()
-#
-#
-# @pytest.fixture(scope="function")
-# def custom_client(cluster):
-#     cclient = cluster.get_client()
-#     yield cclient
-#     cclient.close()
+@pytest.fixture(scope="session")
+def cluster():
+    if resource is not None:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (10000, 10000))
+
+    cluster = LocalCluster(dashboard_address=None)
+    yield cluster
+    cluster.close()
+
+
+@pytest.fixture(scope="function")
+def custom_client(cluster):
+    cclient = cluster.get_client()
+    yield cclient
+    cclient.close()
 
 
 @pytest.fixture
