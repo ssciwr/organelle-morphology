@@ -12,7 +12,7 @@ def block_mesher(
     space_offset: tuple[int, ...],
     reduction_factor=0,
     debug_color=0,
-    scaling_factors=[1, 1, 1],
+    scaling_factors=(1, 1, 1),
 ):
     """Delayed function to calculate meshes from label data
 

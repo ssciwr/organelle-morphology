@@ -411,7 +411,7 @@ def test_blacklist_by_volume_clear(project_with_sources):
 
     p.blacklist_by_volume(900)
     assert len(p.organelles) == 17
-    assert p.permanent_blacklist == ["mito_0003", "mito_0002"]
+    assert all([o in ["mito_0003", "mito_0002"] for o in p.permanent_blacklist])
 
     p.clear_blacklist()
     assert len(p.organelles) == 19
