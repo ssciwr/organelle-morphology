@@ -112,12 +112,16 @@ class ProfileCalculator(Analysis):
 
         return pd.DataFrame(data_rows)
 
-    def _parse_axis(self, axis):
+    def _parse_axis(self, axis: str | tuple[float, ...]) -> np.ndarray:
         """Helper to cleanly parse string aliases or raw vectors."""
         if isinstance(axis, str):
             return np.array(
-                {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0]}.get(
-                    axis.lower(), [0.0, 0.0, 1.0]
+                {
+                    "x": [1.0, 0.0, 0.0],
+                    "y": [0.0, 1.0, 0.0],
+                    "z": [0.0, 0.0, 1.0],
+                }.get(
+                    axis.lower(),
                 )
             )
         vec = np.array(axis)

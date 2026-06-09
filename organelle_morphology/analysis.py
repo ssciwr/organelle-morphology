@@ -217,7 +217,7 @@ class Mcs_Analysis(Analysis):
 
     def get_dataframe(self) -> pd.DataFrame:
         # TODO: placeholder, output df will change!
-        return self.get_mcs_overview()
+        return self.get_mcs_properties()
 
 
 # should be split into separate topics, like mcs, skeleton, misc(?)

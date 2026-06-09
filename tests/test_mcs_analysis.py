@@ -55,4 +55,4 @@ def test_mcs(project_with_sources, rep):
     assert props.shape == (11, 15)
 
     overview = analysis.get_mcs_overview()
-    assert overview.shape == (10, 1)
+    assert overview.shape == (14, 1)

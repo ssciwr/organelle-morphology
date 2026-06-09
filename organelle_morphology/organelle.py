@@ -81,9 +81,9 @@ class McsData(PropertyBlock):
     std_dist: float
     min_dist: float
     max_dist: float
-    partners: list[str]
-    min_dist_per_org: list[float]
-    max_dist_per_org: list[float]
+    partners: tuple[str]
+    min_dist_per_org: tuple[float]
+    max_dist_per_org: tuple[float]
     n_contacts_per_area: float
     n_contacts_per_volume: float
     area_per_area: float

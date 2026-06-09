@@ -454,7 +454,7 @@ def numpy_to_python(obj):
     elif isinstance(obj, dict):
         return {key: numpy_to_python(value) for key, value in obj.items()}
     elif isinstance(obj, list):
-        return [numpy_to_python(item) for item in obj]
+        return tuple([numpy_to_python(item) for item in obj])
     else:
         return obj
 

@@ -214,6 +214,10 @@ p.compression_level = "s1"
 p.search_mcs(0.1)
 
 # %%
+a = Mcs_Analysis(p)
+
+
+# %%
 
 o = s.organelles[100]
 mesh = o.get_mesh_mcs_colored("0.0-0.1,-")

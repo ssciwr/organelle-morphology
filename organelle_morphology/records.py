@@ -322,7 +322,7 @@ class RecordRegistry:
             "project meta must be hashable!"
         )
         if record in self._all_records:
-            self.logger("Tried adding already registered record!")
+            self.logger.warning("Tried adding already registered record!")
             return
 
         self._all_records.append(record)

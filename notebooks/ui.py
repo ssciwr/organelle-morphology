@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.5"
+__generated_with = "0.23.9"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -18,6 +18,7 @@ with app.setup:
     import pandas as pd
     import traceback
     from organelle_morphology.analysis import Misc_Analysis, Mcs_Analysis
+    from organelle_morphology.profile_calculations import ProfileCalculator
     import matplotlib.pyplot as plt
     from organelle_morphology.position import Position_Analysis
     from organelle_morphology.records import PropertyBlock
@@ -444,15 +445,13 @@ def show_mesh(
 
 @app.cell
 def set_volume_cutoff(project):
-    volume_cutoff_ui = mo.ui.number(
-        label="Minimum volume [$um^3$]", value=0.0, step=0.0001, start=0
-    )
+    volume_cutoff_ui = mo.ui.number(label="Minimum volume [$um^3$]", value=0.0, start=0)
     volume_to_bl_button = mo.ui.run_button(label="Add to blacklist")
     volume_clear_blacklist_button = mo.ui.button(
         label="Clear blacklist", on_click=lambda _: project.clear_blacklist()
     )
     mo.md(
-        f"## Set minimum Volume<br>{volume_cutoff_ui}<br>"
+        f"<h2>Set minimum Volume</h2>{volume_cutoff_ui}<br>"
         f"{volume_to_bl_button} {volume_clear_blacklist_button}"
     )
     return volume_clear_blacklist_button, volume_cutoff_ui, volume_to_bl_button
@@ -468,11 +467,9 @@ def calc_blacklist(project, volume_cutoff_ui, volume_to_bl_button):
 @app.cell
 def show_blacklist(
     project,
-    sources,
     volume_clear_blacklist_button,
     volume_to_bl_button,
 ):
-    mo.stop(len(sources) < 1, "Blacklist is shown here")
     volume_to_bl_button
     volume_clear_blacklist_button
 
@@ -695,8 +692,17 @@ def table_display_cell(filtered_distance_results, of_run_button):
 
 
 @app.cell
-def mcs_calc_ui_cell(sources):
+def mcs_calc_button():
+    run_mcs_btn = mo.ui.run_button(label="Calculate MCS")
+    return (run_mcs_btn,)
+
+
+@app.cell
+def mcs_calc_ui_cell(change_settings_button, project, run_mcs_btn, sources):
     mo.stop(len(sources) < 1, "")
+    # trigger updates
+    change_settings_button
+
     mcs_max_dist_ui = mo.ui.number(value=0.10, label="Max distance threshold")
     mcs_min_dist_ui = mo.ui.number(value=0.0, label="Min distance threshold")
     mcs_filter1_ui = mo.ui.text(label="Labels 1", value="*")
@@ -704,10 +710,10 @@ def mcs_calc_ui_cell(sources):
     mcs_overwrite_ui = mo.ui.checkbox(
         value=False, label="Overwrite existing mcs results"
     )
-    run_mcs_btn = mo.ui.run_button(label="Calculate MCS")
     mcs_calc_ui_layout = mo.vstack(
         [
             mo.md("## Membrane Contact Sites (MCS)"),
+            mo.md(f"(Project resolution: {project.resolution} [$um$]"),
             mcs_max_dist_ui,
             mcs_min_dist_ui,
             mcs_filter1_ui,
@@ -723,7 +729,6 @@ def mcs_calc_ui_cell(sources):
         mcs_max_dist_ui,
         mcs_min_dist_ui,
         mcs_overwrite_ui,
-        run_mcs_btn,
     )
 
 
@@ -756,20 +761,25 @@ def mcs_execute_cell(
 @app.cell
 def mcs_analysis_set_filter(mcs_analysis):
     mcs_labels = {r.meta.mcs_label for r in mcs_analysis.own_records}
-    mo.md(f"""### MCS labels:
-    {"<br>".join(mcs_labels)}
-    """)
+    mo.md(f"### MCS labels\n{'<br>'.join(mcs_labels)} ")
     return
 
 
 @app.cell
-def mcs_analysis_overview():
+def mcs_analysis_overview(mcs_analysis, project):
+    mo.stop(not project.mcs_labels, mo.md("No MCS calculations run yet"))
+    mo.ui.table(
+        mcs_analysis.get_mcs_overview().reset_index(),
+        page_size=14,
+        selection=None,
+        show_column_summaries=False,
+    )
     return
 
 
 @app.cell
-def _(mcs_analysis):
-    mo.ui.table(mcs_analysis.get_mcs_properties(), selection=None)
+def mcs_analysis_properties(mcs_analysis):
+    mo.ui.table(mcs_analysis.get_mcs_properties(), selection=None, page_size=15)
     return
 
 
@@ -802,8 +812,9 @@ def geo_execute_cell(project, run_geo_btn):
 
 
 @app.cell
-def profile_calc_ui_cell(sources):
+def profile_calc_ui_cell(project, sources):
     mo.stop(len(sources) < 1, "")
+    profile_calculator = ProfileCalculator(project)
 
     profile_ids_ui = mo.ui.text(value="*", label="Organelle ID filter (e.g., er_*)")
 
@@ -862,6 +873,7 @@ def profile_calc_ui_cell(sources):
     profile_calc_ui_layout  # display the layout
     return (
         fixed_axis_dict,
+        profile_calculator,
         profile_ids_ui,
         profile_method_ui,
         random_planes_dict,
@@ -873,9 +885,9 @@ def profile_calc_ui_cell(sources):
 @app.cell
 def profile_execute_cell(
     fixed_axis_dict,
+    profile_calculator,
     profile_ids_ui,
     profile_method_ui,
-    project,
     random_planes_dict,
     run_profile_btn,
     skeleton_dict,
@@ -890,20 +902,33 @@ def profile_execute_cell(
 
     try:
         with mo.redirect_stderr():
-            df = project.calculate_profiles(
-                method=profile_method_ui.value,
-                ids=profile_ids_ui.value,
-                axis=fixed_axis_dict["axis"].value,
-                num_slices=fixed_axis_dict["num_slices"].value,
-                num_planes=random_planes_dict["num_planes"].value,
-                seed=random_planes_dict["seed"].value,
-                sample_distance=skeleton_dict["sample_distance"].value,
-            )
+            if profile_method_ui.value == "Fixed Axis":
+                df = profile_calculator.calculate_profile_lengths(
+                    ids=profile_ids_ui.value,
+                    axis=fixed_axis_dict["axis"].value,
+                    num_slices=fixed_axis_dict["num_slices"].value,
+                )
+            elif profile_method_ui.value == "Random Planes":
+                df = profile_calculator.calculate_random_profiles(
+                    ids=profile_ids_ui.value,
+                    num_planes=random_planes_dict["num_planes"].value,
+                    seed=random_planes_dict["seed"].value,
+                )
+            elif profile_method_ui.value == "Skeleton Perpendicular":
+                df = profile_calculator.calculate_skeleton_profiles(
+                    ids=profile_ids_ui.value,
+                    sample_distance=skeleton_dict["sample_distance"].value,
+                )
+            else:
+                raise ValueError(
+                    f"Unknown profile calculation method: {profile_method_ui.value}"
+                )
 
         profile_execute_cell_status = mo.vstack(
             [
                 mo.md(
-                    f"**Success!** Profile properties computed using {profile_method_ui.value}."
+                    "**Success!** Profile properties "
+                    f"computed using {profile_method_ui.value}."
                 ),
                 mo.ui.table(df, selection=None, pagination=True, page_size=25),
             ]
@@ -1122,13 +1147,18 @@ def plot_display_cell(
 
 
 @app.cell
+def create_pa_run_button():
+    pa_run_button = mo.ui.run_button(label="Run position analysis")
+    pa_run_button
+    return (pa_run_button,)
+
+
+@app.cell
 def _(change_settings_button, project, sources):
-    mo.stop(len(sources) < 0, "Add a source first!")
+    mo.stop(not project, "Position Analysis, add a source first!")
 
     # trigger updates
     change_settings_button
-
-    pa = Position_Analysis(project)
 
     pa_source_ui = mo.ui.dropdown(
         options=[s.org_name for s in sources],
@@ -1165,8 +1195,6 @@ def _(change_settings_button, project, sources):
         allow_select_none=False,
     )
 
-    pa_run_button = mo.ui.run_button(label="Run position analysis")
-
     pa_dim_tab_ui = mo.ui.tabs(
         label="Dimensionality",
         tabs={
@@ -1188,18 +1216,15 @@ def _(change_settings_button, project, sources):
                 ],
                 justify="start",
             ),
-            pa_run_button,
         ]
     )
     return (
-        pa,
         pa_axis1d_ui,
         pa_dim_tab_ui,
         pa_marginal_axis_ui,
         pa_resolution_ui,
         pa_rot_angle_ui,
         pa_rot_axis_ui,
-        pa_run_button,
         pa_source_ui,
     )
 
@@ -1217,6 +1242,8 @@ def _(
     pa_source_ui,
     sources,
 ):
+    pa_calculation_done = True
+    mo.stop(not pa_run_button.value, "Run a position analysis")
     if pa_run_button.value:
         pa_source = [s for s in sources if s.org_name == pa_source_ui.value][0]
         pa_bin_res = (
@@ -1248,8 +1275,20 @@ def _(
             )
         else:
             "Unknown dimensionality"
+    return (pa_calculation_done,)
 
-    pa_plot_densities_button = mo.ui.run_button(label="Plot densities")
+
+@app.cell
+def create_position_analysis(project):
+    pa = Position_Analysis(project)
+    return (pa,)
+
+
+@app.cell
+def position_analysi_table(pa, pa_calculation_done, record_counts):
+    # update from loading and calculating
+    record_counts
+    pa_calculation_done
 
     pa_metas = []
     for i, r in enumerate(pa.own_records):
@@ -1257,11 +1296,12 @@ def _(
         pa_meta["index"] = i
         pa_metas.append(pa_meta)
 
+    pa_plot_densities_button = mo.ui.run_button(label="Plot densities")
     pa_records_table = mo.ui.table(pa_metas)
 
     mo.vstack(
         [
-            mo.md("Select which entries to plot. 3D plots are expensive to show"),
+            mo.md("#### Select which entries to plot. 3D plots are expensive to show"),
             pa_records_table,
             pa_plot_densities_button,
         ]
@@ -1306,7 +1346,16 @@ def _(record_counts, records_save_button, records_update_button):
 
 
 @app.cell
-def _(project, records_update_button):
+def _(
+    pa_run_button,
+    project,
+    project_load_records_button,
+    records_update_button,
+    run_mcs_btn,
+):
+    project_load_records_button
+    run_mcs_btn
+    pa_run_button
     records_update_button.value
     [r.meta for r in project.records]
     record_counts = defaultdict(int)
@@ -1330,7 +1379,12 @@ def _():
 def _(project, records_save_button):
     mo.stop(not records_save_button.value, "Save all records")
     project.registry.save_all_to_yaml()
-    print("Saved successfully!")
+    mo.md("Saved successfully!")
+    return
+
+
+@app.cell
+def _():
     return
 
 
