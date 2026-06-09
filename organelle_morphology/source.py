@@ -4,7 +4,11 @@ from typing import Optional
 from pathlib import Path
 
 import organelle_morphology
-from organelle_morphology.organelle import Organelle, organelle_registry
+from organelle_morphology.organelle import (
+    Organelle,
+    get_mesh_properties_delayed,
+    organelle_registry,
+)
 
 from dask.base import compute, persist
 import dask.array as da
@@ -472,6 +476,13 @@ class DataSource:
         return self._global_coarse_centroid
 
     @property
+    def mesh_properties(self):
+        if self._mesh_properties is None:
+            tasks = {k: get_mesh_properties_delayed(v) for k, v in self.meshes.items()}
+            self._mesh_properties = compute(tasks)[0]
+        return self._mesh_properties
+
+    @property
     def labels(self) -> list[int]:
         """Return the list of labels present in the data source."""
         return list(self.ids_to_chunks.keys())
@@ -933,6 +944,7 @@ class DataSource:
         self._mcs_dicts = {}
         self._centroid = None
         self._global_coarse_centroid = None
+        self._mesh_properties = None
 
     @property
     def mcs_dicts(self) -> dict:

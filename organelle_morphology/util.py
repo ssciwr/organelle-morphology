@@ -38,7 +38,7 @@ class Disk_Store:
             self.mem_cache[key] = value
             return value
         except FileNotFoundError as e:
-            raise KeyError(f"Key: {key} not found in {self.path}!\n{e}")
+            raise KeyError(f"Key: {key} not found in {self.path}!") from e
 
     def __contains__(self, key):
         return (self.path / str(key)).exists()
@@ -365,7 +365,7 @@ def bounding_box_delayed(mesh: Trimesh):
     return min, max
 
 
-def block_to_coords(block, resolution, data, offset=[0, 0, 0]):
+def block_to_coords(block, resolution, data, offset):
     resolution = np.array(resolution)
     block_coords = [
         of + (np.cumsum(cs) * res)
