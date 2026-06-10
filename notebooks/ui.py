@@ -66,7 +66,9 @@ def project_load_old_records(run_project_button):
     mo.stop(not run_project_button.value, "")
 
     run_project_button.value
-    project_load_records_button = mo.ui.run_button(label="Load analysis records")
+    project_load_records_button = mo.ui.run_button(
+        label="Load existing analysis records"
+    )
     project_load_records_button
     return (project_load_records_button,)
 
@@ -835,6 +837,13 @@ def geo_execute_cell(project, run_geo_btn):
 
 
 @app.cell
+def create_run_profile_btn():
+    run_profile_btn = mo.ui.run_button(label="Calculate Profiles")
+    run_profile_btn
+    return (run_profile_btn,)
+
+
+@app.cell
 def profile_calc_ui_cell(project, sources):
     mo.stop(len(sources) < 1, "")
     profile_calculator = ProfileCalculator(project)
@@ -874,8 +883,6 @@ def profile_calc_ui_cell(project, sources):
         }
     )
 
-    run_profile_btn = mo.ui.run_button(label="Calculate Profiles")
-
     profile_calc_ui_layout = mo.vstack(
         [
             mo.md(
@@ -889,7 +896,6 @@ def profile_calc_ui_cell(project, sources):
             random_planes_dict,
             mo.md("**Skeleton Perpendicular Settings:**"),
             skeleton_dict,
-            run_profile_btn,
         ]
     )
 
@@ -900,7 +906,6 @@ def profile_calc_ui_cell(project, sources):
         profile_ids_ui,
         profile_method_ui,
         random_planes_dict,
-        run_profile_btn,
         skeleton_dict,
     )
 
@@ -926,19 +931,19 @@ def profile_execute_cell(
     try:
         with mo.redirect_stderr():
             if profile_method_ui.value == "Fixed Axis":
-                df = profile_calculator.calculate_profile_lengths(
+                profile_calculator.calculate_profile_lengths(
                     ids=profile_ids_ui.value,
                     axis=fixed_axis_dict["axis"].value,
                     num_slices=fixed_axis_dict["num_slices"].value,
                 )
             elif profile_method_ui.value == "Random Planes":
-                df = profile_calculator.calculate_random_profiles(
+                profile_calculator.calculate_random_profiles(
                     ids=profile_ids_ui.value,
                     num_planes=random_planes_dict["num_planes"].value,
                     seed=random_planes_dict["seed"].value,
                 )
             elif profile_method_ui.value == "Skeleton Perpendicular":
-                df = profile_calculator.calculate_skeleton_profiles(
+                profile_calculator.calculate_skeleton_profiles(
                     ids=profile_ids_ui.value,
                     sample_distance=skeleton_dict["sample_distance"].value,
                 )
@@ -946,6 +951,7 @@ def profile_execute_cell(
                 raise ValueError(
                     f"Unknown profile calculation method: {profile_method_ui.value}"
                 )
+            df = profile_calculator.get_dataframe()
 
         profile_execute_cell_status = mo.vstack(
             [
@@ -953,7 +959,7 @@ def profile_execute_cell(
                     "**Success!** Profile properties "
                     f"computed using {profile_method_ui.value}."
                 ),
-                mo.ui.table(df, selection=None, pagination=True, page_size=25),
+                mo.ui.table(df, selection=None, pagination=True, page_size=15),
             ]
         )
 
@@ -1374,10 +1380,12 @@ def _(
     project_load_records_button,
     records_update_button,
     run_mcs_btn,
+    run_profile_btn,
 ):
     project_load_records_button
     run_mcs_btn
     pa_run_button
+    run_profile_btn
     records_update_button.value
     [r.meta for r in project.records]
     record_counts = defaultdict(int)
