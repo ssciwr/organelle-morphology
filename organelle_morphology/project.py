@@ -30,9 +30,7 @@ from organelle_morphology.util import (
     show,
 )
 
-clipping_type = (
-    tuple[tuple[float, float, float], tuple[float, float, float]] | list[list[float]]
-)
+clipping_type = tuple[tuple[float, float, float], tuple[float, float, float]]
 
 
 @dataclass(frozen=True)
@@ -76,6 +74,9 @@ class Project:
 
         self._project_path = Path(project_path)
         self.clear_memory_cache()
+
+        # records can be loaded before sources -> init registry here
+        self.registry = RecordRegistry(self)
         self._simplify = 0.5
 
         self.path.mkdir(exist_ok=True)
@@ -138,12 +139,14 @@ class Project:
 
     @property
     def metadata(self) -> ProjectMetadata:
+        clip = None
+        if self.clipping is not None:
+            clip = tuple([tuple(c) for c in self.clipping.tolist()])
+
         return ProjectMetadata(
             path=self.path,
             name=self.path.name,
-            clipping=tuple(self.clipping.tolist())
-            if self.clipping is not None
-            else None,
+            clipping=clip,
             compression=self.compression_level,
             sources=tuple(self.sources.keys()),
             blacklist=tuple(self.permanent_blacklist),
@@ -729,51 +732,6 @@ class Project:
     def mcs_queries(self):
         return self._mcs_labels
 
-    def calculate_profiles(
-        self,
-        method: str,
-        ids: str = "*",
-        axis: str | tuple = "z",
-        num_slices: int = 20,
-        num_planes: int = 20,
-        seed: int = 42,
-        sample_distance: float = 0.1,
-    ):
-        """
-        API to calculate 2D profile metrics for organelles.
-
-        :param method: The slicing method ("Fixed Axis", "Random Planes", "Skeleton Perpendicular").
-        :param ids: Filter string for the organelle ids, defaults to "*".
-        :param axis: The axis to slice along (for Fixed Axis).
-        :param num_slices: The number of slices to make (for Fixed Axis).
-        :param num_planes: The number of random planes to generate (for Random Planes).
-        :param seed: Random seed (for Random Planes).
-        :param sample_distance: Distance between sample points (for Skeleton Perpendicular).
-
-        :return: A pandas DataFrame containing the profile statistics.
-        """
-        # Import locally to avoid circular dependencies if necessary
-        from organelle_morphology.profile_calculations import ProfileCalculator
-
-        calculator = ProfileCalculator(self)
-
-        if method == "Fixed Axis":
-            calculator.calculate_profile_lengths(
-                ids=ids, axis=axis, num_slices=num_slices
-            )
-        elif method == "Random Planes":
-            calculator.calculate_random_profiles(
-                ids=ids, num_planes=num_planes, seed=seed
-            )
-        elif method == "Skeleton Perpendicular":
-            calculator.calculate_skeleton_profiles(
-                ids=ids, sample_distance=sample_distance
-            )
-        else:
-            raise ValueError(f"Unknown profile calculation method: {method}")
-
-        return calculator.get_dataframe()
-
     @property
     def compression_level(self) -> str:
         """The compression level used for our computations."""
@@ -1118,7 +1076,6 @@ class Project:
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
         self._max_compute_distance = 0.0
         self._cache = None
-        self.registry = RecordRegistry(self)
 
     def clear_caches(self, clear_disk=False, silent=False):
         """Clear all caches related to this project, optionally also from disk"""

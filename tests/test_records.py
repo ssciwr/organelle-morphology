@@ -5,6 +5,7 @@ from typing import Optional
 import numpy as np
 import pytest
 
+from organelle_morphology.profile_calculations import ProfileCalculator
 from organelle_morphology.records import PropertyBlock, Record
 
 
@@ -64,26 +65,27 @@ def test_stat_save_load_np(mock_prop, mock_prop_np, tmp_path, project_with_sourc
 
 def test_registry_save_load_real_records(project_with_sources):
     """Test bulk saving and loading using actual production records."""
-    project = project_with_sources
+    p = project_with_sources
 
-    project.calculate_profiles(method="Fixed Axis", ids="mito_0007", num_slices=3)
+    pc = ProfileCalculator(p)
+    pc.calculate_profile_lengths(ids="mito_0007", axis="z", num_slices=3)
 
-    original_records = project.registry.get_all().copy()
+    original_records = p.registry.get_all().copy()
     assert len(original_records) > 0, "Pipeline failed to generate records."
 
-    project.registry.save_all_to_yaml()
-    assert (project.path / "analysis").exists()
-    assert len(list((project.path / "analysis").iterdir())) == 1
+    p.registry.save_all_to_yaml()
+    assert (p.path / "analysis").exists()
+    assert len(list((p.path / "analysis").iterdir())) == 1
 
     # test overwriting
-    project.registry.save_all_to_yaml()
-    assert len(list((project.path / "analysis").iterdir())) == 1
+    p.registry.save_all_to_yaml()
+    assert len(list((p.path / "analysis").iterdir())) == 1
 
-    project.registry.clear()
-    assert len(project.registry.get_all()) == 0
+    p.registry.clear()
+    assert len(p.registry.get_all()) == 0
 
-    project.registry.load_all_from_yaml()
-    loaded_records = project.registry.get_all()
+    p.registry.load_all_from_yaml()
+    loaded_records = p.registry.get_all()
     assert len(loaded_records) == len(original_records)
     for orig, loaded in zip(original_records, loaded_records):
         assert orig == loaded

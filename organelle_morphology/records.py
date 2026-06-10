@@ -277,16 +277,16 @@ class Record:
         )
 
     def __eq__(self, value: object, /) -> bool:
-        if name := getattr(value, "name"):
+        if name := getattr(value, "name", None):
             if name != self.name:
                 return False
-        if meta := getattr(value, "meta"):
+        if meta := getattr(value, "meta", None):
             if meta != self.meta:
                 return False
-        if proj := getattr(value, "meta_project"):
+        if proj := getattr(value, "meta_project", None):
             if proj != self.meta_project:
                 return False
-        if sources := getattr(value, "meta_sources"):
+        if sources := getattr(value, "meta_sources", None):
             if sources != self.meta_sources:
                 return False
         # if data := getattr(value, "data"):
@@ -321,6 +321,9 @@ class RecordRegistry:
         assert isinstance(record.meta_project, Hashable), (
             "project meta must be hashable!"
         )
+        if record in self._all_records:
+            self.logger.warning("Tried adding already registered record!")
+            return
 
         self._all_records.append(record)
 
