@@ -74,6 +74,9 @@ class Project:
 
         self._project_path = Path(project_path)
         self.clear_memory_cache()
+
+        # records can be loaded before sources -> init registry here
+        self.registry = RecordRegistry(self)
         self._simplify = 0.5
 
         self.path.mkdir(exist_ok=True)
@@ -1073,7 +1076,6 @@ class Project:
         self._mcs_labels = {}  # {label: {max_distance: float, min_distance: float}}
         self._max_compute_distance = 0.0
         self._cache = None
-        self.registry = RecordRegistry(self)
 
     def clear_caches(self, clear_disk=False, silent=False):
         """Clear all caches related to this project, optionally also from disk"""

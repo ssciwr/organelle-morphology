@@ -93,7 +93,6 @@ class Mcs_Analysis(Analysis):
         super().__init__(project=project, property_type=McsData)
 
     def __post_init__(self):
-        self.mcs_labels = {s.meta.mcs_label for s in self.own_records}
         self.set_filters()
 
     def set_filters(self, ids: str = "*", mcs_labels: Optional[list[str]] = None):
@@ -105,6 +104,10 @@ class Mcs_Analysis(Analysis):
         """
         self.ids = ids
         self.mcs_label_filter = mcs_labels
+
+    @property
+    def mcs_labels(self) -> list:
+        return list({s.meta.mcs_label for s in self.own_records})
 
     def get_mcs_properties(self) -> pd.DataFrame:
         """The properties of the MCS between organelles

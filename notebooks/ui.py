@@ -694,12 +694,13 @@ def table_display_cell(filtered_distance_results, of_run_button):
 @app.cell
 def mcs_calc_button():
     run_mcs_btn = mo.ui.run_button(label="Calculate MCS")
+    run_mcs_btn
     return (run_mcs_btn,)
 
 
 @app.cell
-def mcs_calc_ui_cell(change_settings_button, project, run_mcs_btn, sources):
-    mo.stop(len(sources) < 1, "")
+def mcs_calc_ui_cell(change_settings_button, project, sources):
+    mo.stop(len(sources) < 1, "MCS Analysis, add source first!")
     # trigger updates
     change_settings_button
 
@@ -710,7 +711,7 @@ def mcs_calc_ui_cell(change_settings_button, project, run_mcs_btn, sources):
     mcs_overwrite_ui = mo.ui.checkbox(
         value=False, label="Overwrite existing mcs results"
     )
-    mcs_calc_ui_layout = mo.vstack(
+    mo.vstack(
         [
             mo.md("## Membrane Contact Sites (MCS)"),
             mo.md(f"(Project resolution: {project.resolution} [$um$]"),
@@ -719,10 +720,8 @@ def mcs_calc_ui_cell(change_settings_button, project, run_mcs_btn, sources):
             mcs_filter1_ui,
             mcs_filter2_ui,
             mcs_overwrite_ui,
-            run_mcs_btn,
         ]
     )
-    mcs_calc_ui_layout
     return (
         mcs_filter1_ui,
         mcs_filter2_ui,
@@ -730,6 +729,17 @@ def mcs_calc_ui_cell(change_settings_button, project, run_mcs_btn, sources):
         mcs_min_dist_ui,
         mcs_overwrite_ui,
     )
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def create_mcs_analysis(project):
+    mcs_analysis = Mcs_Analysis(project=project)
+    return (mcs_analysis,)
 
 
 @app.cell
@@ -753,21 +763,29 @@ def mcs_execute_cell(
     mcs_execute_status = mo.md(
         f"MCS successfully calculated for distance {mcs_min_dist_ui.value}-{mcs_max_dist_ui.value}."
     )
-    mcs_analysis = Mcs_Analysis(project=project)
     mcs_execute_status
-    return (mcs_analysis,)
+    return
 
 
 @app.cell
-def mcs_analysis_set_filter(mcs_analysis):
+def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
+    mo.stop(
+        not project.registry.get_by_type("McsData"),
+        mo.md("No MCS calculations run yet"),
+    )
+    record_counts
     mcs_labels = {r.meta.mcs_label for r in mcs_analysis.own_records}
     mo.md(f"### MCS labels\n{'<br>'.join(mcs_labels)} ")
     return
 
 
 @app.cell
-def mcs_analysis_overview(mcs_analysis, project):
-    mo.stop(not project.mcs_labels, mo.md("No MCS calculations run yet"))
+def mcs_analysis_overview(mcs_analysis, project, record_counts):
+    mo.stop(
+        not project.registry.get_by_type("McsData"),
+        mo.md("No MCS calculations run yet"),
+    )
+    record_counts
     mo.ui.table(
         mcs_analysis.get_mcs_overview().reset_index(),
         page_size=14,
@@ -778,7 +796,12 @@ def mcs_analysis_overview(mcs_analysis, project):
 
 
 @app.cell
-def mcs_analysis_properties(mcs_analysis):
+def mcs_analysis_properties(mcs_analysis, project, record_counts):
+    mo.stop(
+        not project.registry.get_by_type("McsData"),
+        mo.md("No MCS calculations run yet"),
+    )
+    record_counts
     mo.ui.table(mcs_analysis.get_mcs_properties(), selection=None, page_size=15)
     return
 
@@ -944,7 +967,8 @@ def profile_execute_cell(
 
 
 @app.cell
-def prop_selector_cell(project):
+def prop_selector_cell(project, sources):
+    mo.stop(len(sources) < 1, "Property statistics need loaded sources!")
     stats = Misc_Analysis(project, PropertyBlock)
     available_properties = (
         stats.get_mesh_properties()
@@ -1242,7 +1266,6 @@ def _(
     pa_source_ui,
     sources,
 ):
-    pa_calculation_done = True
     mo.stop(not pa_run_button.value, "Run a position analysis")
     if pa_run_button.value:
         pa_source = [s for s in sources if s.org_name == pa_source_ui.value][0]
@@ -1275,7 +1298,7 @@ def _(
             )
         else:
             "Unknown dimensionality"
-    return (pa_calculation_done,)
+    return
 
 
 @app.cell
@@ -1285,10 +1308,9 @@ def create_position_analysis(project):
 
 
 @app.cell
-def position_analysi_table(pa, pa_calculation_done, record_counts):
+def position_analysi_table(pa, record_counts):
     # update from loading and calculating
     record_counts
-    pa_calculation_done
 
     pa_metas = []
     for i, r in enumerate(pa.own_records):
