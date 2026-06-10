@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.9"
+__generated_with = "0.21.1"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -22,6 +22,7 @@ with app.setup:
     import matplotlib.pyplot as plt
     from organelle_morphology.position import Position_Analysis
     from organelle_morphology.records import PropertyBlock
+    from organelle_morphology.skeleton_analysis import Skeleton_Analysis
     from collections import defaultdict
 
 
@@ -483,6 +484,14 @@ def show_blacklist(
 
 
 @app.cell
+def skeleton_run_button(project):
+    skel_analysis = Skeleton_Analysis(project)
+    run_skeleton_button = mo.ui.run_button(label="Run Skeletonization")
+    run_skeleton_button
+    return run_skeleton_button, skel_analysis
+
+
+@app.cell
 def _(sources):
     mo.stop(len(sources) < 1, "Add a source first!")
     skel_dict = mo.ui.dictionary(
@@ -493,13 +502,11 @@ def _(sources):
             "path_sample_dist": mo.ui.number(value=0.1),
         }
     )
-    run_skeleton_button = mo.ui.run_button()
     skel_form = mo.md(r"""
     ## Skeletonize
 
-    Method: {method}
-    id filter: {ids}
-    Recompute: {recompute}
+    Method: {method} id filter: {ids}  
+    Recompute: {recompute}  
     Settings: {settings}
     """).batch(
         method=mo.ui.radio(
@@ -510,12 +517,12 @@ def _(sources):
         settings=skel_dict,
     )
 
-    mo.vstack([skel_form, run_skeleton_button])
-    return run_skeleton_button, skel_form
+    skel_form
+    return (skel_form,)
 
 
 @app.cell
-def _(project, run_skeleton_button, skel_form):
+def skeleton_progress(project, run_skeleton_button, skel_form):
     mo.stop(not run_skeleton_button.value, "Output of Skeletonization")
     form = skel_form.value
 
@@ -529,6 +536,19 @@ def _(project, run_skeleton_button, skel_form):
         elif form["method"] == "vertex cluster":
             settings.pop("waves")
             project.skeletonize_vertex_clusters(**settings)
+    return
+
+
+@app.cell
+def _(record_counts, skel_analysis):
+    record_counts
+
+    mo.vstack([
+        mo.md(
+            "## Skeletonization Statistics"
+        ),
+        skel_analysis.get_dataframe(),
+    ])
     return
 
 
@@ -1381,12 +1401,14 @@ def _(
     records_update_button,
     run_mcs_btn,
     run_profile_btn,
+    run_skeleton_button,
 ):
     project_load_records_button
     run_mcs_btn
     pa_run_button
     run_profile_btn
-    records_update_button.value
+    run_skeleton_button
+    records_update_button
     [r.meta for r in project.records]
     record_counts = defaultdict(int)
     for rec in project.records:

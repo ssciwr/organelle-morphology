@@ -144,6 +144,13 @@ class Record:
     """Record class to collect statistical data together with metadata
     throughout the project.
 
+    Args:
+        data: Data
+        meta: Metadata
+        project: Project, all global metadata will be generated from this
+        meta_sources: SourceMetadata, only necessary if no project is given
+        meta_project: ProjectMetadata, only necessary if no project is given
+
     Attributes:
         data: Dataclass holding the data
         meta: Dataclass holding the metadata
@@ -162,6 +169,9 @@ class Record:
         Args:
             data: dataclass inheriting from PropertyBlock, contains the data
             meta: dataclass inheriting from PropertyBlock, contains the metadata
+            project: Project to gather all global meta data from
+            meta_sources: SourceMetadata, only necessary if no project is given
+            meta_project: ProjectMetadata, only necessary if no project is given
         """
         self.data = data
         self.meta = meta

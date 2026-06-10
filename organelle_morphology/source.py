@@ -1,6 +1,6 @@
 from collections import defaultdict
 import logging
-from typing import Optional
+from typing import Literal, Optional
 from pathlib import Path
 
 import organelle_morphology
@@ -26,7 +26,7 @@ import z5py
 from organelle_morphology.block_mesher import block_mesher
 
 
-from organelle_morphology.records import PropertyBlock
+from organelle_morphology.records import PropertyBlock, Record
 from organelle_morphology.util import (
     Cache,
     color_delayed_trimesh_rgba,
@@ -65,6 +65,31 @@ class SourceMetadata(PropertyBlock):
     resolution: tuple[float, ...]
     name: str
     coarse_level: str
+
+
+@dataclass
+class SkeletonData(PropertyBlock):
+    num_nodes: int
+    total_length: float
+    std_length: float
+    num_branch_points: int
+    end_points: int
+    mean_length: float
+    longest_path: float
+    mean_radius: float
+    std_radius: float
+
+
+@dataclass(frozen=True)
+class SkeletonMetaData(PropertyBlock):
+    organelle_id: str
+    method: Literal["wavefront", "vertex_cluster"]
+    theta: float
+    path_sample_dist: float
+    waves: Optional[int] = None
+    step_size: Optional[int] = None
+    epsilon: Optional[float] = None
+    sampling_dist: Optional[float] = None
 
 
 class DataSource:
@@ -1168,7 +1193,7 @@ class DataSource:
                 )
 
                 # reset skeleton info for new calculation
-                skeleton_info = get_skeleton_info(skel)
+                skeleton_info = SkeletonData(**get_skeleton_info(skel))
                 result[1] += f"Generated skeleton for {label}"
                 result[0] = (skel, skeleton_info, sampled_skeleton, label)
 
@@ -1214,7 +1239,6 @@ class DataSource:
 
         results = compute(*tasks)
 
-        orgs = []
         for result in results:
             if result[0] is None:
                 self.logger.debug(result[1])
@@ -1224,5 +1248,17 @@ class DataSource:
             organelles_labeled[label].skeleton = skel
             organelles_labeled[label].skeleton_info = skeleton_info
             organelles_labeled[label].sampled_skeleton = sampled_skeleton
-            orgs.append(organelles_labeled[label])
-        return orgs
+
+            meta = SkeletonMetaData(
+                organelle_id=label,
+                method=skeletonization_type,
+                theta=theta,
+                path_sample_dist=path_sample_dist,
+                waves=waves,
+                step_size=step_size,
+                epsilon=epsilon,
+                sampling_dist=sampling_dist,
+            )
+
+            record = Record(data=skeleton_info, meta=meta, project=self.project)
+            self.project.registry.add(record)
