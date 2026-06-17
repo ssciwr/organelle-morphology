@@ -84,12 +84,20 @@ If empty, the color is unchanged
 * Color individual organelles: Each organelle instance is colored differently.
 * MCS: Membrane contact site. See below for an explanation of all options.
 * Box settings: Draw a box to help decide on clipping settings for higher resolution levels. Also used in `Get IDs of organelles in box`
+* Min volume: Color by a minimum volume. Everything smaller is orange, all bigger organelles are green.
+Meshes with openings are displayed gray.
+Does not work with other coloring options in parallel.
 * Show rotation: Display two lines indicating a rotation by a given angle. Yellow is the reference 0° line, orange is the rotated line.
 * High-quality viewer: Opens the view in a separate window with better quality. (Transparency only works here)
 
 Additional to the meshes, the chosen clipping box is shown, as well as an box enclosing the unclipped data.
 
 The (0,0,0) corner is marked with three arrows along the axes. The red one points in x direction, the green one in y direction and the blue one in z direction.
+
+### Set minimum Volume
+
+Remove organelles below a certain volume from all calculations, including the 3D rendering.
+Use the option in `Show Mesh` to preview your selection.
 
 ### Cache
 

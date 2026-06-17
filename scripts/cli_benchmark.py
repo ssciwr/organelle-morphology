@@ -31,10 +31,13 @@ def main():
     parser.add_argument("--mpi", action="store_true", help="Enable MPI support")
     args = parser.parse_args()
 
+    # Initialize dask_mpi on all ranks, but only run main benchmark on rank 0
+    if args.mpi:
+        initialize(nthreads=args.threads)
+
     start_time_total = time()
 
     if args.mpi:
-        initialize(nthreads=args.threads)
         client = Client()
     else:
         cluster = LocalCluster(
@@ -65,7 +68,7 @@ def main():
     # Meshing & Cache
     p.logger.info("\n--- Running Benchmark 1: Mesh Computation ---")
     p.clear_caches(True)
-    p.clipping = [[0.6, 0.5, 0.5], [1, 1, 1]]
+    p.clipping = [[0.6, 0.5, 0.5], [1, 0.6, 1]]
     p.compression_level = "s2"
     p.calculate_meshes()
 
@@ -80,8 +83,8 @@ def main():
     # Distance Matrix
     p.logger.info("\n--- Running Benchmark 2: Distance Matrix ---")
     p.clear_caches(True)
-    p.clipping = [[0.6, 0.5, 0.5], [1, 0.6, 0.6]]
-    p.compression_level = "s1"
+    p.clipping = [[0.6, 0.5, 0.5], [1, 0.6, 1]]
+    p.compression_level = "s2"
     p.max_distance = 0.05
 
     t0 = time()
@@ -90,7 +93,7 @@ def main():
 
     # Membrane Contact Sites (MCS)
     p.logger.info("\n--- Running Benchmark 3: MCS Search ---")
-    p.clipping = None
+    p.clipping = [[0.6, 0.5, 0.5], [1, 0.6, 1]]
     p.compression_level = "s2"
     t0 = time()
     p.search_mcs(0.05, ids_filter_1="cell*", ids_filter_2="er*")
@@ -98,7 +101,7 @@ def main():
 
     # Position Analysis
     p.logger.info("\n--- Running Benchmark 4: Position Analysis ---")
-    p.clipping = None
+    p.clipping = [[0.6, 0.5, 0.5], [1, 0.6, 1]]
     p.compression_level = "s2"
     t0 = time()
     pa = Position_Analysis(p)
@@ -107,7 +110,7 @@ def main():
 
     # Skeletonization
     p.logger.info("\n--- Running Benchmark 5: Skeletonization ---")
-    p.clipping = None
+    p.clipping = [[0.6, 0.5, 0.5], [1, 0.6, 1]]
     p.compression_level = "s2"
     t0 = time()
     p.skeletonize_wavefront("cell_*")
