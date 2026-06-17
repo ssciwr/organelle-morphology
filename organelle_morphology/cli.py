@@ -34,8 +34,8 @@ def main():
     start_time_total = time()
 
     if args.mpi:
-        initialize()
-        client = Client(nthreads=args.threads)
+        initialize(nthreads=args.threads)
+        client = Client()
     else:
         cluster = LocalCluster(
             n_workers=args.workers,
@@ -80,13 +80,14 @@ def main():
     # Distance Matrix
     print("\n--- Running Benchmark 2: Distance Matrix ---")
     p.clear_caches(True)
-    p.clipping = None
+    p.clipping = [[0.6, 0.5, 0.5], [1, 0.6, 0.6]]
     p.compression_level = "s1"
     p.max_distance = 0.05
 
     t0 = time()
     p.distance_matrix
     print(f"Distance Matrix Duration: {time() - t0:.2f}s")
+    exit()
 
     # Membrane Contact Sites (MCS)
     print("\n--- Running Benchmark 3: MCS Search ---")
