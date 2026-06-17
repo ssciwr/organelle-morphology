@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=helix-demo
 #SBATCH --partition=devel
-#SBATCH --nodes=2
-#SBATCH --ntasks=32
+#SBATCH --nodes=1
+#SBATCH --ntasks=16
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=230gb
 #SBATCH --time=00:30:00
@@ -13,4 +13,4 @@
 module load devel/miniforge/24.9.2
 conda activate morph
 cd /home/hd/hd_hdc/hd_vw182/workspaces/gpfs/hd_vw182-vem || exit
-mpirun -np 32 vem --threads 4 --data data/interphase_4T -p vem_test_run
+mpirun -np 16 vem --threads 4 --data data/interphase_4T -p vem_test_run
