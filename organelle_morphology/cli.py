@@ -80,7 +80,7 @@ def main():
     # Distance Matrix
     print("\n--- Running Benchmark 2: Distance Matrix ---")
     p.clear_caches(True)
-    p.clipping = [[0.6, 0.5, 0.4], [0.8, 1, 0.5]]
+    p.clipping = None
     p.compression_level = "s1"
     p.max_distance = 0.05
 
@@ -90,7 +90,7 @@ def main():
 
     # Membrane Contact Sites (MCS)
     print("\n--- Running Benchmark 3: MCS Search ---")
-    p.clipping = [[0.5, 0.6, 0.5], [0.6, 0.7, 1]]
+    p.clipping = None
     p.compression_level = "s2"
     t0 = time()
     p.search_mcs(0.05, ids_filter_1="cell*", ids_filter_2="er*")
@@ -98,8 +98,8 @@ def main():
 
     # Position Analysis
     print("\n--- Running Benchmark 4: Position Analysis ---")
-    p.clipping = [[0.6, 0.5, 0.3], [0.8, 1, 0.8]]
-    p.compression_level = "s3"
+    p.clipping = None
+    p.compression_level = "s2"
     t0 = time()
     pa = Position_Analysis(p)
     pa.density1D(s_cell, bin_resolution=(0.1, 0.1, 0.1), axis=0)
@@ -107,8 +107,8 @@ def main():
 
     # Skeletonization
     print("\n--- Running Benchmark 5: Skeletonization ---")
-    p.clipping = [[0.6, 0, 0], [1, 1, 1]]
-    p.compression_level = "s3"
+    p.clipping = None
+    p.compression_level = "s2"
     t0 = time()
     p.skeletonize_wavefront("cell_*")
     print(f"Skeletonization Duration: {time() - t0:.2f}s")
