@@ -13,4 +13,4 @@
 module load devel/miniforge/24.9.2
 conda activate morph
 cd /home/hd/hd_hdc/hd_vw182/workspaces/gpfs/hd_vw182-vem || exit
-mpirun -np 32 vem --threads 4 --data data/interphase_4T -p vem_test_run
+mpirun -np 32 vem --mpi --threads 4 --data data/interphase_4T -p vem_test_run
