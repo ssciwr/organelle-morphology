@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=16
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=230gb
+#SBATCH --mem=100gb
 #SBATCH --time=00:30:00
 
 # This is an example how a slurm script might look like on the helix cluster.
