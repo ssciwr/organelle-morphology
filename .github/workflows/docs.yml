@@ -23,12 +23,14 @@ jobs:
           miniforge-version: latest
           mamba-version: "*"
           channels: local,conda-forge
-          python-version: ${{matrix.python-version}}
+          python-version: 3.13
           activate-environment: morph
           environment-file: environment-dev.yml
           conda-remove-defaults: true
 
-      - run: zensical build --clean
+      - run: |
+          conda activate morph
+          zensical build --clean
 
       - uses: actions/upload-pages-artifact@v5
         with:
