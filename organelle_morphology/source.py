@@ -113,7 +113,7 @@ class DataSource:
         return f"DataSource of xml: {self.xml_path.stem}"
 
     def load_n5(self, n5: Path) -> dict[str, Timepoint]:
-        f = z5py.File(n5, "r")
+        f = z5py.File(n5, mode="r")
         timepoints = {}
         self.logger.debug(f"Start loading {n5}, metadata structure:")
 
