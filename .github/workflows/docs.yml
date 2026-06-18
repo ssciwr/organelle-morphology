@@ -16,11 +16,20 @@ jobs:
     steps:
       - uses: actions/configure-pages@v6
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+
+      - name: Add conda instance
+        uses: conda-incubator/setup-miniconda@v4.0.0
         with:
-          python-version: 3.12
-      - run: pip install zensical mkdocstrings-python
+          miniforge-version: latest
+          mamba-version: "*"
+          channels: local,conda-forge
+          python-version: ${{matrix.python-version}}
+          activate-environment: morph
+          environment-file: environment-dev.yml
+          conda-remove-defaults: true
+
       - run: zensical build --clean
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
