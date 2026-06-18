@@ -55,6 +55,9 @@ version_scheme = "post-release"
 local_scheme = "node-and-date"
 write_to = "organelle_morphology/_version.py"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.coverage.run]
 branch = true
 
