@@ -5,6 +5,7 @@ from dask_mpi import initialize
 from organelle_morphology import Project
 from organelle_morphology.position import Position_Analysis
 from organelle_morphology.profile_calculations import ProfileCalculator
+from organelle_morphology.skeleton_analysis import Skeleton_Analysis
 
 
 def main():
@@ -40,6 +41,7 @@ def main():
         )
         client = Client(cluster)
 
+
     # ######################################
     # Define the project directory
     # ######################################
@@ -60,6 +62,7 @@ def main():
     p.add_source(data_path / "cell_it01_b0_7_stitched.xml", "cell")
     p.add_source(data_path / "er_it00_b0_7_stitched.xml", "er")
 
+
     # ######################################
     # Membrane contact sites
     # ######################################
@@ -70,6 +73,7 @@ def main():
         ids_filter_2="er*",
     )
     p.registry.save_all_to_yaml()
+    
 
     # ######################################
     # Position Analysis
@@ -91,10 +95,15 @@ def main():
     )
     pos_analysis.save_records()
 
+
     # ######################################
     # Skeletonization
     # ######################################
-    # TODO:
+    skel_analysis = Skeleton_Analysis(p)
+    p.skeletonize_vertex_clusters(ids="*", theta=0.4, epsilon=0.1, path_sample_dist=0.1, recompute=False)
+    p.skeletonize_wavefront(ids="*", waves=1, theta=0.4, path_sample_dist=0.1, recompute=False)
+    skel_analysis.save_records()
+
 
     # ######################################
     # Profile Analysis
