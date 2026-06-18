@@ -263,7 +263,9 @@ class Organelle:
             return self._skeleton_info
 
     @skeleton_info.setter
-    def skeleton_info(self, value):
+    def skeleton_info(
+        self, value
+    ) -> "organelle_morphology.skeleton_analysis.SkeletonData":
         self._skeleton_info = value
 
     @property

@@ -293,22 +293,18 @@ class Project:
         org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
         for o in orgs:
             org_per_source[o.source].append(o)
-        calculated_orgs = []
         for s, o_s in org_per_source.items():
             labels = [o.label for o in o_s]
-            calculated_orgs.extend(
-                s.generate_skeletons(
-                    labels=labels,
-                    skeletonization_type="wavefront",
-                    theta=theta,
-                    waves=waves,
-                    step_size=step_size,
-                    path_sample_dist=path_sample_dist,
-                    recompute=recompute,
-                )
+            s.generate_skeletons(
+                labels=labels,
+                skeletonization_type="wavefront",
+                theta=theta,
+                waves=waves,
+                step_size=step_size,
+                path_sample_dist=path_sample_dist,
+                recompute=recompute,
             )
         self.logger.info("Skeletonization done!")
-        return calculated_orgs
 
     def skeletonize_vertex_clusters(
         self,
@@ -328,22 +324,18 @@ class Project:
         org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
         for o in orgs:
             org_per_source[o.source].append(o)
-        calculated_orgs = []
         for s, o_s in org_per_source.items():
             labels = [o.label for o in o_s]
-            calculated_orgs.extend(
-                s.generate_skeletons(
-                    labels=labels,
-                    skeletonization_type="vertex_clusters",
-                    theta=theta,
-                    epsilon=epsilon,
-                    sampling_dist=sampling_dist,
-                    path_sample_dist=path_sample_dist,
-                    recompute=recompute,
-                )
+            s.generate_skeletons(
+                labels=labels,
+                skeletonization_type="vertex_clusters",
+                theta=theta,
+                epsilon=epsilon,
+                sampling_dist=sampling_dist,
+                path_sample_dist=path_sample_dist,
+                recompute=recompute,
             )
         self.logger.info("Skeletonization done!")
-        return calculated_orgs
 
     def show(
         self,
