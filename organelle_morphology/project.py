@@ -190,6 +190,7 @@ class Project:
 
     @simplify.setter
     def simplify(self, simplify: float):
+        self.logger.info(f"Setting simplify to {simplify}")
         if 0.0 < simplify > 1.0:
             raise ValueError(
                 "Simplify value must be between 0.0 and 1.0. "
@@ -838,6 +839,12 @@ class Project:
                 if o.id not in self.permanent_blacklist:
                     self.permanent_blacklist.append(o.id)
 
+        self.logger.info(
+            "Excluded organelles based on volume.\n"
+            f"Removed organelles: {len(self.permanent_blacklist)}\n"
+            f"Remaining organelles: {len(self.organelles)}"
+        )
+
     @property
     def clipping(
         self,
@@ -858,6 +865,7 @@ class Project:
 
     @clipping.setter
     def clipping(self, clipping: clipping_type | None):
+        self.logger.info(f"Setting clipping to {clipping}")
         if (clipping is not None) and not all(a < b for a, b in zip(*clipping)):
             raise ValueError(
                 "First clipping corner is lower left, second upper right. All "

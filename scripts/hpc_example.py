@@ -62,6 +62,15 @@ def main():
     p.add_source(data_path / "cell_it01_b0_7_stitched.xml", "cell")
     p.add_source(data_path / "er_it00_b0_7_stitched.xml", "er")
 
+    # Simplify the mesh by 50%
+    p.simplify = 0.5
+
+
+    # ######################################
+    # Exclude organelles
+    # ######################################
+    p.blacklist_by_volume(max_vol=0.001) 
+
 
     # ######################################
     # Membrane contact sites
