@@ -22,6 +22,7 @@ dependencies:
   - scikit-image
   - z5py
   - zensical
+  - mkdocstrings-python
   - pip:
       - python-fcl
       - setuptools==65.7.0
