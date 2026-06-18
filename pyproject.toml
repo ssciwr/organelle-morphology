@@ -44,6 +44,7 @@ docs = [
   "sphinx",
   "sphinx_mdinclude",
   "sphinx_rtd_theme",
+  "mkdocstrings-python",
 ]
 
 [tool.ruff]
