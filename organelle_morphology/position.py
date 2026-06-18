@@ -50,17 +50,23 @@ class Position_Analysis(Analysis):
 
     def density3D(
         self,
-        source: DataSource,
+        source: DataSource | str,
         bin_resolution: tuple[float, float, float],
     ) -> da.Array:
         """Calculate a 3d heatmap of all organelles in the source.
 
         Args:
-            source: The source containing the organelle of interest
+            source: The source containing the organelle of interest,
+                or the name of the respective organelle defined while loading
             bin_resolution: binning resolution in micrometers
         """
         res = bin_resolution
         cache_key = f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}"
+
+        if isinstance(source, str):
+            source: DataSource = {s.org_name: s for s in self.project.sources.values()}[
+                source
+            ]
 
         pos_meta = PositionMeta(
             source=source.org_name,
@@ -95,7 +101,7 @@ class Position_Analysis(Analysis):
 
     def density2D(
         self,
-        source: DataSource,
+        source: DataSource | str,
         bin_resolution: tuple[float, float, float],
         marginal_axis: int = 0,
         rot_angle: float = 0.0,
@@ -104,7 +110,8 @@ class Position_Analysis(Analysis):
         """Calculate the density of organelles in 2d.
 
         Args:
-            source: The source containing the organelle of interest
+            source: The source containing the organelle of interest,
+                or the name of the respective organelle defined while loading
             bin_resolution: binning resolution in micrometer
             marginal_axis: axis which will be averaged over.
             rot_axis: Axes around which the 3d volume can be rotated
@@ -118,6 +125,10 @@ class Position_Analysis(Analysis):
             f"density2d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_"
             f"{marginal_axis}_{rot_angle:.2f}_{rot_axis}"
         )
+        if isinstance(source, str):
+            source: DataSource = {s.org_name: s for s in self.project.sources.values()}[
+                source
+            ]
         axes_labels = None
         if rot_angle == 0:
             axes_labels = [0, 1, 2]
@@ -152,7 +163,7 @@ class Position_Analysis(Analysis):
 
     def density1D(
         self,
-        source: DataSource,
+        source: DataSource | str,
         bin_resolution: tuple[float, float, float],
         axis: int = 0,
         rot_angle: float = 0.0,
@@ -161,7 +172,8 @@ class Position_Analysis(Analysis):
         """Calculate the density of organelles along an axis.
 
         Args:
-            source: The source containing the organelle of interest
+            source: The source containing the organelle of interest,
+                or the name of the respective organelle defined while loading
             bin_resolution: binning resolution in micrometers
             axis: axis along which the density will be calculated
             rot_angle: Rotation angle to rotate the input image.
@@ -171,6 +183,11 @@ class Position_Analysis(Analysis):
             raise ValueError("Axis must be between 0 and 2")
         res = bin_resolution
         cache_key = f"density1d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}_{axis}_{rot_angle:.2f}_{rot_axis}"
+
+        if isinstance(source, str):
+            source: DataSource = {s.org_name: s for s in self.project.sources.values()}[
+                source
+            ]
 
         axes_labels = None
         if rot_angle == 0:
