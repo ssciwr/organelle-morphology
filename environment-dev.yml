@@ -2,13 +2,12 @@ name: morph
 channels:
   - conda-forge
 dependencies:
+  - bokeh
   - dask
   - dask-mpi
   - marimo
   - numpy
-  - nbval
   - pip
-  - plotly
   - matplotlib
   - seaborn
   - pytest
