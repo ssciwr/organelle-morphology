@@ -6,6 +6,7 @@ from organelle_morphology.organelle import Organelle
 from organelle_morphology.project import Project
 from organelle_morphology.source import DataSource
 from organelle_morphology.util import merge_meshes
+from organelle_morphology.analysis import Analysis
 
 __all__ = [
     "__version__",
@@ -13,4 +14,5 @@ __all__ = [
     "Project",
     "DataSource",
     "merge_meshes",
+    "Analysis",
 ]

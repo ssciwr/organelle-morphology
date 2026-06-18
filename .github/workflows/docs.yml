@@ -3,13 +3,15 @@ on:
   push:
     branches:
       - main
-      - om2
 permissions:
   contents: read
   pages: write
   id-token: write
 jobs:
   deploy:
+    defaults:
+      run:
+        shell: "bash -el {0}"
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -17,11 +19,20 @@ jobs:
     steps:
       - uses: actions/configure-pages@v6
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+
+      - name: Add conda instance
+        uses: conda-incubator/setup-miniconda@v4.0.0
         with:
-          python-version: 3.x
-      - run: pip install zensical
+          miniforge-version: latest
+          mamba-version: "*"
+          channels: local,conda-forge
+          python-version: 3.13
+          activate-environment: morph
+          environment-file: environment-dev.yml
+          conda-remove-defaults: true
+
       - run: zensical build --clean
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site

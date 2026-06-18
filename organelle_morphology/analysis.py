@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields, asdict
 import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, List, Optional
@@ -219,7 +220,6 @@ class Mcs_Analysis(Analysis):
         return overview.T
 
     def get_dataframe(self) -> pd.DataFrame:
-        # TODO: placeholder, output df will change!
         return self.get_mcs_properties()
 
 
@@ -244,18 +244,9 @@ class Misc_Analysis(Analysis):
 
     def get_skeleton_properties(self) -> list[str]:
         """Returns a list of all available skeleton properties."""
-        skeleton_properties = [
-            "num_nodes",
-            "total_length",
-            "std_length",
-            "num_branch_points",
-            "end_points",
-            "mean_length",
-            "longest_path",
-            "mean_radius",
-            "std_radius",
-        ]
-        return skeleton_properties
+        from organelle_morphology.skeleton_analysis import SkeletonData
+
+        return [f.name for f in fields(SkeletonData)]
 
     def get_geometry_properties(self) -> list[str]:
         """Returns a list of all available geometry properties."""
@@ -326,8 +317,8 @@ class Misc_Analysis(Analysis):
         info = organelle.skeleton_info
         if info:
             for p in to_extract:
-                if p in info:
-                    res[p] = info[p]
+                if p in asdict(info):
+                    res[p] = getattr(info, p)
         return res
 
     def get_geometry_stats(

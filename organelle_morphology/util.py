@@ -307,7 +307,7 @@ def get_skeleton_info(skeleton):
 
     skeleton_info["mean_radius"] = np.mean(skeleton.radius[0])
     skeleton_info["std_radius"] = np.std(skeleton.radius[0])
-    return skeleton_info
+    return numpy_to_python(skeleton_info)
 
 
 def merge_meshes(

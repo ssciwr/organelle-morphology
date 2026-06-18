@@ -190,6 +190,7 @@ class Project:
 
     @simplify.setter
     def simplify(self, simplify: float):
+        self.logger.info(f"Setting simplify to {simplify}")
         if 0.0 < simplify > 1.0:
             raise ValueError(
                 "Simplify value must be between 0.0 and 1.0. "
@@ -293,22 +294,18 @@ class Project:
         org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
         for o in orgs:
             org_per_source[o.source].append(o)
-        calculated_orgs = []
         for s, o_s in org_per_source.items():
             labels = [o.label for o in o_s]
-            calculated_orgs.extend(
-                s.generate_skeletons(
-                    labels=labels,
-                    skeletonization_type="wavefront",
-                    theta=theta,
-                    waves=waves,
-                    step_size=step_size,
-                    path_sample_dist=path_sample_dist,
-                    recompute=recompute,
-                )
+            s.generate_skeletons(
+                labels=labels,
+                skeletonization_type="wavefront",
+                theta=theta,
+                waves=waves,
+                step_size=step_size,
+                path_sample_dist=path_sample_dist,
+                recompute=recompute,
             )
         self.logger.info("Skeletonization done!")
-        return calculated_orgs
 
     def skeletonize_vertex_clusters(
         self,
@@ -328,22 +325,18 @@ class Project:
         org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)
         for o in orgs:
             org_per_source[o.source].append(o)
-        calculated_orgs = []
         for s, o_s in org_per_source.items():
             labels = [o.label for o in o_s]
-            calculated_orgs.extend(
-                s.generate_skeletons(
-                    labels=labels,
-                    skeletonization_type="vertex_clusters",
-                    theta=theta,
-                    epsilon=epsilon,
-                    sampling_dist=sampling_dist,
-                    path_sample_dist=path_sample_dist,
-                    recompute=recompute,
-                )
+            s.generate_skeletons(
+                labels=labels,
+                skeletonization_type="vertex_clusters",
+                theta=theta,
+                epsilon=epsilon,
+                sampling_dist=sampling_dist,
+                path_sample_dist=path_sample_dist,
+                recompute=recompute,
             )
         self.logger.info("Skeletonization done!")
-        return calculated_orgs
 
     def show(
         self,
@@ -846,6 +839,12 @@ class Project:
                 if o.id not in self.permanent_blacklist:
                     self.permanent_blacklist.append(o.id)
 
+        self.logger.info(
+            "Excluded organelles based on volume.\n"
+            f"Removed organelles: {len(self.permanent_blacklist)}\n"
+            f"Remaining organelles: {len(self.organelles)}"
+        )
+
     @property
     def clipping(
         self,
@@ -866,6 +865,7 @@ class Project:
 
     @clipping.setter
     def clipping(self, clipping: clipping_type | None):
+        self.logger.info(f"Setting clipping to {clipping}")
         if (clipping is not None) and not all(a < b for a, b in zip(*clipping)):
             raise ValueError(
                 "First clipping corner is lower left, second upper right. All "
