@@ -39,7 +39,7 @@ def generate_synthetic_dataset(
     cebra_dir = temp_dir
 
     filename = cebra_dir / "synth_data.n5"
-    f = z5py.File(filename, use_zarr_format=False)
+    f = z5py.File(filename, mode="a", use_zarr_format=False)
     group = f.create_group("setup0/timepoint0")
 
     downsampling_factors = ([1, 1, 1], [2, 2, 2], [4, 4, 4], [16, 16, 16])
