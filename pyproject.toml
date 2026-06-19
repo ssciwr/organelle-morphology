@@ -37,9 +37,18 @@ dependencies = [
   "skeletor",
   "zmesh",
 ]
+[project.scripts]
+om_init_hpc = "organelle_morphology.hpc_init:main"
 
 [dependency-groups]
-dev = ["pytest", "pytest-cov", "pytest-mock", "pre-commit", "ruff"]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "pytest-mock",
+  "pre-commit",
+  "ruff",
+  "mkdocstrings-python",
+]
 
 [tool.ruff]
 exclude = ["scripts/*.py"]
