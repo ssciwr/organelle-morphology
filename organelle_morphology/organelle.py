@@ -7,7 +7,6 @@ from typing import Optional
 import dask.array as da
 import matplotlib.pyplot as plt
 import numpy as np
-import plotly.graph_objects as go
 from dask.delayed import Delayed, delayed
 from trimesh import Trimesh
 
@@ -146,102 +145,6 @@ class Organelle:
         if self._chunks is None:
             self._chunks = self.source.ids_to_chunks[self.label]
         return self._chunks
-
-    def plotly_skeleton(self):
-        if self._skeleton is None:
-            return None
-
-        nodes = self.skeleton.vertices
-        edges = self.skeleton.edges
-
-        line_width = 10
-
-        # Create a 3D line plot for the edges
-        x_values = []
-        y_values = []
-        z_values = []
-
-        for edge in edges:
-            x_values.extend(
-                [nodes[edge[0]][0], nodes[edge[1]][0], None]
-            )  # add None to separate lines
-            y_values.extend(
-                [nodes[edge[0]][1], nodes[edge[1]][1], None]
-            )  # add None to separate lines
-            z_values.extend(
-                [nodes[edge[0]][2], nodes[edge[1]][2], None]
-            )  # add None to separate lines
-
-        skeleton_trace = go.Scatter3d(
-            x=x_values,
-            y=y_values,
-            z=z_values,
-            mode="lines",
-            line=dict(width=line_width),  # Set line width
-            name=f"Skeleton_{self.id}",  # Set label
-        )
-        return skeleton_trace
-
-    def plotly_mesh(
-        self,
-        show_curvature: bool = False,
-        show_skeleton: bool = False,
-        mcs_label=False,
-        mcs_filter_ids=None,
-    ):
-        # prepare the plotly mesh object for visualization
-
-        verts = self.mesh.compute().vertices
-        faces = self.mesh.compute().faces
-
-        # prepare data for plotly
-        vertsT = np.transpose(verts)
-        facesT = np.transpose(faces)
-
-        # initialize basic drawing settings
-        intensity = None
-        colorscale = None
-        opacity = 1
-
-        # override settings if special visualization is requested
-        if show_curvature:
-            curvature_vertices = self.curvature_map
-            intensity = curvature_vertices
-            colorscale = "Viridis"
-            opacity = 1
-
-        if show_skeleton:
-            opacity = 0.7
-
-        # add coloration for the close regions
-        if mcs_label:
-            intensity = np.zeros(len(verts))  # Default intensity is 0.5
-
-            for mcs_key, mcs in self.mcs.get(mcs_label, {}).items():
-                if mcs_filter_ids is not None:
-                    if mcs_key not in mcs_filter_ids:
-                        continue
-                t_close_vertices = np.transpose(mcs["vertices_index"])
-                intensity[t_close_vertices] = 1  # Close vertices have intensity 1
-            colorscale = [
-                [0, "rgb(110,150,220)"],
-                [1, "rgb(255,0,0)"],
-            ]  # Map intensity to color
-
-        go_mesh = go.Mesh3d(
-            x=vertsT[0],
-            y=vertsT[1],
-            z=vertsT[2],
-            i=facesT[0],
-            j=facesT[1],
-            k=facesT[2],
-            name=self.id,
-            opacity=opacity,
-            intensity=intensity,
-            colorscale=colorscale,
-            showscale=False,
-        )
-        return go_mesh
 
     @property
     def skeleton(self):
