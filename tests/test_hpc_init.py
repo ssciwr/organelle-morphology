@@ -7,7 +7,7 @@ from organelle_morphology.hpc_init import main
 def test_script_files_exist():
     """Test that the required script files exist in the scripts directory."""
 
-    scripts_dir = Path(__file__).parent.parent / "scripts"
+    scripts_dir = Path(__file__).parent.parent / "src" / "scripts"
 
     hpc_example = scripts_dir / "hpc_example.py"
     assert hpc_example.exists(), f"Expected {hpc_example} to exist"
