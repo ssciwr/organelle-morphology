@@ -19,17 +19,25 @@ conda env create -f environment-dev.yml
 conda activate morph
 ```
 
+
 ## Run Organelle Morphology
 
 Make sure your `conda` environment is active, and navigate to the repository:
 
 ```
 conda activate morph
-cd organelle-morphology
 ```
 
 Then start Organelle Morphology with:
 
 ```
-marimo run notebooks/ui.py
+om_app
+```
+
+
+or navigate to the repository and run marimo directly:
+
+```
+cd organelle-morphology
+marimo run src/app/ui.py
 ```

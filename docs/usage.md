@@ -12,8 +12,10 @@ and is produced by marimo.
 Make sure your conda environment is active and run:
 
 ```
-marimo run notebooks/ui.py
+om_app
 ```
+
+Alternatively, navigate to the repository and run `marimo run src/app/ui.py`.
 
 Organelle Morphology should open in a new browser tab.
 

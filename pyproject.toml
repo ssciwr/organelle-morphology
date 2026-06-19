@@ -36,9 +36,11 @@ dependencies = [
   "xdg",
   "skeletor",
   "zmesh",
+  "ipython>=9.14.1",
 ]
 [project.scripts]
 om_init_hpc = "organelle_morphology.hpc_init:main"
+om_app = "organelle_morphology.om_app:run_marimo_app"
 
 [dependency-groups]
 dev = [

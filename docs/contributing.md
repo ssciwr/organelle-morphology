@@ -6,7 +6,7 @@ Run marimo in edit mode to change the UI.
 Switch to the app-view to modify the layout.
 
 ```
-marimo edit --watch notebooks/ui.py
+marimo edit --watch src/app/ui.py
 ```
 
 ## Coding Style

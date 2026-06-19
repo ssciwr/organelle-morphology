@@ -111,6 +111,10 @@ This will copy two files to your current directory:
 - `helix_run_[choice].sh` - The Slurm batch script template
 
 Modify `hpc_example.py` to create the analysis you want to run.
+You can use `nano` or `vim` to edit the files on the hpc,
+or you can prepare them locally and copy them over using the file
+transfer tools described above.
+
 
 * Change compression and clipping
 * Change the sources you want to load
@@ -180,7 +184,7 @@ Once on the compute node, note its hostname. Then, start the Marimo server, bind
 cd organelle-morphology
 module load devel/miniforge/24.9.2
 conda activate morph
-marimo run notebooks/ui.py --host 0.0.0.0 --port 2718
+marimo run src/app/ui.py --host 0.0.0.0 --port 2718
 ```
 
 #### 3. Create an SSH Tunnel

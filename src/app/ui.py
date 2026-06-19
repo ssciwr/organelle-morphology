@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.21.1"
+__generated_with = "0.23.10"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -505,8 +505,8 @@ def _(sources):
     skel_form = mo.md(r"""
     ## Skeletonize
 
-    Method: {method} id filter: {ids}  
-    Recompute: {recompute}  
+    Method: {method} id filter: {ids}
+    Recompute: {recompute}
     Settings: {settings}
     """).batch(
         method=mo.ui.radio(
@@ -540,15 +540,21 @@ def skeleton_progress(project, run_skeleton_button, skel_form):
 
 
 @app.cell
-def _(record_counts, skel_analysis):
+def _(record_counts):
     record_counts
+    return
 
-    mo.vstack([
-        mo.md(
-            "## Skeletonization Statistics"
-        ),
-        skel_analysis.get_dataframe(),
-    ])
+
+@app.cell
+def _(record_counts, skel_analysis):
+    mo.stop(len(record_counts) < 1, "Skeleton Statistics")
+
+    mo.vstack(
+        [
+            mo.md("## Skeletonization Statistics"),
+            skel_analysis.get_dataframe(),
+        ]
+    )
     return
 
 
