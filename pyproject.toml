@@ -30,7 +30,6 @@ dependencies = [
   "scipy",
   "scikit-image",
   "z5py",
-  "zensical",
   "trimesh[easy,recommend]",
   "python-fcl",
   "xdg",
@@ -50,6 +49,7 @@ dev = [
   "pytest-mock",
   "pre-commit",
   "ruff",
+  "zensical",
   "mkdocstrings-python",
 ]
 

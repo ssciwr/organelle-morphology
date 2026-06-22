@@ -20,7 +20,11 @@ def main():
     script_dir = Path(__file__).parent.parent.parent / "scripts"
 
     # Define the files to copy
-    hpc_example_file = script_dir / "hpc_example.py"
+    if args.choice == "benchmark":
+        hpc_example_file = script_dir / "cli_benchmark.py"
+    else:
+        hpc_example_file = script_dir / "hpc_example.py"
+
     helix_run_file = script_dir / f"helix_run_{args.choice}.sh"
 
     # Check if files exist
