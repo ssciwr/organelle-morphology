@@ -34,6 +34,9 @@ def test_main_function(tmp_path):
 
                 # Check that the files were copied
                 hpc_example_path = tmp_path / "hpc_example.py"
+                if choice == "benchmark":
+                    hpc_example_path = tmp_path / "cli_benchmark.py"
+
                 helix_run_path = tmp_path / f"helix_run_{choice}.sh"
 
                 assert hpc_example_path.exists(), (
