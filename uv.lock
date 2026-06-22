@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -2231,6 +2231,7 @@ dependencies = [
     { name = "ipython" },
     { name = "marimo" },
     { name = "matplotlib" },
+    { name = "numba" },
     { name = "numpy" },
     { name = "python-elf" },
     { name = "python-fcl" },
@@ -2265,6 +2266,7 @@ requires-dist = [
     { name = "ipython", specifier = ">=9.14.1" },
     { name = "marimo" },
     { name = "matplotlib" },
+    { name = "numba", specifier = ">=0.65" },
     { name = "numpy" },
     { name = "python-elf" },
     { name = "python-fcl" },

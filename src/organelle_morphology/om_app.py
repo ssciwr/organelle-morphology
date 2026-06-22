@@ -25,9 +25,7 @@ def run_marimo_app():
     cmd = ["marimo", "run", str(ui_path)]
     print(f"Running: {' '.join(cmd)}")
     try:
-        result = subprocess.run(
-            cmd,  # capture_output=True, text=True,
-        )
+        result = subprocess.run(cmd, env=env)
         print("Marimo app started successfully!")
         print(result.stdout)
         return result.returncode
@@ -35,8 +33,9 @@ def run_marimo_app():
         print(f"Error running marimo app: {e}")
         print(f"stderr: {e.stderr}")
         return e.returncode
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         print("Error: marimo command not found. Please ensure marimo is installed.")
+        print(e)
         return 1
 
 

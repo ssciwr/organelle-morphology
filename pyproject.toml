@@ -37,6 +37,7 @@ dependencies = [
   "skeletor",
   "zmesh",
   "ipython>=9.14.1",
+  "numba>=0.65",
 ]
 [project.scripts]
 om_init_hpc = "organelle_morphology.hpc_init:main"
