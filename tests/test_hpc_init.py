@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
 
-from organelle_morphology.hpc_init import main
+import sys
+from unittest.mock import patch
+from organelle_morphology.cli.hpc_init import main
 
 
 def test_script_files_exist():
@@ -26,13 +28,8 @@ def test_main_function(tmp_path):
     try:
         # Test each choice
         for choice in ["benchmark", "multi", "single"]:
-            # Import here to avoid module reload issues
-            import sys
-            from unittest.mock import patch
-
             # Mock sys.argv to simulate command-line arguments
             with patch.object(sys, "argv", ["hpc_init", choice]):
-                # Call main function directly
                 main()
 
                 # Check that the files were copied

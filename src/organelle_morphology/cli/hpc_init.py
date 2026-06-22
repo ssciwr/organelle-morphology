@@ -17,7 +17,7 @@ def main():
     args = parser.parse_args()
 
     # Define the base directory for scripts (relative to this file)
-    script_dir = Path(__file__).parent.parent / "scripts"
+    script_dir = Path(__file__).parent.parent.parent / "scripts"
 
     # Define the files to copy
     hpc_example_file = script_dir / "hpc_example.py"

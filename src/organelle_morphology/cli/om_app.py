@@ -11,7 +11,7 @@ from pathlib import Path
 
 def run_marimo_app():
     """Run the marimo application."""
-    ui_path = Path(__file__).parent.parent / "app" / "ui.py"
+    ui_path = Path(__file__).parent.parent.parent / "app" / "ui.py"
 
     if not ui_path.exists():
         print(f"Error: ui.py not found at {ui_path}")

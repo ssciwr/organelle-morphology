@@ -15,7 +15,7 @@ For more information, see [uv docs](https://docs.astral.sh/uv/getting-started/in
 === "Windows"
 
     On Windows, use your conda installation to open a shell.
-    The following lines download the organelle morphology and install all necessary dependencies:
+    The following lines download organelle morphology and install all necessary dependencies:
 
     ```
     git clone https://github.com/ssciwr/organelle-morphology.git
