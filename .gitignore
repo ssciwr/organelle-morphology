@@ -2,7 +2,7 @@
 data
 
 # Ignore setuptools_scm generated version file
-organelle_morphology/_version.py
+**/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

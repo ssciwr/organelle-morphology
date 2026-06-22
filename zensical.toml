@@ -44,7 +44,14 @@ copyright = """
 # can be defined using TOML syntax.
 #
 # Read more: https://zensical.org/docs/setup/navigation/
-nav = ["index.md", "installation.md", "contributing.md", "usage.md", "api.md"]
+nav = [
+  "index.md",
+  "installation.md",
+  "contributing.md",
+  "usage.md",
+  "hpc.md",
+  "api.md",
+]
 
 # With the "extra_css" option you can add your own CSS styling to customize
 # your Zensical project according to your needs. You can add any number of

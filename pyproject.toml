@@ -30,30 +30,42 @@ dependencies = [
   "scipy",
   "scikit-image",
   "z5py",
-  "zensical",
   "trimesh[easy,recommend]",
   "python-fcl",
   "xdg",
   "skeletor",
   "zmesh",
+  "ipython>=9.14.1",
+  "numba>=0.65",
 ]
+[project.scripts]
+om_init_hpc = "organelle_morphology.cli.hpc_init:main"
+om_app = "organelle_morphology.cli.om_app:run_marimo_app"
 
 [dependency-groups]
-dev = ["pytest", "pytest-cov", "pytest-mock", "pre-commit", "ruff"]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "pytest-mock",
+  "pre-commit",
+  "ruff",
+  "zensical",
+  "mkdocstrings-python",
+]
 
 [tool.ruff]
-exclude = ["scripts/*.py"]
+exclude = ["src/scripts/*.py"]
 
 [tool.marimo.runtime]
 output_max_bytes = 300_000_000
 
-[tool.setuptools]
-packages = ["organelle_morphology"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools_scm]
 version_scheme = "post-release"
 local_scheme = "node-and-date"
-write_to = "organelle_morphology/_version.py"
+write_to = "src/organelle_morphology/_version.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -62,4 +74,4 @@ testpaths = ["tests"]
 branch = true
 
 [tool.coverage.paths]
-source = ["organelle_morphology"]
+source = ["src/organelle_morphology"]

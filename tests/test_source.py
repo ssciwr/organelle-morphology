@@ -94,7 +94,7 @@ def test_block_mesher_random_no_offset(voxels_random, repeat):
             space_offset=(0, 0, 0),
             debug_color=0,
         ),
-        scheduler="single-threaded",
+        # scheduler="single-threaded",
     )
     mmesh = sum(meshes.values())
     assert len(meshes) == n_labels - 1
@@ -158,68 +158,72 @@ def test_curvature_map(project_with_sources):
     assert len(curvs) == 19
 
 
-@pytest.mark.parametrize("chunksize", range(0, 7))
-def test_calculate_mesh(project_with_sources, mocker, chunksize):
+def test_calculate_mesh(project_with_sources, mocker):
     p = project_with_sources
     s = list(p.sources.values())[0]
-    if chunksize == 0:
-        chunksize = -1
+    for chunksize in range(0, 7):
+        if chunksize == 0:
+            chunksize = -1
 
-    data = np.arange(343).reshape((7, 7, 7))
-    data = da.from_array(data, chunks=chunksize)
-    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
-    mock_data.return_value = data
+        data = np.arange(343).reshape((7, 7, 7))
+        data = da.from_array(data, chunks=chunksize)
+        mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+        mock_data.return_value = data
 
-    ids_to_chunks, meshes_chunked = s.calculate_mesh()
-    assert len(ids_to_chunks) == 342
+        ids_to_chunks, meshes_chunked = s.calculate_mesh()
+        assert len(ids_to_chunks) == 342
 
 
-@pytest.mark.parametrize("chunksize", range(0, 7))
-def test_calculate_mesh_clipped(project_with_sources, mocker, chunksize):
+def test_calculate_mesh_clipped(project_with_sources, mocker):
     p = project_with_sources
     s = list(p.sources.values())[0]
-    if chunksize == 0:
-        chunksize = -1
+    for chunksize in range(0, 7):
+        if chunksize == 0:
+            chunksize = -1
 
-    p.clipping = ((0.3, 0.3, 0.3), (1, 1, 1))
+        p.clipping = ((0.3, 0.3, 0.3), (1, 1, 1))
 
-    data = np.arange(1000).reshape((10, 10, 10))
-    data = da.from_array(data, chunks=chunksize)
-    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
-    mock_data.return_value = data
+        data = np.arange(1000).reshape((10, 10, 10))
+        data = da.from_array(data, chunks=chunksize)
+        mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+        mock_data.return_value = data
 
-    ids_to_chunks, meshes_chunked = s.calculate_mesh()
-    assert len(ids_to_chunks) == 343
+        ids_to_chunks, meshes_chunked = s.calculate_mesh()
+        assert len(ids_to_chunks) == 343
 
 
-@pytest.mark.parametrize("rep", range(20))
-def test_calculate_mesh_boarder(project_with_sources, mocker, rep):
+def test_calculate_mesh_boarder(project_with_sources, mocker):
     p = project_with_sources
     p.simplify = 0.0
     s = list(p.sources.values())[0]
 
-    o1 = np.random.randint(4) + 1
-    o2 = np.random.randint(4) + 1
-    o3 = np.random.randint(4) + 1
-    data = np.zeros((1000,), dtype=int).reshape((10, 10, 10))
-    data[o1 : o1 + 4, o2 : o1 + 4, o3 : o1 + 4] = 1
-    data = da.from_array(data, chunks=5)
-    mock_data = mocker.patch("organelle_morphology.source.da.from_array")
-    mock_data.return_value = data
+    for i in range(20):
+        mocker.resetall()
+        p.clear_memory_cache()
+        o1 = np.random.randint(4) + 1
+        o2 = np.random.randint(4) + 1
+        o3 = np.random.randint(4) + 1
+        data = np.zeros((1000,), dtype=int).reshape((10, 10, 10))
+        data[o1 : o1 + 4, o2 : o1 + 4, o3 : o1 + 4] = 1
+        data = da.from_array(data, chunks=5)
+        mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+        mock_data.return_value = data
 
-    # # for debugging:
-    # import dask
-    #
-    # dask.config.set(scheduler="synchronous")
-    #
+        # # for debugging:
+        # import dask
+        #
+        # dask.config.set(scheduler="synchronous")
+        #
 
-    mesh = list(s.meshes.values())[0].compute()
-    assert mesh.is_watertight
-    assert len(list(s.meshes.keys())) == 1
-    assert (
-        np.count_nonzero(np.unique(mesh.vertices, axis=0, return_counts=True)[1] != 1)
-        == 0
-    )
+        mesh = list(s.meshes.values())[0].compute()
+        assert mesh.is_watertight
+        assert len(list(s.meshes.keys())) == 1
+        assert (
+            np.count_nonzero(
+                np.unique(mesh.vertices, axis=0, return_counts=True)[1] != 1
+            )
+            == 0
+        )
 
 
 def test_get_meshes_curvature_colored(project_with_sources, mocker):

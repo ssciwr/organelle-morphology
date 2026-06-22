@@ -7,14 +7,6 @@ default_install_hook_types:
   - pre-commit
 
 repos:
-  # Make sure that Jupyter notebooks under version control
-  # have their outputs stripped before committing
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.6.1
-    hooks:
-      - id: nbstripout
-        files: ".ipynb"
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
     rev: v0.14.11
