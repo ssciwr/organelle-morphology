@@ -25,6 +25,8 @@ from organelle_morphology.util import (
     color_delayed_trimesh,
     color_delayed_trimesh_vertices,
     corners_to_edges,
+    export_delayed_trimesh,
+    merge_mesh_dict_values,
     merge_meshes,
     setup_logging,
     show,
@@ -357,6 +359,7 @@ class Project:
         rot_axis: Optional[str] = None,
         rot_angle: Optional[float] = None,
         volume: Optional[float] = None,
+        export: bool = False,
     ):
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
@@ -554,7 +557,28 @@ class Project:
                 rot_line.colors = [(255, 100, 0, 255)]  # orange = current angle
                 to_show.append(rot_line)
 
-        return show(to_show)
+        scene = show(to_show)
+        if export:
+            scene.export(self.path / "exported_meshes" / "scene.glb")
+
+        return scene
+
+    def export_mesh_all_fragments(self):
+        exp_root = self.path / "exported_meshes"
+
+        results = []
+        for s in self.sources.values():
+            exp_source = exp_root / s.org_name
+            exp_source.mkdir(parents=True, exist_ok=True)
+
+            tasks = []
+            for i, mesh_d in np.ndenumerate(s.mesh_fragments):
+                path = exp_source / f"{i}.glb"
+                mm = merge_mesh_dict_values(mesh_d)
+                tasks.append(export_delayed_trimesh(mm, path))
+            self.logger.debug(f"Running {len(tasks)} export tasks")
+            results.append(compute(*tasks, scheduler="synchronous"))
+        return results
 
     def distance_filtering(
         self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="labels"
