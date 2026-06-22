@@ -24,7 +24,7 @@ module purge
 module load devel/miniforge/24.9.2
 ```
 
-(If `devel/miniforge/24.9.2` is not available, search for another version of Conda.)
+(If `devel/miniforge/24.9.2` is not available, search for another version of Conda with `module spider miniforge`.)
 
 Next, clone the `organelle-morphology` repository, and move into the new directory:
 
@@ -125,6 +125,9 @@ In the `.sh` slurm submit script, change
 - the path to the python script (`hpc_exampel.py`)
 - the path to the data
 - if necessary, the runtime and/or processes (`ntasks`)
+    - `ntasks` *`cpus-per-task` should be 64* `nodes`
+    - Less tasks equal workers with more memory.
+    Reduce tasks if you encounter out-of-memory issues.
 
 #### 2. Submitting the script
 
