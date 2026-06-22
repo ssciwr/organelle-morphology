@@ -39,11 +39,11 @@ def main():
     # Copy the files to current working directory
     try:
         # Copy hpc_example.py
-        shutil.copy(hpc_example_file, Path.cwd() / "hpc_example.py")
+        shutil.copy(hpc_example_file, Path.cwd())
         print(f"Copied {hpc_example_file.name} to {Path.cwd()}")
 
         # Copy the chosen helix_run file
-        shutil.copy(helix_run_file, Path.cwd() / f"helix_run_{args.choice}.sh")
+        shutil.copy(helix_run_file, Path.cwd())
         print(f"Copied {helix_run_file.name} to {Path.cwd()}")
 
         print("Files copied successfully!")

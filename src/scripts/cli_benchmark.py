@@ -19,7 +19,7 @@ def main():
         "--threads", type=int, default=4, help="Number of threads per worker"
     )
     parser.add_argument(
-        "-d", "--data", type=Path, required=True, help="Path to XML directory"
+        "-d", "--data", type=Path, required=True, help="Path to XML directory of interphase_4T"
     )
     parser.add_argument(
         "-p",

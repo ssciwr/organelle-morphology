@@ -12,6 +12,11 @@
 # Adjust the sbatch section above
 # Adjust the paths to your data and project below
 
+module purge
+module load compiler/gnu
+module load mpi/openmpi
+
+## for conda:
 module load devel/miniforge/24.9.2
 conda activate morph
 

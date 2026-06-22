@@ -12,12 +12,17 @@
 # Adjust the sbatch section above
 # Adjust the paths to your data and project below
 
+module purge
+module load compiler/gnu
+module load mpi/openmpi
+
+## for conda:
 module load devel/miniforge/24.9.2
 conda activate morph
 
 cd /home/hd/hd_hd/hd_vw182/workspaces/gpfs/hd_vw182-vem || exit
 mpirun -np "$SLURM_NTASKS" \
-  python ~/organelle_morphology/scripts/cli_benchmark.py \
+  python cli_benchmark.py \
   --mpi --threads "$SLURM_CPUS_PER_TASK" \
   --data data/interphase_4T \
   --projectpath vem_benchmark

@@ -9,7 +9,6 @@ HPC clusters like Helix offer more RAM, so Organelle Morphology can be used to w
 
 You can run analysis on the cluster, save the `records` and import them on a local machine again, without needing to load the actual sources again.
 
-
 ## Installation on Helix
 
 First, log into Helix:
@@ -92,7 +91,6 @@ mkdir ~/workspaces/gpfs/<workspace name>/<project name>
 cd ~/workspaces/gpfs/<workspace name>/<project name>
 ```
 
-
 Use the `om_init_hpc` command to copy a template scripts to your current working directory.
 
 ```bash
@@ -107,6 +105,7 @@ om_init_hpc benchmark
 ```
 
 This will copy two files to your current directory:
+
 - `hpc_example.py` - The main Python script template
 - `helix_run_[choice].sh` - The Slurm batch script template
 
@@ -115,19 +114,17 @@ You can use `nano` or `vim` to edit the files on the hpc,
 or you can prepare them locally and copy them over using the file
 transfer tools described above.
 
-
-* Change compression and clipping
-* Change the sources you want to load
-* Change the analysis steps you want to run
-* Remove the other steps you don't need.
+- Change compression and clipping
+- Change the sources you want to load
+- Change the analysis steps you want to run
+- Remove the other steps you don't need.
 
 In the `.sh` slurm submit script, change
 
-* the path to the project
-* the path to the python script (`hpc_exampel.py`)
-* the path to the data
-* if necessary, the runtime and/or processes (`ntasks`)
-
+- the path to the project
+- the path to the python script (`hpc_exampel.py`)
+- the path to the data
+- if necessary, the runtime and/or processes (`ntasks`)
 
 #### 2. Submitting the script
 
@@ -139,7 +136,6 @@ sbatch helix_run_single.sh
 
 You can read the log of organelle morphology with `less om2.log`.
 Press `shift-f` to auto-refresh while the computations are running.
-
 
 ## Interactive Sessions
 
@@ -162,7 +158,6 @@ You can run tests with:
 ```bash
 python -m pytest
 ```
-
 
 ## Running Marimo Notebooks on the HPC
 
