@@ -89,3 +89,51 @@ def test_registry_save_load_real_records(project_with_sources):
     assert len(loaded_records) == len(original_records)
     for orig, loaded in zip(original_records, loaded_records):
         assert orig == loaded
+
+
+def test_registry_clear_record(project_with_sources):
+    """Test removing a specific record from the registry."""
+    p = project_with_sources
+
+    pc = ProfileCalculator(p)
+    pc.calculate_profile_lengths(ids="mito_*", axis="z", num_slices=3)
+
+    original_records = p.registry.get_all()
+    assert len(original_records) > 0
+
+    record_to_remove = original_records[0]
+
+    # Verify it's indexed correctly before removal
+    record_type = type(record_to_remove.data).__name__
+    assert record_to_remove in p.registry.get_by_type(record_type)
+
+    breakpoint()
+    p.registry.clear_record(record_to_remove)
+
+    # Verify removal
+    assert record_to_remove not in p.registry.get_all()
+    assert record_to_remove not in p.registry.get_by_type(record_type)
+
+    # Verify other records remain
+    assert len(p.registry.get_all()) == len(original_records) - 1
+
+
+def test_registry_clear_record_not_found(project_with_sources):
+    """Test that clear_record warns gracefully when record isn't in registry."""
+    p = project_with_sources
+
+    pc = ProfileCalculator(p)
+    pc.calculate_profile_lengths(ids="mito_0007", axis="z", num_slices=3)
+
+    original_count = len(p.registry.get_all())
+
+    # Create a fresh record that was never added
+    mock_prop = MockProp(
+        mock_str="a", mock_int=5, mock_path=Path("../test_file.txt"), mock_np=None
+    )
+    orphan_record = Record(data=mock_prop, meta=mock_prop, project=p)
+
+    p.registry.clear_record(orphan_record)
+
+    # Count should be unchanged
+    assert len(p.registry.get_all()) == original_count

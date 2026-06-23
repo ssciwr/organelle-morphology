@@ -358,6 +358,15 @@ class RecordRegistry:
         """Retrieve all records associated with a specific organelle ID."""
         return self._records_by_id.get(organelle_id, [])
 
+    def clear_record(self, record: Record):
+        try:
+            self._all_records.remove(record)
+            self._records_by_type[type(record.data).__name__].remove(record)
+            if hasattr(record.meta, "organelle_id") and record.meta.organelle_id:
+                self._records_by_id[record.meta.organelle_id].remove(record)
+        except ValueError:
+            self.logger.warning(f"Could not unregister record {record.name}")
+
     def clear(self) -> None:
         """Wipes all records from the registry."""
         self._all_records.clear()

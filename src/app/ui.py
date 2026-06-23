@@ -23,6 +23,7 @@ with app.setup:
     from organelle_morphology.position import Position_Analysis
     from organelle_morphology.records import PropertyBlock
     from organelle_morphology.skeleton_analysis import Skeleton_Analysis
+    from organelle_morphology.curvature_analysis import CurvatureAnalysis
     from collections import defaultdict
 
 
@@ -1407,6 +1408,7 @@ def _(record_counts, records_save_button, records_update_button):
 
 @app.cell
 def _(
+    ca_run_button,
     pa_run_button,
     project,
     project_load_records_button,
@@ -1415,12 +1417,18 @@ def _(
     run_profile_btn,
     run_skeleton_button,
 ):
+    # Count the records
+    # Get's triggered by any calculation or loading of records.
+    # Should be used to trigger the update of any record visualization, like tables
+
     project_load_records_button
     run_mcs_btn
     pa_run_button
     run_profile_btn
     run_skeleton_button
     records_update_button
+    ca_run_button
+
     [r.meta for r in project.records]
     record_counts = defaultdict(int)
     for rec in project.records:
@@ -1444,6 +1452,59 @@ def _(project, records_save_button):
     mo.stop(not records_save_button.value, "Save all records")
     project.registry.save_all_to_yaml()
     mo.md("Saved successfully!")
+    return
+
+
+@app.cell
+def curveanalysis_obj(project):
+    # curvature analysis
+    ca = CurvatureAnalysis(project)
+    return (ca,)
+
+
+@app.cell
+def create_ca_run_button():
+    ca_run_button = mo.ui.run_button(label="Run curvature analysis")
+    ca_run_button
+    return (ca_run_button,)
+
+
+@app.cell
+def _(sources):
+    # UI for curvature analyis
+
+    _rad = sources[0].resolution[0] * 2
+
+    ca_radius_ui = mo.ui.number(
+        label="Radius $[um]$", value=_rad, start=0.0, stop=10 * _rad, step=_rad / 10
+    )
+    ca_filter_ui = mo.ui.text(label="Organelle filter", value="*")
+    mo.vstack(
+        [
+            mo.md("## Curvature Analysis"),
+            mo.md("Based on the sum of angles within a circle on the mesh surface"),
+            ca_radius_ui,
+            ca_filter_ui,
+        ]
+    )
+    return ca_filter_ui, ca_radius_ui
+
+
+@app.cell
+def _(ca, ca_filter_ui, ca_radius_ui, ca_run_button, project):
+    # Run curvature analysis
+    mo.stop(not ca_run_button.value, "Run curvature analysis")
+
+    project.set_curvature_radius(ca_radius_ui.value)
+    ca.calculate_curvature_stats(ids=ca_filter_ui.value)
+    return
+
+
+@app.cell
+def _(ca, record_counts):
+    # Curvature analysis outputs
+    record_counts
+    ca.get_dataframe()
     return
 
 
