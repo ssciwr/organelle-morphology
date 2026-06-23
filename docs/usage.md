@@ -91,6 +91,7 @@ Meshes with openings are displayed gray.
 Does not work with other coloring options in parallel.
 * Show rotation: Display two lines indicating a rotation by a given angle. Yellow is the reference 0° line, orange is the rotated line.
 * High-quality viewer: Opens the view in a separate window with better quality. (Transparency only works here)
+* Export Scene: Save scene in the project directory.
 
 Additional to the meshes, the chosen clipping box is shown, as well as an box enclosing the unclipped data.
 

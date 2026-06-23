@@ -559,7 +559,9 @@ class Project:
 
         scene = show(to_show)
         if export:
-            scene.export(self.path / "exported_meshes" / "scene.glb")
+            exp_root = self.path / "exported_meshes"
+            exp_root.mkdir(parents=True, exist_ok=True)
+            scene.export(exp_root / "scene.glb")
 
         return scene
 
@@ -578,7 +580,6 @@ class Project:
                 tasks.append(export_delayed_trimesh(mm, path))
             self.logger.debug(f"Running {len(tasks)} export tasks")
             results.append(compute(*tasks, scheduler="synchronous"))
-        return results
 
     def distance_filtering(
         self, ids_source="*", ids_target="*", filter_distance=0.01, attribute="labels"
