@@ -58,8 +58,9 @@ def test_get_dataframe_empty(project_with_sources):
     expected_cols = (
         ["organelle_id"]
         + [f.name for f in fields(SkeletonData)]
-        + [f.name for f in fields(SkeletonMetaData)]
+        + [f.name for f in fields(SkeletonMetaData) if f.name != "organelle_id"]
     )
+    len(expected_cols)
     assert list(df.columns) == expected_cols
 
 
