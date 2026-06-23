@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.10"
+__generated_with = "0.23.9"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -317,6 +317,8 @@ def _(change_settings_button, project, sources):
         label="Angle", start=-360, stop=360, value=0, step=1
     )
 
+    mesh_export_toggle_ui = mo.ui.checkbox(label="Export Scene", value=False)
+
     mo.vstack(
         [
             mo.md("## Show Mesh"),
@@ -352,6 +354,7 @@ def _(change_settings_button, project, sources):
                 [
                     run_show_mesh,
                     popout_viewer_check,
+                    mesh_export_toggle_ui,
                 ],
                 justify="start",
             ),
@@ -368,6 +371,7 @@ def _(change_settings_button, project, sources):
         mcs_checkbox,
         mcs_max_ui,
         mcs_min_ui,
+        mesh_export_toggle_ui,
         mesh_id_filter,
         mesh_rot_angle_ui,
         mesh_rot_axis_ui,
@@ -389,6 +393,7 @@ def show_mesh(
     mcs_checkbox,
     mcs_max_ui,
     mcs_min_ui,
+    mesh_export_toggle_ui,
     mesh_id_filter,
     mesh_rot_angle_ui,
     mesh_rot_axis_ui,
@@ -438,6 +443,7 @@ def show_mesh(
         rot_axis=mesh_rot_axis_ui.value,
         rot_angle=mesh_rot_angle_ui.value,
         volume=color_volume_ui.value,
+        export=mesh_export_toggle_ui.value,
     )
     viewer = "marimo"
     if popout_viewer_check.value:

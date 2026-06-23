@@ -221,6 +221,29 @@ def merge_delayed_trimeshes(tmeshes: list[Trimesh]):
     return tmesh
 
 
+@delayed
+def export_delayed_trimesh(tmesh: Trimesh, file: Path):
+    if len(tmesh.vertices) > 0:
+        tmesh.export(file)
+
+
+@delayed
+def merge_mesh_dict_values(d: dict):
+    meshes = list(d.values())
+    tmesh = Trimesh()
+
+    for mesh in meshes:
+        tmesh += mesh
+    tmesh.merge_vertices(
+        merge_tex=True,
+        merge_norm=True,
+        digits_vertex=2,
+        digits_norm=2,
+        digits_uv=2,
+    )
+    return tmesh
+
+
 def get_neighboring_chunks(index: tuple[int, ...], shape: tuple[int, ...]):
     """Get all indeces of a give index within a defined matrix.
 

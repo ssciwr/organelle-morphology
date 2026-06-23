@@ -514,13 +514,17 @@ class DataSource:
 
     @property
     def ids_to_chunks(self):
+        """Mapping between ids and mesh chunk indices.
+
+        Returns:
+            dict[int, list[tuple[int]]]: dict to translate mesh ids to a list of chunk
+                indices to find all chunks containing parts of this mesh.
+        """
         try:
-            ids_to_chunks = self.cache["ids_to_chunks"]
-            return ids_to_chunks
+            return self.cache["ids_to_chunks"]
         except KeyError:
             self.mesh_fragments
-            ids_to_chunks = self.cache["ids_to_chunks"]
-            return ids_to_chunks
+            return self.cache["ids_to_chunks"]
 
     @property
     def chunks_to_ids(self):
@@ -533,15 +537,13 @@ class DataSource:
         return self.cache["chunks_to_ids"]
 
     @property
-    def mesh_fragments(self) -> tuple[dict[int, list[tuple[int]]], np.ndarray]:
+    def mesh_fragments(self) -> np.ndarray:
         """Get the mesh fragments from cache, or calculate them.
 
         The mesh fragments are delayed read from the source.cache, so reads
         are cached in memory.
 
         Returns:
-            dict[int, list[tuple[int]]]: dict to translate mesh ids to a list of chunk
-                indices to find all chunks containing parts of this mesh.
             np.ndarray: Array containing the delayed chunks.
                 Shape matches storage on disk, after applying the clipping.
         """
@@ -620,7 +622,7 @@ class DataSource:
                     )
             self._fragments_chunked = meshes_chunked_d
 
-        return self.cache["ids_to_chunks"], self._fragments_chunked
+        return self._fragments_chunked
 
     @property
     def meshes(self):
@@ -673,7 +675,8 @@ class DataSource:
                 tasks = []
                 ids = []
                 for idx, mesh in self.merge_fragments_into_meshes(
-                    *self.mesh_fragments
+                    ids_to_chunks=self.ids_to_chunks,
+                    meshes_chunked=self.mesh_fragments,
                 ).items():
                     ids.append(idx)
                     tasks.append((f"mesh_{idx}", mesh))
@@ -722,7 +725,10 @@ class DataSource:
                     self._meshes[idx] = persist(_get_mesh_cache(f"mesh_{idx}", cs))[0]
             return self._meshes
 
-        return self.merge_fragments_into_meshes(*self.mesh_fragments)
+        return self.merge_fragments_into_meshes(
+            ids_to_chunks=self.ids_to_chunks,
+            meshes_chunked=self.mesh_fragments,
+        )
 
     def calc_curvature(self, labels: Optional[int | list[int]] = None) -> dict:
         """Calculate the curvature on vertices.
