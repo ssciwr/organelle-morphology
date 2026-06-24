@@ -147,10 +147,17 @@ class Cache:
 @delayed
 def measure_gaussian_curvature_delayed(tmesh: Trimesh, radius: float):
     """Return curvature of mesh normalized by the circle area or radius"""
-    # radius can be 0 if vertices are used as sample points.
-    curvature_vertices = trimesh.curvature.discrete_gaussian_curvature_measure(
+    # Original trimesh implementation does not divide by number of verts
+    # curvature_vertices = trimesh.curvature.discrete_mean_curvature_measure(
+    #     tmesh, tmesh.vertices, radius=radius
+    # )
+    # curvature_vertices = discrete_mean_curvature_measure(
+    #     tmesh, tmesh.vertices, radius=radius
+    # )
+    curvature_vertices = discrete_gaussian_curvature_measure(
         tmesh, tmesh.vertices, radius=radius
-    ) / (np.pi * radius * radius)
+    )
+
     return curvature_vertices
 
 
@@ -178,7 +185,7 @@ def color_delayed_trimesh_rgba(
     cm.set_extremes(under=(1, 0, 1, 1), over=(0, 1, 0, 1))
     if log:
         norm = mpl.colors.SymLogNorm(
-            linthresh=0.01, linscale=0.01, base=10, vmin=vmin, vmax=vmax
+            linthresh=0.0001, linscale=0.1, base=10, vmin=vmin, vmax=vmax
         )
     else:
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
@@ -190,6 +197,20 @@ def color_delayed_trimesh_rgba(
 
 @delayed
 def color_delayed_trimesh(tmesh: Trimesh, color: int, transp: bool) -> Trimesh:
+    """
+    Apply color and transparency to a trimesh.
+
+    Args:
+        tmesh (Trimesh): The trimesh to color.
+        color (int): The color scheme to apply. If 1, a random color
+            per mesh is used. If 2, viridis colormap is used.
+            If less than 0, tab20 colormap is used with the
+            absolute value as index.
+        transp (bool): If True, sets face colors' alpha channel to 100.
+
+    Returns:
+        Trimesh: The colored and potentially transparent trimesh.
+    """
     if color:
         if color == 1:
             tmesh.visual.face_colors = trimesh.visual.random_color()
@@ -389,6 +410,24 @@ def bounding_box_delayed(mesh: Trimesh):
 
 
 def block_to_coords(block, resolution, data, offset):
+    """Convert block indices to spatial coordinate boundaries.
+
+    Calculates the lower and upper corner coordinates of a block in a chunked
+    data structure given the block indices, resolution, data chunks, and offset.
+
+    Args:
+        block: Tuple of integers representing block indices in each dimension
+        resolution: Tuple of floats representing physical size per voxel in each dimension
+        data: Dask array with chunking information
+        offset: Tuple of floats representing spatial offset in each dimension
+
+    Returns:
+        tuple: Lower corner coordinates (np.ndarray) and upper corner coordinates (np.ndarray)
+
+    Example:
+        >>> block_to_coords((0, 1, 2), (0.03, 0.02, 0.1), data, [10, 20, 30])
+        (array([10, 20, 30]), array([10.03, 20.02, 30.1]))
+    """
     resolution = np.array(resolution)
     block_coords = [
         of + (np.cumsum(cs) * res)
@@ -430,14 +469,14 @@ def boxes_overlap(box1, box2):
     """
     Determine if two bounding boxes overlap.
 
-    Parameters:
-    box1, box2: tuple of two numpy arrays
-        Each box is defined by two points: (min_point, max_point)
-        where min_point has the lowest x, y, z coordinates
-        and max_point has the highest x, y, z coordinates
+    Args:
+        box1, box2: tuple of two numpy arrays
+            Each box is defined by two points: (min_point, max_point)
+            where min_point has the lowest x, y, z coordinates
+            and max_point has the highest x, y, z coordinates
 
     Returns:
-    bool: True if boxes overlap, False otherwise
+        bool: True if boxes overlap, False otherwise
     """
     min1, max1 = box1
     min2, max2 = box2
@@ -480,6 +519,41 @@ def numpy_to_python(obj):
         return tuple([numpy_to_python(item) for item in obj])
     else:
         return obj
+
+
+def discrete_gaussian_curvature_measure(mesh, points, radius):
+    """
+    Return the discrete gaussian curvature measure of a sphere.
+
+    The discrete gaussian curvature measure is computed as detailed in
+    'Restricted Delaunay triangulations and normal cycle' by Cohen-Steiner
+    and Morvan.
+
+    For each point, the measure is calculated as the mean of the vertex
+    defects at all vertices within the specified radius.
+
+    Args:
+        mesh: (n, 3) float
+            Points in space
+        points: (n, 3) float
+            Points in space
+        radius: float
+            The sphere radius, which can be zero if vertices
+            passed are points.
+
+    Returns:
+        gaussian_curvature: (n,) float
+            Discrete gaussian curvature measure.
+    """
+
+    points = np.asanyarray(points, dtype=np.float64)
+    if not points.ndim == 2 and points.shape[1] == 3:
+        raise ValueError("points must be (n,3)!")
+
+    nearest = mesh.kdtree.query_ball_point(points, radius)
+    gauss_curv = [mesh.vertex_defects[vertices].mean() for vertices in nearest]
+
+    return np.asarray(gauss_curv)
 
 
 class FrequencyFilter(logging.Filter):

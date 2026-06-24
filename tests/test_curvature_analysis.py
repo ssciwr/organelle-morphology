@@ -9,22 +9,6 @@ from organelle_morphology.curvature_analysis import (
 from organelle_morphology.records import Record
 
 
-def test_calculate_curvature_stats(project_with_sources):
-    """Test curvature stats calculation for a single organelle."""
-    calculator = CurvatureAnalysis(project_with_sources)
-
-    calculator.calculate_curvature_stats(ids="mito_0007")
-
-    # Retrieve from the central registry
-    found = False
-    for s in project_with_sources.records:
-        if isinstance(s.data, CurvatureData) and s.meta.organelle_id == "mito_0007":
-            found = True
-            break
-
-    assert found, "Curvature stat for mito_0007 not found in project registry"
-
-
 def test_curvature_stats_data(project_with_sources):
     """Test that curvature stats contain valid data."""
     calculator = CurvatureAnalysis(project_with_sources)
@@ -84,17 +68,23 @@ def test_curvature_stats_dataframe(project_with_sources):
 
 def test_curvature_stats_multiple_organelles(project_with_sources):
     """Test curvature stats across multiple organelles."""
+    project_with_sources.set_curvature_radius(1)
     calculator = CurvatureAnalysis(project_with_sources)
     calculator.calculate_curvature_stats(ids="*")
-
     df = calculator.get_dataframe()
-    breakpoint()
+
+    project_with_sources.set_curvature_radius(3)
+    calculator.calculate_curvature_stats(ids="mito_0007")
+    df2 = calculator.get_dataframe()
 
     assert isinstance(df, pd.DataFrame)
-    assert len(df) > 1  # synthetic dataset has multiple mito organelles
+    assert len(df) == 19
+    assert len(df2) == 20
+    assert all(df2.min_curvature > -1)
+    assert all(df2.min_curvature < 1)
 
 
-def test_curvature_stats_no_match(project_with_sources, caplog):
+def test_curvature_stats_no_match(project_with_sources):
     """Test that calculating stats with no matching organelles is handled gracefully."""
     calculator = CurvatureAnalysis(project_with_sources)
     calculator.calculate_curvature_stats(ids="nonexistent_*")
@@ -102,6 +92,7 @@ def test_curvature_stats_no_match(project_with_sources, caplog):
     df = calculator.get_dataframe()
     assert isinstance(df, pd.DataFrame)
     assert len(df) == 0
+    assert len(df.columns) == 7
 
 
 def test_curvature_stats_recompute(project_with_sources):
@@ -124,7 +115,7 @@ def test_curvature_stats_recompute(project_with_sources):
         if isinstance(s.data, CurvatureData) and s.meta.organelle_id == "mito_0007"
     )
 
-    assert count_after == count_before, "Recompute created duplicate records"
+    assert count_after == count_before == 1, "Recompute created duplicate records"
 
 
 def test_curvature_analysis_summary(project_with_sources):

@@ -99,7 +99,8 @@ def test_registry_clear_record(project_with_sources):
     pc.calculate_profile_lengths(ids="mito_*", axis="z", num_slices=3)
 
     original_records = p.registry.get_all()
-    assert len(original_records) > 0
+    n_original = len(original_records)
+    assert n_original == 19
 
     record_to_remove = original_records[0]
 
@@ -107,7 +108,6 @@ def test_registry_clear_record(project_with_sources):
     record_type = type(record_to_remove.data).__name__
     assert record_to_remove in p.registry.get_by_type(record_type)
 
-    breakpoint()
     p.registry.clear_record(record_to_remove)
 
     # Verify removal
@@ -115,7 +115,7 @@ def test_registry_clear_record(project_with_sources):
     assert record_to_remove not in p.registry.get_by_type(record_type)
 
     # Verify other records remain
-    assert len(p.registry.get_all()) == len(original_records) - 1
+    assert len(p.registry.get_all()) == n_original - 1
 
 
 def test_registry_clear_record_not_found(project_with_sources):

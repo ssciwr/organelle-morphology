@@ -20,7 +20,6 @@ class Skeleton_Analysis(Analysis):
 
         if not self.own_records:
             skeleton_props = [f.name for f in fields(SkeletonData)]
-            meta_cols = [f.name for f in fields(SkeletonMetaData)]
             meta_cols = [
                 f.name for f in fields(SkeletonMetaData) if f.name != "organelle_id"
             ]

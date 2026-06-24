@@ -810,7 +810,22 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
     )
     record_counts
     mcs_labels = {r.meta.mcs_label for r in mcs_analysis.own_records}
-    mo.md(f"### MCS labels\n{'<br>'.join(mcs_labels)} ")
+
+    mcs_clear_records_button_ui = mo.ui.button(
+        label="Remove all MCS records",
+        kind="warn",
+        on_click=lambda _: mcs_analysis.clean_own_records(),
+    )
+
+    mo.vstack(
+        [
+            mo.md("### MCS Analysis"),
+            mo.md(f"{len(mcs_analysis.own_records)} mcs records loaded"),
+            mo.md("<br>".join(mcs_labels)),
+            mcs_clear_records_button_ui,
+        ]
+    )
+
     return
 
 
@@ -1472,7 +1487,7 @@ def create_ca_run_button():
 @app.cell
 def _(sources):
     # UI for curvature analyis
-
+    mo.stop(len(sources) < 1, "Add sources first!")
     _rad = sources[0].resolution[0] * 2
 
     ca_radius_ui = mo.ui.number(
@@ -1504,7 +1519,39 @@ def _(ca, ca_filter_ui, ca_radius_ui, ca_run_button, project):
 def _(ca, record_counts):
     # Curvature analysis outputs
     record_counts
-    ca.get_dataframe()
+    mo.ui.table(
+        ca.get_dataframe(),
+        page_size=15,
+        format_mapping={
+            "min_curvature": "{:.5g}",
+            "max_curvature": "{:.5g}",
+            "mean_curvature": "{:.5g}",
+            "std_curvature": "{:.5g}",
+            "median_curvature": "{:.5g}",
+            "mean_absolute_curvature": "{:.5g}",
+        },
+        selection=None,
+    )
+    return
+
+
+@app.cell
+def ca_record_control(ca, record_counts):
+    record_counts
+
+    ca_clean_own_button = mo.ui.button(
+        label="Remove all curvature records",
+        on_click=lambda _: ca.clean_own_records(),
+        kind="warn",
+    )
+
+    mo.vstack(
+        [
+            mo.md("## Curvature Records"),
+            mo.md(f"{len(ca.own_records)} curvature records loaded."),
+            ca_clean_own_button,
+        ]
+    )
     return
 
 

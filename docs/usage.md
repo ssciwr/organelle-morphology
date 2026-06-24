@@ -139,6 +139,19 @@ Running analysis generates records of these analysis. They contain the measureme
 
 Here you see an overview of all currently loaded records, and you can save them to the project folder.
 
+### Curvature Analysis
+
+Calculate the curvature on the mesh.
+
+The algorithm slides a sphere across the mesh, averaging the
+vertex defects within the sphere.
+The vertex defect is `2*pi - sum(angles)` of each face adjacent to the vertex.
+
+Based on the discrete gaussian curvature measure of a sphere
+centered at a point as detailed in 'Restricted Delaunay
+triangulations and normal cycle' by Cohen-Steiner and Morvan.
+
+
 ### 2D Profile Calculations
 
 Analyse the shape of organelles by looking at 2d cross-sections.
@@ -146,9 +159,3 @@ Analyse the shape of organelles by looking at 2d cross-sections.
 * `Fixed Axis` cuts perpendicular to a chosen axis
 * `Random Planes` cuts using randomly generated planes
 * `Skeleton` cuts perpendicular to a skeleton. The skeleton needs to be generated already!
-
-### Curvature Analysis
-
-Based on the discrete gaussian curvature measure of a sphere
-centered at a point as detailed in 'Restricted Delaunay
-triangulations and normal cycle' by Cohen-Steiner and Morvan.

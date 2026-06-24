@@ -32,7 +32,7 @@ p = Project(
     compression_level="s2",
     loglevel="DEBUG",
     clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)),
-    n_workers=4,
+    n_workers=8,
 )
 p.add_source("../data/old_cebraEM/Interphase_4T/mito_it00_b0_7_stitched.xml", "mito")
 s = p.sources["mito_it00_b0_7_stitched"]
@@ -179,8 +179,10 @@ mmesh = p.merged_meshes(color=1)
 show(mmesh)
 
 # %%
-p.show()
+p.clipping = [[0.6,0.5,0.5], [1,0.6,0.7]]
+p.compression_level = "s2"
 p.show(curvature=True)
+
 p.show(box=((0.6,0.4,0.3),(0.9,0.8,0.6)))
 p.show(skeleton=True)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -48,21 +48,22 @@ class CurvatureAnalysis(Analysis):
         Returns a DataFrame summarizing the curvature statistics.
         Refreshes the local stats view to include results calculated after initialization.
         """
-        data_rows = []
-        for stat in self.own_records:
-            row = {
-                "ID": stat.meta.organelle_id,
-                "min_curvature": stat.data.min_curvature,
-                "max_curvature": stat.data.max_curvature,
-                "mean_curvature": stat.data.mean_curvature,
-                "std_curvature": stat.data.std_curvature,
-                "median_curvature": stat.data.median_curvature,
-                "mean_absolute_curvature": stat.data.mean_absolute_curvature,
-                "num_vertices": stat.meta.num_vertices,
-            }
-            data_rows.append(row)
+        if not self.own_records:
+            columns = [f.name for f in fields(CurvatureData)] + ["num_vertices"]
+            index = pd.MultiIndex.from_tuples(tuples=[], names=["Radius", "Organelle"])
+            df = pd.DataFrame(index=index, columns=columns)
+            return df
 
-        return pd.DataFrame(data_rows)
+        data_rows = {}
+        for stat in self.own_records:
+            row = stat.data.to_dict()
+            row["num_vertices"] = stat.meta.num_vertices
+            data_rows[(stat.meta.curvature_radius, stat.meta.organelle_id)] = row
+
+        df = pd.DataFrame(data_rows).T
+        df.sort_index(inplace=True)
+        df.index.names = ["Radius", "Organelle"]
+        return df
 
     def calculate_curvature_stats(self, ids: str = "*") -> None:
         """
