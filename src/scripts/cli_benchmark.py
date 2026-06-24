@@ -4,7 +4,7 @@ from time import time
 from dask.distributed import LocalCluster, Client
 from dask_mpi import initialize
 from dask.base import compute
-from organelle_morphology import Project
+from organelle_morphology.project import Project
 from organelle_morphology.position import Position_Analysis
 
 

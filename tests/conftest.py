@@ -11,7 +11,7 @@ from distributed.utils_test import (
     loop_in_thread,  # noqa: F401
     cleanup,  # noqa: F401
 )
-from organelle_morphology import Project
+from organelle_morphology.project import Project
 
 import numpy as np
 import pytest

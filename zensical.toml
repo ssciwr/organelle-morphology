@@ -28,6 +28,7 @@ site_author = "Kai Riedmiller"
 # documentation you should set this.
 # Read more: https://zensical.org/docs/setup/basics/#site_url
 site_url = "https://ssciwr.github.io/organelle-morphology"
+repo_url = "https://github.com/ssciwr/organelle-morphology"
 
 # The copyright notice appears in the page footer and can contain an HTML
 # fragment.
@@ -354,9 +355,11 @@ custom_checkbox = true
 
 [project.plugins.mkdocstrings.handlers.python]
 inventories = ["https://docs.python.org/3/objects.inv"]
-paths = ["organelle_morphology"]
+paths = "src/organelle_morphology/"
 
 [project.plugins.mkdocstrings.handlers.python.options]
 docstring_style = "google"
 inherited_members = true
-show_source = false
+show_source = true
+backlinks = "tree"
+show_inheritance_diagram = true
