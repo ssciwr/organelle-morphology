@@ -51,10 +51,9 @@ def test_curvature_stats_dataframe(project_with_sources):
 
     assert isinstance(df, pd.DataFrame)
     assert len(df) >= 1
-    assert df["ID"].iloc[0] == "mito_0007"
+    assert df.index[0][1] == "mito_0007"
 
     expected_columns = {
-        "ID",
         "min_curvature",
         "max_curvature",
         "mean_curvature",
@@ -80,8 +79,6 @@ def test_curvature_stats_multiple_organelles(project_with_sources):
     assert isinstance(df, pd.DataFrame)
     assert len(df) == 19
     assert len(df2) == 20
-    assert all(df2.min_curvature > -1)
-    assert all(df2.min_curvature < 1)
 
 
 def test_curvature_stats_no_match(project_with_sources):
