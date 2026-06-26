@@ -319,6 +319,7 @@ def _(change_settings_button, project, sources):
     )
 
     mesh_export_toggle_ui = mo.ui.checkbox(label="Export Scene", value=False)
+    mesh_export_name_ui = mo.ui.text(label="Scene Name", value="Organelles")
 
     mo.vstack(
         [
@@ -353,9 +354,14 @@ def _(change_settings_button, project, sources):
             mo.md("(yellow: reference 0°, orange: rotatated axis)"),
             mo.hstack(
                 [
+                    mesh_export_toggle_ui,
+                    mesh_export_name_ui,
+                ]
+            ),
+            mo.hstack(
+                [
                     run_show_mesh,
                     popout_viewer_check,
-                    mesh_export_toggle_ui,
                 ],
                 justify="start",
             ),
@@ -372,6 +378,7 @@ def _(change_settings_button, project, sources):
         mcs_checkbox,
         mcs_max_ui,
         mcs_min_ui,
+        mesh_export_name_ui,
         mesh_export_toggle_ui,
         mesh_id_filter,
         mesh_rot_angle_ui,
@@ -394,6 +401,7 @@ def show_mesh(
     mcs_checkbox,
     mcs_max_ui,
     mcs_min_ui,
+    mesh_export_name_ui,
     mesh_export_toggle_ui,
     mesh_id_filter,
     mesh_rot_angle_ui,
@@ -444,7 +452,7 @@ def show_mesh(
         rot_axis=mesh_rot_axis_ui.value,
         rot_angle=mesh_rot_angle_ui.value,
         volume=color_volume_ui.value,
-        export=mesh_export_toggle_ui.value,
+        export=mesh_export_name_ui.value if mesh_export_toggle_ui.value else None,
     )
     viewer = "marimo"
     if popout_viewer_check.value:
@@ -825,7 +833,6 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
             mcs_clear_records_button_ui,
         ]
     )
-
     return
 
 
