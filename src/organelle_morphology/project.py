@@ -626,9 +626,9 @@ class Project:
 
         scene = show(to_show)
         if export:
-            exp_root = self.path / export
+            exp_root = self.path / "exported_meshes"
             exp_root.mkdir(parents=True, exist_ok=True)
-            scene.export(exp_root / "scene.glb")
+            scene.export(exp_root / Path(export).with_suffix(".glb"))
 
         return scene
 
