@@ -222,7 +222,7 @@ def test_show_box(project_with_sources, mocker):
     p.show(box=((0, 0, 0), (0.5, 0.5, 0.5)))
 
     to_show = mock_util_show.call_args[0][0]
-    assert len(to_show) == 4
+    assert len(to_show) == 5
     assert isinstance(to_show[0], Trimesh)
     assert isinstance(to_show[1], Path3D)
     assert isinstance(to_show[2], Path3D)

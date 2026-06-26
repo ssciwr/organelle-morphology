@@ -571,11 +571,6 @@ class Project:
             to_show.append(box_outline)
 
         if axis:
-            # domain_size = np.array(source.metadata.size) * source.data_resolution
-            # axis_mesh = self._create_axis_marker(domain_size)
-            # # trimesh.axis creates axes at origin (0,0,0), which is the domain box corner
-            # to_show.append(axis_mesh)
-
             if box:
                 box_size = np.array(box[1]) - np.array(box[0])
                 box_axis_mesh = self._create_axis_marker(box_size)
@@ -594,6 +589,10 @@ class Project:
                     )
                 )
                 to_show.append(clip_axis_mesh)
+            else:
+                domain_size = np.array(source.metadata.size) * source.data_resolution
+                axis_mesh = self._create_axis_marker(domain_size)
+                to_show.append(axis_mesh)
 
         if rot_axis is not None:
             size = np.array(source.metadata.size) * source.data_resolution
