@@ -44,6 +44,10 @@ class Analysis(ABC):
     def save_records(self):
         self.project.registry.save_all_to_yaml()
 
+    def clean_own_records(self):
+        for record in self.own_records:
+            self.project.registry.clear_record(record)
+
     @abstractmethod
     def get_dataframe(self) -> pd.DataFrame:
         raise NotImplementedError

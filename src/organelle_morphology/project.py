@@ -263,6 +263,7 @@ class Project:
                 f"{source_obj.metadata.levels}"
             )
         self.sources[xml_path.stem] = source_obj
+
         return source_obj
 
     @property
@@ -359,8 +360,55 @@ class Project:
         rot_axis: Optional[str] = None,
         rot_angle: Optional[float] = None,
         volume: Optional[float] = None,
-        export: bool = False,
+        export: Optional[str] = None,
     ):
+        """Display organelles in the project.
+
+        This method allows for flexible visualization of organelles in the project,
+        supporting various overlays, filters, and rendering options.
+        Many options only work as inteded when no other options are in use.
+
+        Args:
+            ids: Glob-style filter for organelle IDs to display. Defaults to "*"
+                to show all organelles. Separate multiple selections with a comma.
+            ids_highlight: Optional glob-style filter for organelles to highlight
+                in a different color. Defaults to None.
+            box: Optional bounding box to visualize as a wireframe. Specified as
+                ((x_min, y_min, z_min), (x_max, y_max, z_max)) in micrometers.
+            clipping_box: Whether to display the clipping box if clipping is set.
+                Defaults to True.
+            domain_box: Whether to display the domain box (full data extent).
+                Defaults to True.
+            curvature: Color the mesh by its curvature. Defaults to False.
+            skeleton: Show the skeleton of organelles. Only shows pre-calculated
+                skeleton data. Defaults to False.
+            curv_log: Whether to apply logarithmic scaling to curvature coloring
+                when curvature=True. Defaults to True.
+            color_instances: Whether to color individual organelle instances
+                differently. Defaults to False.
+            mcs_min: Minimum distance threshold for membrane contact site (MCS)
+                visualization. Requires mcs_max to be set. Defaults to None.
+            mcs_max: Maximum distance threshold for MCS visualization.
+                Triggers the calculation of this MCS analysis. The contact
+                sites will be colored randomly. Defaults to None.
+            axis: Whether to display coordinate axes. Defaults to True.
+            rot_axis: Preview a rotation of the data around this axis.
+                Display two lines indicating a rotation by a given angle.
+                Yellow is the reference 0° line, orange is the rotated line.
+                Can be `x`, `y`, or `z`. Defaults to None.
+            rot_angle: Rotation angle in degrees for the rotation visualization.
+                Defaults to None.
+            volume: Volume threshold for previewing filtering organelles by size.
+                Organelles with volume less than this threshold are colored organge.
+                Bigger organelles are green. Open meshes are colored gray.
+                Defaults to None.
+            export: Optional path to export the visualization scene to a glb file.
+                If provided, the scene will be exported to this location.
+                Defaults to None.
+
+        Returns:
+            trimesh.Scene: The rendered scene containing all visualization elements.
+        """
         orgs = self.get_organelles(ids=ids)
         if len(orgs) == 0:
             self.logger.warning(f"Selection {ids} does not match any organelles!")
@@ -523,10 +571,28 @@ class Project:
             to_show.append(box_outline)
 
         if axis:
-            size = max(np.array(source.metadata.size) * source.data_resolution)
-            to_show.append(
-                trimesh.creation.axis(axis_radius=size / 200, axis_length=size / 20)
-            )
+            if box:
+                box_size = np.array(box[1]) - np.array(box[0])
+                box_axis_mesh = self._create_axis_marker(box_size)
+                box_axis_transform = trimesh.transformations.translation_matrix(
+                    np.array(box[0])
+                )
+                box_axis_mesh.apply_transform(box_axis_transform)
+                to_show.append(box_axis_mesh)
+
+            if self.clipping is not None and clipping_box:
+                clip_size = corners_to_edges(*source.clipping_corners)
+                clip_axis_mesh = self._create_axis_marker(clip_size)
+                clip_axis_mesh.apply_transform(
+                    trimesh.transformations.translation_matrix(
+                        source.clipping_corners[0]
+                    )
+                )
+                to_show.append(clip_axis_mesh)
+            else:
+                domain_size = np.array(source.metadata.size) * source.data_resolution
+                axis_mesh = self._create_axis_marker(domain_size)
+                to_show.append(axis_mesh)
 
         if rot_axis is not None:
             size = np.array(source.metadata.size) * source.data_resolution
@@ -561,7 +627,7 @@ class Project:
         if export:
             exp_root = self.path / "exported_meshes"
             exp_root.mkdir(parents=True, exist_ok=True)
-            scene.export(exp_root / "scene.glb")
+            scene.export(exp_root / Path(export).with_suffix(".glb"))
 
         return scene
 
@@ -916,6 +982,27 @@ class Project:
         if len(self.sources) == 0:
             raise ValueError("No sources loaded! Can't compute clipping corners")
         return list(self.sources.values())[0].clipping_corners
+
+    def _create_axis_marker(self, size):
+        """Create an axis marker scaled to a given size.
+
+        The axis length and radius are scaled based on the size.
+        Axis is positioned at the origin (0,0,0) of the coordinate system.
+
+        Args:
+            size: Size of the domain or box to scale the axis to
+
+        Returns:
+            trimesh.Trimesh: The axis mesh
+        """
+        max_dim = max(size)
+        scaled_length = max_dim // 10
+        scaled_radius = scaled_length / 10
+
+        axis = trimesh.creation.axis(
+            axis_radius=scaled_radius, axis_length=scaled_length
+        )
+        return axis
 
     @property
     def organelles(self) -> list[Organelle]:

@@ -23,6 +23,7 @@ with app.setup:
     from organelle_morphology.position import Position_Analysis
     from organelle_morphology.records import PropertyBlock
     from organelle_morphology.skeleton_analysis import Skeleton_Analysis
+    from organelle_morphology.curvature_analysis import CurvatureAnalysis
     from collections import defaultdict
 
 
@@ -318,6 +319,7 @@ def _(change_settings_button, project, sources):
     )
 
     mesh_export_toggle_ui = mo.ui.checkbox(label="Export Scene", value=False)
+    mesh_export_name_ui = mo.ui.text(label="Scene Name", value="Organelles")
 
     mo.vstack(
         [
@@ -352,9 +354,14 @@ def _(change_settings_button, project, sources):
             mo.md("(yellow: reference 0°, orange: rotatated axis)"),
             mo.hstack(
                 [
+                    mesh_export_toggle_ui,
+                    mesh_export_name_ui,
+                ]
+            ),
+            mo.hstack(
+                [
                     run_show_mesh,
                     popout_viewer_check,
-                    mesh_export_toggle_ui,
                 ],
                 justify="start",
             ),
@@ -371,6 +378,7 @@ def _(change_settings_button, project, sources):
         mcs_checkbox,
         mcs_max_ui,
         mcs_min_ui,
+        mesh_export_name_ui,
         mesh_export_toggle_ui,
         mesh_id_filter,
         mesh_rot_angle_ui,
@@ -393,6 +401,7 @@ def show_mesh(
     mcs_checkbox,
     mcs_max_ui,
     mcs_min_ui,
+    mesh_export_name_ui,
     mesh_export_toggle_ui,
     mesh_id_filter,
     mesh_rot_angle_ui,
@@ -443,7 +452,7 @@ def show_mesh(
         rot_axis=mesh_rot_axis_ui.value,
         rot_angle=mesh_rot_angle_ui.value,
         volume=color_volume_ui.value,
-        export=mesh_export_toggle_ui.value,
+        export=mesh_export_name_ui.value if mesh_export_toggle_ui.value else None,
     )
     viewer = "marimo"
     if popout_viewer_check.value:
@@ -809,7 +818,21 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
     )
     record_counts
     mcs_labels = {r.meta.mcs_label for r in mcs_analysis.own_records}
-    mo.md(f"### MCS labels\n{'<br>'.join(mcs_labels)} ")
+
+    mcs_clear_records_button_ui = mo.ui.button(
+        label="Remove all MCS records",
+        kind="warn",
+        on_click=lambda _: mcs_analysis.clean_own_records(),
+    )
+
+    mo.vstack(
+        [
+            mo.md("### MCS Analysis"),
+            mo.md(f"{len(mcs_analysis.own_records)} mcs records loaded"),
+            mo.md("<br>".join(mcs_labels)),
+            mcs_clear_records_button_ui,
+        ]
+    )
     return
 
 
@@ -1407,6 +1430,7 @@ def _(record_counts, records_save_button, records_update_button):
 
 @app.cell
 def _(
+    ca_run_button,
     pa_run_button,
     project,
     project_load_records_button,
@@ -1415,12 +1439,18 @@ def _(
     run_profile_btn,
     run_skeleton_button,
 ):
+    # Count the records
+    # Get's triggered by any calculation or loading of records.
+    # Should be used to trigger the update of any record visualization, like tables
+
     project_load_records_button
     run_mcs_btn
     pa_run_button
     run_profile_btn
     run_skeleton_button
     records_update_button
+    ca_run_button
+
     [r.meta for r in project.records]
     record_counts = defaultdict(int)
     for rec in project.records:
@@ -1444,6 +1474,91 @@ def _(project, records_save_button):
     mo.stop(not records_save_button.value, "Save all records")
     project.registry.save_all_to_yaml()
     mo.md("Saved successfully!")
+    return
+
+
+@app.cell
+def curveanalysis_obj(project):
+    # curvature analysis
+    ca = CurvatureAnalysis(project)
+    return (ca,)
+
+
+@app.cell
+def create_ca_run_button():
+    ca_run_button = mo.ui.run_button(label="Run curvature analysis")
+    ca_run_button
+    return (ca_run_button,)
+
+
+@app.cell
+def _(sources):
+    # UI for curvature analyis
+    mo.stop(len(sources) < 1, "Add sources first!")
+    _rad = sources[0].resolution[0] * 2
+
+    ca_radius_ui = mo.ui.number(
+        label="Radius $[um]$", value=_rad, start=0.0, stop=10 * _rad, step=_rad / 10
+    )
+    ca_filter_ui = mo.ui.text(label="Organelle filter", value="*")
+    mo.vstack(
+        [
+            mo.md("## Curvature Analysis"),
+            mo.md("Based on the sum of angles within a circle on the mesh surface"),
+            ca_radius_ui,
+            ca_filter_ui,
+        ]
+    )
+    return ca_filter_ui, ca_radius_ui
+
+
+@app.cell
+def _(ca, ca_filter_ui, ca_radius_ui, ca_run_button, project):
+    # Run curvature analysis
+    mo.stop(not ca_run_button.value, "Run curvature analysis")
+
+    project.set_curvature_radius(ca_radius_ui.value)
+    ca.calculate_curvature_stats(ids=ca_filter_ui.value)
+    return
+
+
+@app.cell
+def _(ca, record_counts):
+    # Curvature analysis outputs
+    record_counts
+    mo.ui.table(
+        ca.get_dataframe(),
+        page_size=15,
+        format_mapping={
+            "min_curvature": "{:.5g}",
+            "max_curvature": "{:.5g}",
+            "mean_curvature": "{:.5g}",
+            "std_curvature": "{:.5g}",
+            "median_curvature": "{:.5g}",
+            "mean_absolute_curvature": "{:.5g}",
+        },
+        selection=None,
+    )
+    return
+
+
+@app.cell
+def ca_record_control(ca, record_counts):
+    record_counts
+
+    ca_clean_own_button = mo.ui.button(
+        label="Remove all curvature records",
+        on_click=lambda _: ca.clean_own_records(),
+        kind="warn",
+    )
+
+    mo.vstack(
+        [
+            mo.md("## Curvature Records"),
+            mo.md(f"{len(ca.own_records)} curvature records loaded."),
+            ca_clean_own_button,
+        ]
+    )
     return
 
 

@@ -324,7 +324,7 @@ class DataSource:
     @property
     def curvature_radius(self) -> float:
         if self._curv_radius is None:
-            self._curv_radius = self.resolution[0] * 2
+            self._curv_radius = self.resolution[0] * 3
         return self._curv_radius
 
     @curvature_radius.setter
@@ -763,7 +763,6 @@ class DataSource:
         return self._curvature_map
 
     def get_curvature_range(self):
-        # mean_mean = np.mean([c.mean() for c in self._curvature_map.values()])
         mean_std = np.mean([c.std() for c in self._curvature_map.values()])
 
         return {

@@ -102,10 +102,6 @@ The (0,0,0) corner is marked with three arrows along the axes. The red one point
 Remove organelles below a certain volume from all calculations, including the 3D rendering.
 Use the option in `Show Mesh` to preview your selection.
 
-### Cache
-
-Display the contents of the project cache or clean it.
-
 ### Skeletonize
 
 Calculate a skeleton for the selected organelles.
@@ -139,6 +135,22 @@ Running analysis generates records of these analysis. They contain the measureme
 
 Here you see an overview of all currently loaded records, and you can save them to the project folder.
 
+### Curvature Analysis
+
+Calculate the curvature on the mesh.
+
+The algorithm slides a sphere across the mesh, averaging the
+vertex defects within the sphere.
+The vertex defect is `2*pi - sum(angles)` of each face adjacent to the vertex.
+
+Based on the discrete gaussian curvature measure of a sphere
+centered at a point as detailed in 'Restricted Delaunay
+triangulations and normal cycle' by Cohen-Steiner and Morvan.
+
+The radius setting has an performance impact.
+Ideally, preview the results in the interactive viewer and choose a value
+around 2x - 4x the resolution.
+
 ### 2D Profile Calculations
 
 Analyse the shape of organelles by looking at 2d cross-sections.
@@ -146,3 +158,7 @@ Analyse the shape of organelles by looking at 2d cross-sections.
 * `Fixed Axis` cuts perpendicular to a chosen axis
 * `Random Planes` cuts using randomly generated planes
 * `Skeleton` cuts perpendicular to a skeleton. The skeleton needs to be generated already!
+
+### Cache
+
+Display the contents of the project cache or clean it.
