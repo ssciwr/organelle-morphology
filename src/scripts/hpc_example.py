@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 from dask.distributed import LocalCluster, Client
 from dask_mpi import initialize
-from organelle_morphology import Project
+from organelle_morphology.project import Project
 from organelle_morphology.position import Position_Analysis
 from organelle_morphology.profile_calculations import ProfileCalculator
 from organelle_morphology.skeleton_analysis import Skeleton_Analysis
@@ -69,7 +69,7 @@ def main():
     # ######################################
     # Exclude organelles
     # ######################################
-    p.blacklist_by_volume(max_vol=0.001) 
+    p.blacklist_by_volume(max_vol=0.001)
 
 
     # ######################################
@@ -82,7 +82,7 @@ def main():
         ids_filter_2="er*",
     )
     p.registry.save_all_to_yaml()
-    
+
 
     # ######################################
     # Position Analysis

@@ -1,6 +1,6 @@
 from pathlib import Path
 from time import time
-from organelle_morphology import Project
+from organelle_morphology.project import Project
 
 def main():
 

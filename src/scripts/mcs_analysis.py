@@ -1,5 +1,5 @@
 # %%
-from organelle_morphology import Project
+from organelle_morphology.project import Project
 from pathlib import Path
 
 # %%

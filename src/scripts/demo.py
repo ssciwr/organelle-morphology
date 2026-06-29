@@ -11,18 +11,18 @@ from tqdm import tqdm
 import trimesh
 from trimesh import Trimesh
 from zmesh import Mesh, Mesher
-from organelle_morphology import Project, merge_meshes
+from organelle_morphology.project import Project
+from organelle_morphology.util import merge_meshes
 import matplotlib as mpl
 import numpy as np
 import matplotlib.pyplot as plt
 
 from dask.base import compute
 from dask.distributed import LocalCluster, Client
-import organelle_morphology as om
 from organelle_morphology.distance_calculations import generate_distance_matrix
 from organelle_morphology.util import color_delayed_trimesh_rgba, show
 from organelle_morphology.position import Position_Analysis
-from organelle_morphology.analysis import Mcs_Analysis
+from organelle_morphology.mcs_analysis import Mcs_Analysis
 
 viridis = mpl.colormaps.get("viridis")
 # %%

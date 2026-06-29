@@ -11,13 +11,14 @@ app = marimo.App(
 with app.setup:
     # Initialization code that runs before all other cells
     import marimo as mo
-    import organelle_morphology as om
+    from organelle_morphology.project import Project
     import numpy as np
     from organelle_morphology.util import bounding_box_delayed
     from dask.base import compute
     import pandas as pd
     import traceback
-    from organelle_morphology.analysis import Misc_Analysis, Mcs_Analysis
+    from organelle_morphology.analysis import Misc_Analysis
+    from organelle_morphology.mcs_analysis import Mcs_Analysis
     from organelle_morphology.profile_calculations import ProfileCalculator
     import matplotlib.pyplot as plt
     from organelle_morphology.position import Position_Analysis
@@ -92,7 +93,7 @@ def _(project_path_ui, run_project_button):
     mo.stop(not run_project_button.value, "Load a project first")
     mo.stop(not len(project_path_ui.value) > 0, "Select a project directory!")
 
-    project = om.Project(
+    project = Project(
         project_path=project_path_ui.path(), clipping=None, compression_level="s3"
     )
     return (project,)
@@ -356,7 +357,8 @@ def _(change_settings_button, project, sources):
                 [
                     mesh_export_toggle_ui,
                     mesh_export_name_ui,
-                ]
+                ],
+                justify="start",
             ),
             mo.hstack(
                 [
@@ -1382,11 +1384,23 @@ def position_analysi_table(pa, record_counts):
     pa_plot_densities_button = mo.ui.run_button(label="Plot densities")
     pa_records_table = mo.ui.table(pa_metas)
 
+    pa_clean_own_button = mo.ui.button(
+        label="Remove all position analysis records",
+        on_click=lambda _: pa.clean_own_records(),
+        kind="warn",
+    )
+
     mo.vstack(
         [
             mo.md("#### Select which entries to plot. 3D plots are expensive to show"),
             pa_records_table,
-            pa_plot_densities_button,
+            mo.hstack(
+                [
+                    pa_plot_densities_button,
+                    pa_clean_own_button,
+                ],
+                justify="start",
+            ),
         ]
     )
     return pa_plot_densities_button, pa_records_table
