@@ -38,6 +38,30 @@ copyright = """
 &copy; CC BY 4.0 2026 Anne Schlaitz, Suzan Kors, Kai Riedmiller
 """
 
+nav = [
+  "index.md",
+  "installation.md",
+  "contributing.md",
+  "usage.md",
+  "hpc.md",
+  { "API" = [
+    "api/index.md",
+    "api/project.md",
+    "api/source.md",
+    "api/organelle.md",
+    { "Analysis" = [
+      "api/analysis/index.md",
+      "api/analysis/mcs.md",
+      "api/analysis/position.md",
+      "api/analysis/profile.md",
+      "api/analysis/skeleton.md",
+    ] },
+    "api/util.md",
+    "api/block_mesher.md",
+    "api/distance_calc.md",
+  ] },
+]
+
 # Zensical supports both implicit navigation and explicitly defined navigation.
 # If you decide not to define a navigation here then Zensical will simply
 # derive the navigation structure from the directory structure of your
@@ -45,14 +69,6 @@ copyright = """
 # can be defined using TOML syntax.
 #
 # Read more: https://zensical.org/docs/setup/navigation/
-nav = [
-  "index.md",
-  "installation.md",
-  "contributing.md",
-  "usage.md",
-  "hpc.md",
-  "api.md",
-]
 
 # With the "extra_css" option you can add your own CSS styling to customize
 # your Zensical project according to your needs. You can add any number of

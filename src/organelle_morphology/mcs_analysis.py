@@ -1,111 +1,141 @@
-"""Temporary MCS analysis
-
-Should be merged with new statistics.py
-"""
-
-from dask.base import compute
-import matplotlib.pyplot as plt
-import seaborn as sns
-from pandas import DataFrame
-import logging
-
-import organelle_morphology
+import pandas as pd
+import numpy as np
+from organelle_morphology.analysis import Analysis
+from organelle_morphology.organelle import McsData
+from typing import Optional
 
 
-logger = logging.getLogger(__name__)
+class Mcs_Analysis(Analysis):
+    """Methods to calculate mcs statistics"""
+
+    def __init__(self, project):
+        super().__init__(project=project, property_type=McsData)
+
+    def __post_init__(self):
+        self.set_filters()
+
+    def set_filters(self, ids: str = "*", mcs_labels: Optional[list[str]] = None):
+        """Filter records for everything in this analysis.
+
+        Args:
+            ids: Glob-style filter pattern for organelles, defaults to "*"
+            mcs_labels: Filter the MCS calculations, defaults to None
+        """
+        self.ids = ids
+        self.mcs_label_filter = mcs_labels
+
+    @property
+    def mcs_labels(self) -> list:
+        return list({s.meta.mcs_label for s in self.own_records})
+
+    def get_mcs_properties(self) -> pd.DataFrame:
+        """The properties of the MCS between organelles
+        Gathers data from all the organelles into one dataframe.
 
 
-def plot_mcs_hist(df: DataFrame, label: str, measurement: str):
-    if measurement not in df.columns:
-        raise ValueError(
-            f"Measurement {measurement} not available!\nMust be one of {df.columns}"
-        )
-    if label not in df.index:
-        raise ValueError(f"MCS {label} not in df!")
+        Returns:
+            pd.DataFrame
+        """
 
-    df_sel = df.loc[label, measurement]
-    data_list = []
-    group_list = []
+        if len(self.mcs_labels) == 0:
+            raise RuntimeError("No mcs labels found, run a mcs search first!")
 
-    for org, group in df_sel.groupby(lambda i: i.split("_")[0]):
-        data_list.extend(group.values)
-        group_list.extend([org] * len(group))
+        mcs_properties = {}
 
-    # Create stacked histogram with aligned bins
-    plot_df = DataFrame({"value": data_list, "Organelle": group_list})
-    sns.histplot(
-        data=plot_df,
-        x="value",
-        hue="Organelle",
-        multiple="stack",
-        stat="count",
-        legend=True,
-    )
-    plt.xlabel(measurement)
+        for stat in self.own_records:
+            for label in self.mcs_labels:
+                if self.mcs_label_filter and (label not in self.mcs_label_filter):
+                    continue
+                elif label == stat.meta.mcs_label:
+                    mcs_properties[(label, stat.meta.organelle_id)] = (
+                        stat.data.to_dict()
+                    )
 
+        if len(mcs_properties) == 0:
+            raise RuntimeError(
+                "No matching mcs labels found, adjust your filter settings!"
+            )
 
-def stats_contacts_a_b(df: DataFrame, mcs_label: str, n_orgs: dict[str, int]):
-    logger.info(f"Calculating Record for {mcs_label}")
-    df_contacts = df.loc[mcs_label, "n_contacts"]
-    if partners := mcs_label.split(",")[1].split("-"):
-        o1, o2 = partners
-    else:
-        raise ValueError("mcs calculation must be between two organelle types!")
+        mcs_df = pd.DataFrame(mcs_properties).T
+        mcs_df.sort_index(inplace=True)
+        mcs_df.index.names = ["mcs_label", "organelle"]
 
-    n_contacts = {}
-    n_in_contact = {}
-    percent_in_contact = {}
-    contacts_per_area = {}
-    contacts_per_volume = {}
+        return mcs_df
 
-    for org, group in df_contacts.groupby(lambda i: i.split("_")[0]):
-        n_contacts[org] = group.sum()
-        n_in_contact[org] = group.loc[group > 0].count()
-        percent_in_contact[org] = (n_in_contact[org] / n_orgs[org]) * 100
-        contacts_per_area[org] = df.loc[mcs_label, "n_contacts_per_area"].mean()
-        contacts_per_volume[org] = df.loc[mcs_label, "n_contacts_per_volume"].mean()
+    def get_mcs_overview(self):
+        def _weighted_stats(x):
+            # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
+            mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
+            std_area = np.sqrt(
+                np.average(
+                    (x["std_area"] ** 2 + (x["mean_area"] - mean_area) ** 2),
+                    weights=x["n_contacts"],
+                )
+            )
+            mean_dist = np.average(x["mean_dist"], weights=x["n_contacts"])
+            std_dist = np.sqrt(
+                np.average(
+                    (x["std_dist"] ** 2 + (x["mean_dist"] - mean_dist) ** 2),
+                    weights=x["n_contacts"],
+                )
+            )
+            mean_min_dist_mcs = np.average(x["min_dist"], weights=x["n_contacts"])
 
-    stats = {
-        "n_contacts": n_contacts,
-        "n_in_contact": n_in_contact,
-        "percent_in_contact": percent_in_contact,
-        "contacts_per_area": contacts_per_area,
-        "contacts_per_volume": contacts_per_volume,
-    }
-    return stats
+            # Calculate per organelle
+            total_contacts = x["n_contacts"].sum()
+            mean_n_contacts = x["n_contacts"].mean()
+            std_n_contacts = x["n_contacts"].std()
+            total_area = x["total_area"].sum()
+            mean_total_area = x["total_area"].mean()
+            std_total_area = x["total_area"].std()
 
+            mean_min_dist = x["min_dist"].mean()
+            mean_contacts_per_vol = x["n_contacts_per_volume"].mean()
+            mean_contacts_per_area = x["n_contacts_per_area"].mean()
 
-def stats_global(project: "organelle_morphology.Project"):
-    """Generate a report about global properties
+            new_columns = [
+                ("overall", "total_contacts"),
+                ("overall", "total_area"),
+                ("per organelle", "mean_contacts"),
+                ("per organelle", "std_contacts"),
+                ("per organelle", "mean_total_area"),
+                ("per organelle", "std_area"),
+                ("per organelle", "mean_contacts_per_volume"),
+                ("per organelle", "mean_contacts_per_area"),
+                ("per organelle", "mean_min_dist"),
+                ("per mcs", "mean_area"),
+                ("per mcs", "std_area"),
+                ("per mcs", "mean_dist"),
+                ("per mcs", "std_dist"),
+                ("per mcs", "mean_min_dist"),
+            ]
+            new_index = pd.MultiIndex.from_tuples(new_columns)
 
-    Args:
-        project: The project
+            return pd.Series(
+                [
+                    total_contacts,
+                    total_area,
+                    mean_n_contacts,
+                    std_n_contacts,
+                    mean_total_area,
+                    std_total_area,
+                    mean_contacts_per_vol,
+                    mean_contacts_per_area,
+                    mean_min_dist,
+                    mean_area,
+                    std_area,
+                    mean_dist,
+                    std_dist,
+                    mean_min_dist_mcs,
+                ],
+                index=new_index,
+            )
 
-    Returns:
-        dict with the following keys:
-        n_organelles: number of organelles per organelle type
-        areas: total surface area of each organelle type
-        volumes: total volume of each organelle type
-    """
-    # Count
-    n_orgs = {}
-    for s in project.sources.values():
-        n_orgs[s.org_name] = len(project.get_organelles(s.org_name + "*"))
+        mcs_df = self.get_mcs_properties()
 
-    # Surface area
-    areas = {}
-    for s in project.sources.values():
-        area_delayed = [o.mesh.area for o in project.get_organelles(s.org_name + "*")]
-        areas[s.org_name] = compute(area_delayed)[0]
+        overview = mcs_df.groupby(level=0).apply(_weighted_stats)
+        overview.sort_index(axis=1, inplace=True)
+        return overview.T
 
-    # Volumes
-    vols = {}
-    for s in project.sources.values():
-        vol_delayed = [o.mesh.volume for o in project.get_organelles(s.org_name + "*")]
-        vols[s.org_name] = compute(vol_delayed)[0]
-
-    return {
-        "n_organelles": n_orgs,
-        "areas": areas,
-        "volumes": vols,
-    }
+    def get_dataframe(self) -> pd.DataFrame:
+        return self.get_mcs_properties()

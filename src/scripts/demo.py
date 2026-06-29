@@ -22,7 +22,7 @@ from dask.distributed import LocalCluster, Client
 from organelle_morphology.distance_calculations import generate_distance_matrix
 from organelle_morphology.util import color_delayed_trimesh_rgba, show
 from organelle_morphology.position import Position_Analysis
-from organelle_morphology.analysis import Mcs_Analysis
+from organelle_morphology.mcs_analysis import Mcs_Analysis
 
 viridis = mpl.colormaps.get("viridis")
 # %%
