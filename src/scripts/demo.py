@@ -34,9 +34,9 @@ p = Project(
     clipping=((0.4,0.4,0.4),(0.6,0.6,0.6)),
     n_workers=8,
 )
-p.add_source("../data/old_cebraEM/Interphase_4T/mito_it00_b0_7_stitched.xml", "mito")
+p.add_source("../data/interphase_4T/mito_it00_b0_7_stitched.xml", "mito")
 s = p.sources["mito_it00_b0_7_stitched"]
-p.add_source("../data/old_cebraEM/Interphase_4T/er_it00_b0_7_stitched.xml", "er")
+p.add_source("../data/interphase_4T/er_it00_b0_7_stitched.xml", "er")
 s = p.sources["er_it00_b0_7_stitched"]
 
 # %%

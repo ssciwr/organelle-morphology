@@ -76,7 +76,10 @@ When the `Project` contains some analysis records from a previous run, you can l
 
 ### Show Mesh
 
-Here you can preview the mesh in 3D. By default the meshes are colored by organelle type.
+Here you can preview the mesh in 3D. By default the meshes are colored by organelle type.  
+In one corner you can see some axis markers in red, green, and blue.
+These mark the corner closest to the origin.
+Red corresponds to the first (outer) dimension, green to the second and blue to the third (inner) dimension.
 
 * Organelle id filter: filter what is displayed. `*` can be any text. Separate multiple filters with a comma.
 * Highlight ids: Choose which ids to highlight. Makes everything else gray.

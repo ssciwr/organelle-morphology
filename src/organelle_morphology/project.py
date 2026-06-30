@@ -635,15 +635,6 @@ class Project:
             to_show.append(box_outline)
 
         if axis:
-            if box:
-                box_size = np.array(box[1]) - np.array(box[0])
-                box_axis_mesh = self._create_axis_marker(box_size)
-                box_axis_transform = trimesh.transformations.translation_matrix(
-                    np.array(box[0])
-                )
-                box_axis_mesh.apply_transform(box_axis_transform)
-                to_show.append(box_axis_mesh)
-
             if self.clipping is not None and clipping_box:
                 clip_size = corners_to_edges(*source.clipping_corners)
                 clip_axis_mesh = self._create_axis_marker(clip_size)
@@ -1060,11 +1051,13 @@ class Project:
             trimesh.Trimesh: The axis mesh
         """
         max_dim = max(size)
-        scaled_length = max_dim // 10
+        scaled_length = max_dim / 10
         scaled_radius = scaled_length / 10
 
         axis = trimesh.creation.axis(
-            axis_radius=scaled_radius, axis_length=scaled_length
+            axis_radius=scaled_radius,
+            axis_length=scaled_length,
+            origin_size=0.00001,
         )
         return axis
 

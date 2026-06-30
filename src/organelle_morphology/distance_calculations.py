@@ -122,7 +122,7 @@ def make_domains(
     t0 = time()
     with Pool(processes=100) as pool:
         masks = pool.starmap(_check_overlap, tasks, chunksize=100)
-    logger.debug(f"pool overlap: {time() - t0}")
+    logger.debug(f"Organelle to domain attribution: {time() - t0}s")
 
     # remove masks with only one organelle
     filtered_masks = []
@@ -501,16 +501,11 @@ def generate_distance_matrix(
         with span("dist_matrix_min_dists"):
             t0 = time()
             results = map(delayed_domain_min_dists, tasks)
-            t1 = time()
-            project.logger.debug(f"mapped delayed_min_dist, t {t1 - t0}")
             results = compute(results)[0]
-            t2 = time()
-            project.logger.debug(f"computed mapped, t {t2 - t1}")
             results = [r for res in results for r in res]
-            t3 = time()
-            project.logger.debug(f"iterated results, t {t3 - t2}")
+            t1 = time()
 
-        project.logger.debug(f"Timings: {t1 - t0}, {t2 - t1}, {t3 - t2},")
+        project.logger.debug(f"Min distances calculated in: {t1 - t0} s")
         for res in results:
             distance_df.loc[res[0]] = res[1]
             distance_df.loc[res[0][::-1]] = res[1]
