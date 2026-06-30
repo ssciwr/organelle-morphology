@@ -1,4 +1,4 @@
-# Curvature Analysis
+# Analysis: Curvature
 
 ::: organelle_morphology.curvature_analysis
     options:

@@ -905,8 +905,13 @@ class DataSource:
             counter = 0
             while not done or counter >= 10:
                 try:
-                    mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
-                    done = True
+                    new_mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
+                    if len(new_mesh.vertices) > 0:
+                        mesh = new_mesh
+                        done = True
+                    else:
+                        counter += 1
+                        factor = factor * 0.8
                 except IndexError:
                     counter += 1
                     factor = factor * 0.8
