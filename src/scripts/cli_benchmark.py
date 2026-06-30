@@ -1,64 +1,26 @@
-import argparse
-from pathlib import Path
 from time import time
-from dask.distributed import LocalCluster, Client
-from dask_mpi import initialize
 from dask.base import compute
 from organelle_morphology.project import Project
 from organelle_morphology.position import Position_Analysis
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run full organelle-morphology benchmark"
-    )
-    parser.add_argument(
-        "--workers", type=int, default=16, help="Number of Dask workers"
-    )
-    parser.add_argument(
-        "--threads", type=int, default=4, help="Number of threads per worker"
-    )
-    parser.add_argument(
-        "-d", "--data", type=Path, required=True, help="Path to XML directory of interphase_4T"
-    )
-    parser.add_argument(
-        "-p",
-        "--projectpath",
-        type=Path,
-        required=True,
-        help="Path to project directory",
-    )
-    parser.add_argument("--mpi", action="store_true", help="Enable MPI support")
-    args = parser.parse_args()
+    p, data_path = Project.from_args()
 
-    # Initialize dask_mpi on all ranks, but only run main benchmark on rank 0
-    if args.mpi:
-        initialize(nthreads=args.threads)
+    # ######################################
+    # Set the data sources, clipping, and compression
+    # ######################################
+    p.add_source(data_path / "cell_it01_b0_7_stitched.xml", "cell")
+    p.add_source(data_path / "er_it00_b0_7_stitched.xml", "er")
 
-    start_time_total = time()
+    # Simplify the mesh by 50%
+    p.simplify = 0.5
 
-    if args.mpi:
-        client = Client()
-    else:
-        cluster = LocalCluster(
-            n_workers=args.workers,
-            threads_per_worker=args.threads,
-        )
-        client = Client(cluster)
+    # clipping: tuple of (lower corner, upper corner) or None
+    p.clipping = ((0.4, 0.4, 0.4), (0.6, 0.6, 0.6))
 
-    p = Project(
-        args.projectpath,
-        compression_level="s2",
-        loglevel="DEBUG",
-        clipping=((0.4, 0.4, 0.4), (0.6, 0.6, 0.6)),
-        client=client,
-    )
-
-    p.logger.info("#### DASK CLUSTER INFO ####")
-    p.logger.info(client)
-    p.logger.info("###########################\n")
-
-    data_path = args.data
+    # compression: usually s0-s3, bigger more compressed, s0 uncompressed
+    p.compression_level = "s2"
 
     p.add_source(data_path / "cell_it01_b0_7_stitched.xml", "cell")
     s_cell = p.sources["cell_it01_b0_7_stitched"]
@@ -119,7 +81,7 @@ def main():
     total_time = time() - start_time_total
     p.logger.info(f"\n#### TOTAL TIME NEEDED: {total_time:.2f} seconds")
 
-    client.shutdown()
+    p.logger.info("Finished Calculations!")
 
 
 if __name__ == "__main__":

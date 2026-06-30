@@ -24,5 +24,6 @@ cd /home/hd/hd_hd/hd_vw182/workspaces/gpfs/hd_vw182-vem || exit
 mpirun -np "$SLURM_NTASKS" \
   python cli_benchmark.py \
   --mpi --threads "$SLURM_CPUS_PER_TASK" \
+  -- workers "$SLURM_NTASKS" \
   --data data/interphase_4T \
   --projectpath vem_benchmark
