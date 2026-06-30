@@ -91,7 +91,15 @@ mkdir ~/workspaces/gpfs/<workspace name>/<project name>
 cd ~/workspaces/gpfs/<workspace name>/<project name>
 ```
 
-Use the `om_init_hpc` command to copy a template scripts to your current working directory.
+Activate your conda environment:
+
+```bash
+module load devel/miniforge/24.9.2
+conda activate morph
+```
+
+Use the `om_init_hpc` command to copy a template python and submit script to your
+current working directory.
 
 ```bash
 # For using a single node
@@ -114,19 +122,19 @@ You can use `nano` or `vim` to edit the files on the hpc,
 or you can prepare them locally and copy them over using the file
 transfer tools described above.
 
-- Change compression and clipping
-- Change the sources you want to load
-- Change the analysis steps you want to run
+- Change compression and clipping.
+- Change the sources you want to load.
+- Change the analysis steps you want to run.
 - Remove the other steps you don't need.
 
-In the `.sh` slurm submit script, change
+In the `helix_run_[choice].sh` slurm submit script, change
 
-- the path to the project
-- the path to the python script (`hpc_exampel.py`)
-- the path to the data
-- if necessary, the runtime and/or processes (`ntasks`)
-    - `ntasks` *`cpus-per-task` should be 64* `nodes`
-    - Less tasks equal workers with more memory.
+- the path to the project.
+- the path to the python script (`hpc_exampel.py`).
+- the path to the data.
+- if necessary, the runtime and/or processes (`ntasks`).
+  - `ntasks` x `cpus-per-task` should be 64 x `nodes`
+  - Less tasks equal workers with more memory.
     Reduce tasks if you encounter out-of-memory issues.
 
 #### 2. Submitting the script
