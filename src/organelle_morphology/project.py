@@ -1,3 +1,4 @@
+import argparse
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
@@ -127,11 +128,74 @@ class Project:
         self.client = client if client else Client(self.cluster)
         self.n_workers = n_workers
 
-    def recreate_client(self):
-        self.client = Client(self.cluster)
-
     def __str__(self):
         return f"Project at {self.path}"
+
+    @staticmethod
+    def from_args():
+        """Create a project from command line arguments.
+
+        This is mostly intended for use on HPC clusters with a submit
+        script controlling some parameters.
+
+        Returns:
+            Project: The created project instance
+            Path: Path to the data as provided through the cli.
+        """
+        parser = argparse.ArgumentParser(
+            description="Run full organelle-morphology benchmark"
+        )
+        parser.add_argument(
+            "--workers",
+            type=int,
+            default=16,
+            help="Number of Dask workers, only relevant without mpi",
+        )
+        parser.add_argument(
+            "--threads", type=int, default=4, help="Number of threads per worker"
+        )
+        parser.add_argument(
+            "-d", "--data", type=Path, required=True, help="Path to XML directory"
+        )
+        parser.add_argument(
+            "-p",
+            "--projectpath",
+            type=Path,
+            required=True,
+            help="Path to project directory",
+        )
+        parser.add_argument("--mpi", action="store_true", help="Enable MPI support")
+        parser.add_argument(
+            "-l",
+            "--loglevel",
+            type=str,
+            choices=["INFO", "DEBUG", "WARNING"],
+            default="INFO",
+            help="Set the loglevel.",
+        )
+        args = parser.parse_args()
+
+        if args.mpi:
+            from dask_mpi import initialize
+
+            initialize(nthreads=args.threads)
+            client = Client()
+        else:
+            cluster = LocalCluster(
+                n_workers=args.workers,
+                threads_per_worker=args.threads,
+            )
+            client = Client(cluster)
+
+        p = Project(
+            args.projectpath,
+            client=client,
+            loglevel="INFO",
+        )
+        return p, args.data
+
+    def recreate_client(self):
+        self.client = Client(self.cluster)
 
     def set_loglevel(self, loglevel: Optional[str]):
         if loglevel:
@@ -322,7 +386,7 @@ class Project:
         orgs = self.get_organelles(ids=ids)
 
         self.logger.info(
-            f"Starting Skeleton wavefront generation for {len(orgs)} organelles. "
+            f"Starting Skeleton vertex cluster generation for {len(orgs)} organelles. "
         )
 
         org_per_source: dict[DataSource, list[Organelle]] = defaultdict(list)

@@ -24,5 +24,6 @@ cd /home/hd/hd_hd/hd_vw182/workspaces/gpfs/hd_vw182-vem || exit
 mpirun -np "$SLURM_NTASKS" \
   python PATH_TO_YOUR_PYTHON_RUN_FILE.py \
   --mpi --threads "$SLURM_CPUS_PER_TASK" \
+  -- workers "$SLURM_NTASKS" \
   --data PATH_TO_DIR_CONTAINING_XMLs \
   --projectpath PATH_TO_PROJECT_DIR

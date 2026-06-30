@@ -415,3 +415,64 @@ def test_blacklist_by_volume_clear(project_with_sources):
 
     p.clear_blacklist()
     assert len(p.organelles) == 19
+
+
+def test_project_from_args(mocker, tmp_path):
+    """Test creating a project from command line arguments."""
+    test_args = mocker.Mock()
+    test_args.workers = 4
+    test_args.threads = 2
+    test_args.data = tmp_path / "test_data"
+    test_args.projectpath = tmp_path / "test_project"
+    test_args.mpi = False
+    test_args.loglevel = "INFO"
+
+    mocker.patch("argparse.ArgumentParser.parse_args", return_value=test_args)
+
+    mock_cluster = mocker.Mock()
+    mock_client = mocker.Mock()
+    mock_local_cluster = mocker.patch(
+        "organelle_morphology.project.LocalCluster", return_value=mock_cluster
+    )
+    mock_client_constructor = mocker.patch(
+        "organelle_morphology.project.Client", return_value=mock_client
+    )
+    mocker.patch("organelle_morphology.project.Project.__init__", return_value=None)
+
+    project, data_path = Project.from_args()
+
+    assert project is not None
+    assert data_path == tmp_path / "test_data"
+
+    mock_local_cluster.assert_called_once_with(n_workers=4, threads_per_worker=2)
+    mock_client_constructor.assert_called_once_with(mock_cluster)
+
+
+def test_project_from_args_mpi(mocker, tmp_path):
+    """Test creating a project from command line arguments with MPI support."""
+    test_args = mocker.Mock()
+    test_args.workers = 4
+    test_args.threads = 2
+    test_args.data = tmp_path / "test_data"
+    test_args.projectpath = tmp_path / "test_project"
+    test_args.mpi = True
+    test_args.loglevel = "INFO"
+
+    mocker.patch("argparse.ArgumentParser.parse_args", return_value=test_args)
+
+    mock_initialize = mocker.patch("dask_mpi.initialize")
+
+    mock_client = mocker.Mock()
+    mock_client_constructor = mocker.patch(
+        "organelle_morphology.project.Client", return_value=mock_client
+    )
+
+    mocker.patch("organelle_morphology.project.Project.__init__", return_value=None)
+
+    project, data_path = Project.from_args()
+
+    assert project is not None
+    assert data_path == tmp_path / "test_data"
+
+    mock_initialize.assert_called_once_with(nthreads=2)
+    mock_client_constructor.assert_called_once_with()
