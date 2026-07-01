@@ -35,7 +35,7 @@ jobs:
           fetch-depth: 0
 
       - name: Add conda instance
-        uses: conda-incubator/setup-miniconda@v4.0.0
+        uses: conda-incubator/setup-miniconda@v4.0.1
         with:
           miniforge-version: latest
           mamba-version: "*"
