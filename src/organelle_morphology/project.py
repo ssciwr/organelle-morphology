@@ -29,6 +29,7 @@ from organelle_morphology.util import (
     export_delayed_trimesh,
     merge_mesh_dict_values,
     merge_meshes,
+    reset_color_delayed,
     setup_logging,
     show,
 )
@@ -497,8 +498,8 @@ class Project:
                 if org.id in mcs_orgs:
                     meshes.append(org.get_mesh_mcs_colored(mcs_label))
                 else:
-                    non_mcs_meshes.append(org.mesh)
-            meshes.append(merge_meshes(non_mcs_meshes, color=-1, transp=transp))
+                    non_mcs_meshes.append(reset_color_delayed(org.mesh))
+            meshes.append(merge_meshes(non_mcs_meshes, color=0, transp=transp))
             mmesh = merge_meshes(meshes, color=0, transp=transp)
             to_show = [mmesh.compute()]
 
