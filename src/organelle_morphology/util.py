@@ -284,22 +284,34 @@ def simplify_mesh(mesh, factor=0.1, aggression: Optional[float] = None):
         aggression = 1
         tune_agg = True
 
-    n_orig_v = mesh.vertices.shape[0]
+    orig_n_verts = mesh.vertices.shape[0]
+    orig_vol = mesh.volume
 
     for _ in range(10):
         try:
             new_mesh = mesh.simplify_quadric_decimation(factor, aggression=aggression)
-            if new_mesh.vertices.shape[0] > n_orig_v * (1 - (factor - 0.1)):
+
+            if orig_vol and (
+                (new_mesh.volume > (orig_vol * 1.1))
+                or (new_mesh.volume < (orig_vol * 0.9))
+            ):
+                # too much volume change
+                factor = factor * 0.8
+
+            elif len(new_mesh.vertices) <= 4:
+                # too simplified
+                factor = factor * 0.8
+
+            elif new_mesh.vertices.shape[0] > (orig_n_verts * (1 - (factor - 0.1))):
                 # not simplified enough
                 if tune_agg:
                     aggression += 1
-            elif len(new_mesh.vertices) > 4:
+
+            else:
                 # success
                 mesh = new_mesh
                 break
-            else:
-                # too simplified
-                factor = factor * 0.8
+
         except IndexError:
             factor = factor * 0.8
 
