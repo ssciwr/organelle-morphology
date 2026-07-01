@@ -903,7 +903,7 @@ class DataSource:
             """
             done = False
             counter = 0
-            while not done or counter >= 10:
+            while not (done or counter >= 10):
                 try:
                     new_mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
                     if len(new_mesh.vertices) > 4:
