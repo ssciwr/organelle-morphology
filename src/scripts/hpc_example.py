@@ -1,3 +1,4 @@
+from organelle_morphology.curvature_analysis import CurvatureAnalysis
 from organelle_morphology.project import Project
 from organelle_morphology.position import Position_Analysis
 from organelle_morphology.profile_calculations import ProfileCalculator
@@ -85,7 +86,16 @@ def main():
     prof_analysis.calculate_random_profiles(ids="mito_0007", num_planes=20, seed=42)
     # slices perpendicular to the skeleton
     prof_analysis.calculate_skeleton_profiles(ids="mito_0007")
+    
+    prof_analysis.save_records()
 
+    # ######################################
+    # Curvature Analysis
+    # ######################################
+    curv_analysis = CurvatureAnalysis(p)
+    curv_analysis.calculate_curvature_stats(ids="*")
+    curv_analysis.save_records()
+    
 
     # ######################################
     # Misc snippets, can be used anywhere
@@ -93,6 +103,7 @@ def main():
     p.clear_caches(clear_disk=True)
     p.clipping = ((0.6, 0.5, 0.5), (1, 1, 1))
     p.compression_level = "s2"
+    p.registry.save_all_to_yaml() # saves *all* analysis records
 
     p.logger.info("Finished Calculations!")
 
