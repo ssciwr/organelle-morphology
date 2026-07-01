@@ -66,8 +66,8 @@ class MeshData(PropertyBlock):
     centroid: tuple[float]
     inertia: tuple[float]
     water_tight: bool
-    sphericity: float
-    flatness_ratio: float
+    sphericity: Optional[float]
+    flatness_ratio: Optional[float]
 
 
 @dataclass
@@ -422,15 +422,20 @@ def get_mesh_properties_delayed(mesh: Trimesh) -> MeshData:
         dict: Dictionary containing mesh properties that can be used to
             construct a mesh_properties dataclass
     """
+    sph = None
+    flat_ratio = None
+    if mesh.vertices.shape[0] > 4:
+        sph = ((36 * np.pi * mesh.volume**2) ** (1 / 3) / mesh.area).item()
+        flat_ratio = (
+            min(mesh.bounding_box_oriented.extents)
+            / max(mesh.bounding_box_oriented.extents)
+        ).item()
     return MeshData(
         volume=(mesh.volume).item(),
         area=(mesh.area).item(),
         centroid=tuple((mesh.centroid).tolist()),
         inertia=tuple((mesh.moment_inertia).tolist()),
         water_tight=mesh.is_watertight,
-        sphericity=((36 * np.pi * mesh.volume**2) ** (1 / 3) / mesh.area).item(),
-        flatness_ratio=(
-            min(mesh.bounding_box_oriented.extents)
-            / max(mesh.bounding_box_oriented.extents)
-        ).item(),
+        sphericity=sph,
+        flatness_ratio=flat_ratio,
     )
