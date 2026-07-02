@@ -1,39 +1,36 @@
-from collections import defaultdict
+import fnmatch
 import logging
-from typing import Literal, Optional
+import xml.etree.ElementTree as ET
+from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal, Optional
+
+import dask.array as da
+import numpy as np
+import skeletor as sk
+import z5py
+from dask.array.core import Array
+from dask.base import compute, persist
+from dask.delayed import Delayed, delayed
+from skimage.measure import regionprops
 
 import organelle_morphology
+from organelle_morphology.block_mesher import block_mesher
 from organelle_morphology.organelle import (
     Organelle,
     get_mesh_properties_delayed,
     organelle_registry,
 )
-
-from dask.base import compute, persist
-import dask.array as da
-from dask.array.core import Array
-from dask.delayed import Delayed, delayed
-
-import skeletor as sk
-
-import fnmatch
-import numpy as np
-import xml.etree.ElementTree as ET
-from skimage.measure import regionprops
-from dataclasses import dataclass, field
-import z5py
-from organelle_morphology.block_mesher import block_mesher
-
-
 from organelle_morphology.records import PropertyBlock, Record
 from organelle_morphology.util import (
     Cache,
     color_delayed_trimesh_rgba,
     get_skeleton_info,
-    merge_meshes,
     measure_gaussian_curvature_delayed,
+    merge_meshes,
     sample_skeleton,
+    simplify_mesh,
 )
 
 
@@ -893,32 +890,8 @@ class DataSource:
         meshes_chunked: np.ndarray,
         simplify: Optional[float] = None,
     ) -> dict[int, Delayed]:
-        @delayed
-        def simplify_mesh(mesh, factor=0.1):
-            """Try to simplify a trimesh object.
 
-            Can fail due to unknown issue in trimesh for larger
-            simplification values. In case of failure, the original
-            mesh is returned.
-            """
-            done = False
-            counter = 0
-            while not (done or counter >= 10):
-                try:
-                    new_mesh = mesh.simplify_quadric_decimation(factor, aggression=0)
-                    if len(new_mesh.vertices) > 4:
-                        mesh = new_mesh
-                        done = True
-                    else:
-                        counter += 1
-                        factor = factor * 0.8
-                except IndexError:
-                    counter += 1
-                    factor = factor * 0.8
-            # if not done:
-            #     raise RuntimeError(f"Simplification failed after {counter} tries.")
-
-            return mesh
+        delayed_simplify_mesh = delayed(simplify_mesh)
 
         # get some statistics
         all_chunks = list(ids_to_chunks.values())
@@ -940,14 +913,14 @@ class DataSource:
             loc_meshes = [meshes_chunked[idx][ind] for idx in chunk_idxs]
             merged_mesh = merge_meshes(loc_meshes, color=0)
             if simplify:
-                merged_mesh = simplify_mesh(merged_mesh, simplify)
+                merged_mesh = delayed_simplify_mesh(merged_mesh, simplify)
             meshes[ind] = merged_mesh
 
         unique_ids = all_ids[np.nonzero(id_amounts == 1)]
         for ind in unique_ids:
             mesh = meshes_chunked[ids_to_chunks[ind][0]][ind]
             if simplify:
-                mesh = simplify_mesh(mesh, simplify)
+                mesh = delayed_simplify_mesh(mesh, simplify)
             meshes[ind] = mesh
 
         self._computed_compression = self.project.compression_level

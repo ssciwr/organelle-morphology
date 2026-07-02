@@ -265,6 +265,59 @@ def merge_mesh_dict_values(d: dict):
     return tmesh
 
 
+def simplify_mesh(mesh, factor=0.1, aggression: Optional[float] = None):
+    """Try to simplify a trimesh object.
+
+    Can fail due to unknown issue in trimesh for larger
+    simplification values. In case of failure, or if the mesh is too small
+    the original mesh is returned.
+
+    The aggression value is scale sensitive and badly defined.
+    It gets automatically raised if the mesh does not get simplified.
+    """
+    # don't bother with small meshes:
+    if mesh.vertices.shape[0] < 20:
+        return mesh
+
+    tune_agg = False
+    if aggression is None:
+        aggression = 1
+        tune_agg = True
+
+    orig_n_verts = mesh.vertices.shape[0]
+    orig_vol = mesh.volume
+
+    for _ in range(10):
+        try:
+            new_mesh = mesh.simplify_quadric_decimation(factor, aggression=aggression)
+
+            if orig_vol and (
+                (new_mesh.volume > (orig_vol * 1.1))
+                or (new_mesh.volume < (orig_vol * 0.9))
+            ):
+                # too much volume change
+                factor = factor * 0.8
+
+            elif len(new_mesh.vertices) <= 4:
+                # too simplified
+                factor = factor * 0.8
+
+            elif new_mesh.vertices.shape[0] > (orig_n_verts * (1 - (factor - 0.1))):
+                # not simplified enough
+                if tune_agg:
+                    aggression += 1
+
+            else:
+                # success
+                mesh = new_mesh
+                break
+
+        except IndexError:
+            factor = factor * 0.8
+
+    return mesh
+
+
 def get_neighboring_chunks(index: tuple[int, ...], shape: tuple[int, ...]):
     """Get all indeces of a give index within a defined matrix.
 

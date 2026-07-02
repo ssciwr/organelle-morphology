@@ -300,7 +300,7 @@ def _(change_settings_button, project, sources):
     mcs_filter_1_ui = mo.ui.text(value="*", label="Filter 1")
     mcs_filter_2_ui = mo.ui.text(value="*", label="Filter 2")
 
-    color_volume_ui = mo.ui.number(label="Min volume", value=0.0, step=0.0001, start=0)
+    color_volume_ui = mo.ui.number(label="Min volume", value=0.0, step=0.00001, start=0)
 
     rad = sources[0].curvature_radius
 

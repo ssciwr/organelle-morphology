@@ -1,7 +1,9 @@
+import trimesh
 from organelle_morphology.util import (
     block_to_coords,
     get_neighboring_chunks,
     measure_gaussian_curvature_delayed,
+    simplify_mesh,
 )
 import numpy as np
 import dask.array as da
@@ -108,3 +110,40 @@ def test_block_to_coords():
         assert lc[1] >= 20
         assert lc[2] >= 30
         last_corner = lc
+
+
+def test_simplify_mesh_cylider():
+    mesh = trimesh.creation.cylinder(radius=2, height=5)
+    assert mesh.vertices.shape == (66, 3)
+
+    simplified = simplify_mesh(mesh, factor=0.1)
+    assert simplified.vertices.shape == (64, 3)
+
+    simplified = simplify_mesh(mesh, factor=0.5)
+    assert simplified.vertices.shape == (34, 3)
+
+    simplified = simplify_mesh(mesh, factor=0.8)
+    assert simplified.vertices.shape == (14, 3)
+
+
+def test_simplify_mesh_small_cylider():
+    # small mesh does not get simplified
+    mesh = trimesh.creation.cylinder(radius=2, height=5, sections=3)
+    assert mesh.vertices.shape == (8, 3)
+    assert simplify_mesh(mesh, factor=0.5) == mesh
+
+
+def test_simplify_mesh_icosphere_aggression(mocker):
+    mesh = trimesh.creation.icosphere(subdivisions=1, radius=2)
+    spy = mocker.spy(mesh, "simplify_quadric_decimation")
+    assert mesh.vertices.shape == (42, 3)
+
+    simplified = simplify_mesh(mesh, factor=0.5, aggression=1)
+    assert simplified.vertices.shape == (42, 3)
+    assert spy.call_count == 10
+    simplified = simplify_mesh(mesh, factor=0.5, aggression=7)
+    assert simplified.vertices.shape == (22, 3)
+    assert spy.call_count == 11
+    simplified = simplify_mesh(mesh, factor=0.5, aggression=None)
+    assert simplified.vertices.shape == (22, 3)
+    assert spy.call_count == 16
