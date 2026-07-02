@@ -198,6 +198,7 @@ class Organelle:
         """Get mcs colored delayed meshes"""
         cm = plt.get_cmap("tab20")
         colored = self.mesh
+        colored = reset_color_delayed(colored)
         if mcs_label is None:
             labels = list(self.source.project.mcs_labels)
             if len(labels) == 0:
@@ -206,7 +207,6 @@ class Organelle:
             mcs_label = labels[0]
 
         if mcs_partners_dict := self.mcs.get(mcs_label):
-            colored = reset_color_delayed(colored)
             for i, mcs_dict in enumerate(mcs_partners_dict.values()):
                 j = i % 20
                 colored = color_delayed_trimesh_vertices(
