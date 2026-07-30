@@ -127,3 +127,36 @@ class TestMcsAnalysisFiltering:
         analysis_with_multiple_mcs.set_filters(mcs_labels=["nonexistent_label"])
         with pytest.raises(RuntimeError, match="No matching mcs labels found"):
             analysis_with_multiple_mcs.get_mcs_properties()
+
+    def test_deduplication(self, analysis_with_multiple_mcs):
+        """Test that deduplication hides the Label 2 perspective when filters differ."""
+        df_base = analysis_with_multiple_mcs.get_mcs_properties()
+        orgs = df_base.index.get_level_values("organelle").unique().tolist()
+
+        if len(orgs) < 2:
+            pytest.skip("Not enough organelles in test data to test deduplication")
+
+        f1 = orgs[0]
+        f2 = orgs[1]
+
+        df_dedup = analysis_with_multiple_mcs.get_mcs_properties(
+            filter1=f1, filter2=f2, deduplicate=True
+        )
+        dedup_orgs = df_dedup.index.get_level_values("organelle").tolist()
+
+        assert f2 not in dedup_orgs, "Organelle matching Filter 2 was not dropped."
+        assert f1 in dedup_orgs, "Organelle matching Filter 1 was incorrectly dropped."
+
+        overview_base = analysis_with_multiple_mcs.get_mcs_overview(
+            filter1=f1, filter2=f2, deduplicate=False
+        )
+        overview_dedup = analysis_with_multiple_mcs.get_mcs_overview(
+            filter1=f1, filter2=f2, deduplicate=True
+        )
+
+        base_contacts = overview_base.loc[("overall", "total_contacts")].sum()
+        dedup_contacts = overview_dedup.loc[("overall", "total_contacts")].sum()
+
+        assert dedup_contacts <= base_contacts, (
+            "Deduplicated contacts exceed raw contacts."
+        )

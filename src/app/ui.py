@@ -569,7 +569,7 @@ def _(record_counts):
 
 
 @app.cell
-def _(record_counts, skel_analysis, project):
+def _(project, record_counts, skel_analysis):
     mo.stop(len(record_counts) < 1, "Skeleton Statistics")
     _df = skel_analysis.get_dataframe()
     _unit = list(project.sources.values())[0].metadata.unit
@@ -577,7 +577,7 @@ def _(record_counts, skel_analysis, project):
         columns={
             "total_length": f"total_length [{_unit}]",
             "mean_radius": f"mean_radius [{_unit}]",
-            "mean_length": f"mean_mean length [{_unit}]",
+            "mean_length": f"mean_length [{_unit}]",
             "longest_path": f"longest_path [{_unit}]",
         }
     )
@@ -781,6 +781,10 @@ def mcs_calc_ui_cell(change_settings_button, project, sources):
     mcs_min_dist_ui = mo.ui.number(value=0.0, label="Min distance threshold")
     mcs_filter1_ui = mo.ui.text(label="Labels 1", value="*")
     mcs_filter2_ui = mo.ui.text(label="Labels 2", value="*")
+    mcs_deduplicate_ui = mo.ui.checkbox(
+        value=True,
+        label="Deduplicate (Hide B->A if A->B exists)",
+    )
     mcs_overwrite_ui = mo.ui.checkbox(
         value=False, label="Overwrite existing mcs results"
     )
@@ -792,10 +796,12 @@ def mcs_calc_ui_cell(change_settings_button, project, sources):
             mcs_min_dist_ui,
             mcs_filter1_ui,
             mcs_filter2_ui,
+            mcs_deduplicate_ui,
             mcs_overwrite_ui,
         ]
     )
     return (
+        mcs_deduplicate_ui,
         mcs_filter1_ui,
         mcs_filter2_ui,
         mcs_max_dist_ui,
@@ -867,14 +873,25 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
 
 
 @app.cell
-def mcs_analysis_overview(mcs_analysis, project, record_counts):
+def mcs_analysis_overview(
+    mcs_analysis,
+    mcs_deduplicate_ui,
+    mcs_filter1_ui,
+    mcs_filter2_ui,
+    project,
+    record_counts,
+):
     mo.stop(
         not project.registry.get_by_type("McsData"),
         mo.md("No MCS calculations run yet"),
     )
     record_counts
     mo.ui.table(
-        mcs_analysis.get_mcs_overview().reset_index(),
+        mcs_analysis.get_mcs_overview(
+            filter1=mcs_filter1_ui.value,
+            filter2=mcs_filter2_ui.value,
+            deduplicate=mcs_deduplicate_ui.value,
+        ).reset_index(),
         page_size=14,
         selection=None,
         show_column_summaries=False,
@@ -883,13 +900,25 @@ def mcs_analysis_overview(mcs_analysis, project, record_counts):
 
 
 @app.cell
-def mcs_analysis_properties(mcs_analysis, project, record_counts):
+def mcs_analysis_properties(
+    mcs_analysis,
+    mcs_deduplicate_ui,
+    mcs_filter1_ui,
+    mcs_filter2_ui,
+    project,
+    record_counts,
+):
     mo.stop(
         not project.registry.get_by_type("McsData"),
         mo.md("No MCS calculations run yet"),
     )
     record_counts
-    mo.ui.table(mcs_analysis.get_mcs_properties(), selection=None, page_size=15)
+    mcs_analysis_properties_df = mcs_analysis.get_mcs_properties(
+        filter1=mcs_filter1_ui.value,
+        filter2=mcs_filter2_ui.value,
+        deduplicate=mcs_deduplicate_ui.value,
+    )
+    mo.ui.table(mcs_analysis_properties_df, selection=None, page_size=15)
     return
 
 
@@ -1065,6 +1094,7 @@ def prop_selector_cell(project, sources):
         stats.get_mesh_properties()
         + stats.get_skeleton_properties()
         + stats.get_geometry_properties()
+        + stats.get_contact_properties()
     )
 
     # Convert the list of available_properties keys into a dictionary of checkboxes

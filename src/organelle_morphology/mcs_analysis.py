@@ -3,6 +3,7 @@ import numpy as np
 from organelle_morphology.analysis import Analysis
 from organelle_morphology.organelle import McsData
 from typing import Optional
+import fnmatch
 
 
 class Mcs_Analysis(Analysis):
@@ -28,7 +29,9 @@ class Mcs_Analysis(Analysis):
     def mcs_labels(self) -> list:
         return list({s.meta.mcs_label for s in self.own_records})
 
-    def get_mcs_properties(self) -> pd.DataFrame:
+    def get_mcs_properties(
+        self, filter1: str = "*", filter2: str = "*", deduplicate: bool = False
+    ) -> pd.DataFrame:
         """The properties of the MCS between organelles
         Gathers data from all the organelles into one dataframe.
 
@@ -43,6 +46,12 @@ class Mcs_Analysis(Analysis):
         mcs_properties = {}
 
         for stat in self.own_records:
+            org_id = stat.meta.organelle_id
+            if deduplicate and filter1 != filter2:
+                matches_f1 = fnmatch.fnmatch(org_id, filter1)
+                matches_f2 = fnmatch.fnmatch(org_id, filter2)
+                if matches_f2 and not matches_f1:
+                    continue
             for label in self.mcs_labels:
                 if self.mcs_label_filter and (label not in self.mcs_label_filter):
                     continue
@@ -62,7 +71,9 @@ class Mcs_Analysis(Analysis):
 
         return mcs_df
 
-    def get_mcs_overview(self):
+    def get_mcs_overview(
+        self, filter1: str = "*", filter2: str = "*", deduplicate: bool = False
+    ):
         def _weighted_stats(x):
             # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
             mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
@@ -131,8 +142,9 @@ class Mcs_Analysis(Analysis):
                 index=new_index,
             )
 
-        mcs_df = self.get_mcs_properties()
-
+        mcs_df = self.get_mcs_properties(
+            filter1=filter1, filter2=filter2, deduplicate=deduplicate
+        )
         overview = mcs_df.groupby(level=0).apply(_weighted_stats)
         overview.sort_index(axis=1, inplace=True)
         return overview.T

@@ -228,6 +228,8 @@ class Misc_Analysis(Analysis):
 
         res = {}
         for stat in self.own_records:
+            if not hasattr(stat.meta, "mcs_label"):
+                continue
             if stat.meta.organelle_id == organelle.id:
                 mcs_label = stat.meta.mcs_label
                 # For each requested base property (e.g., "n_contacts")

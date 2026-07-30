@@ -222,7 +222,7 @@ class DataSource:
             resolution = list((float(i) for i in _resolution_str.split(" ")))
 
             if resolution[0] == resolution[1] == resolution[2]:
-                _unit = f"{resolution[0]} {_raw_unit.replace('micrometer', 'µm')}"
+                _unit = _raw_unit.replace("micrometer", "µm")
             else:
                 _unit = "anisotropic voxel"
 
@@ -1248,7 +1248,7 @@ class DataSource:
             organelles_labeled[label].sampled_skeleton = sampled_skeleton
 
             meta = SkeletonMetaData(
-                organelle_id=label,
+                organelle_id=organelles_labeled[label].id,
                 method=skeletonization_type,
                 theta=theta,
                 path_sample_dist=path_sample_dist,
