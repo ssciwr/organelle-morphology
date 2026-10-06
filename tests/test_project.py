@@ -409,6 +409,11 @@ def test_blacklist_by_volume_clear(project_with_sources):
     p = project_with_sources
     assert len(p.organelles) == 19
 
+    # Assign mock volumes (all test volumes are NaN)
+    for o in p.organelles:
+        vol = 500.0 if o.id in ["mito_0003", "mito_0002"] else 1000.0
+        object.__setattr__(o.mesh_properties, "volume", vol)
+
     p.blacklist_by_volume(900)
     assert len(p.organelles) == 17
     assert all([o in ["mito_0003", "mito_0002"] for o in p.permanent_blacklist])
