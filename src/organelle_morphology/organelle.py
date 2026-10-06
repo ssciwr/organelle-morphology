@@ -291,7 +291,6 @@ class Organelle:
                 f"Missing volume/surface in Organelle {self}. "
                 f"Volume: {volume}, Surface {surface}"
             )
-            return
 
         len_dist_list = []
         mean_dist_list = []
@@ -431,7 +430,7 @@ def get_mesh_properties_delayed(mesh: Trimesh) -> MeshData:
             / max(mesh.bounding_box_oriented.extents)
         ).item()
     return MeshData(
-        volume=(mesh.volume).item(),
+        volume=abs((mesh.volume).item()) if mesh.is_watertight else np.nan,
         area=(mesh.area).item(),
         centroid=tuple((mesh.centroid).tolist()),
         inertia=tuple((mesh.moment_inertia).tolist()),
