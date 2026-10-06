@@ -116,6 +116,11 @@ def test_statistics_integration(project_with_sources):
             # generic property (e.g., "n_contacts") to dynamic column (e.g., "0-0.01-n_contacts")
             dynamic_cols = [col for col in stats_df.columns if prop in col]
             assert len(dynamic_cols) > 0, f"Column for {prop} was not generated."
+
+            # Volume-dependent contact metrics will be NaN if the contacting meshes are open
+            if "volume" in prop:
+                continue
+
             assert stats_df[dynamic_cols[0]].notna().any(), (
                 f"Data for {prop} is entirely NaN."
             )
@@ -123,4 +128,22 @@ def test_statistics_integration(project_with_sources):
             assert prop in stats_df.columns, (
                 f"Static property {prop} is missing from DataFrame."
             )
-            assert stats_df[prop].notna().all(), f"Some data for {prop} is NaN."
+
+            # The mesh volume will legitimately be NaN for open meshes.
+            if prop == "volume":
+                # Strictly enforce the relationship between water_tight and NaN
+                if "water_tight" in stats_df.columns:
+                    watertight_mask = stats_df["water_tight"].eq(True)
+                    open_mask = stats_df["water_tight"].eq(False)
+
+                    if watertight_mask.any():
+                        assert stats_df.loc[watertight_mask, prop].notna().all(), (
+                            f"{prop} is NaN even for completely watertight meshes."
+                        )
+
+                    if open_mask.any():
+                        assert stats_df.loc[open_mask, prop].isna().all(), (
+                            f"{prop} is not NaN for open meshes."
+                        )
+            else:
+                assert stats_df[prop].notna().all(), f"Some data for {prop} is NaN."
