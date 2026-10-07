@@ -468,6 +468,7 @@ def generate_distance_matrix(
                             max_dist=max_dist,
                             start_corner=lower_corner,
                             meshes=local_meshes,
+                            client=project.client,
                         )
                         for local_mask in local_masks:
                             global_mask = np.zeros_like(meshes, dtype=bool)
