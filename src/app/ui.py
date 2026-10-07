@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.13"
+__generated_with = "0.23.9"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -781,10 +781,6 @@ def mcs_calc_ui_cell(change_settings_button, project, sources):
     mcs_min_dist_ui = mo.ui.number(value=0.0, label="Min distance threshold")
     mcs_filter1_ui = mo.ui.text(label="Labels 1", value="*")
     mcs_filter2_ui = mo.ui.text(label="Labels 2", value="*")
-    mcs_deduplicate_ui = mo.ui.checkbox(
-        value=True,
-        label="Deduplicate (Hide B->A if A->B exists)",
-    )
     mcs_overwrite_ui = mo.ui.checkbox(
         value=False, label="Overwrite existing mcs results"
     )
@@ -796,12 +792,10 @@ def mcs_calc_ui_cell(change_settings_button, project, sources):
             mcs_min_dist_ui,
             mcs_filter1_ui,
             mcs_filter2_ui,
-            mcs_deduplicate_ui,
             mcs_overwrite_ui,
         ]
     )
     return (
-        mcs_deduplicate_ui,
         mcs_filter1_ui,
         mcs_filter2_ui,
         mcs_max_dist_ui,
@@ -875,7 +869,6 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
 @app.cell
 def mcs_analysis_overview(
     mcs_analysis,
-    mcs_deduplicate_ui,
     mcs_filter1_ui,
     mcs_filter2_ui,
     project,
@@ -890,9 +883,8 @@ def mcs_analysis_overview(
         mcs_analysis.get_mcs_overview(
             filter1=mcs_filter1_ui.value,
             filter2=mcs_filter2_ui.value,
-            deduplicate=mcs_deduplicate_ui.value,
         ).reset_index(),
-        page_size=14,
+        page_size=15,
         selection=None,
         show_column_summaries=False,
     )
@@ -902,7 +894,6 @@ def mcs_analysis_overview(
 @app.cell
 def mcs_analysis_properties(
     mcs_analysis,
-    mcs_deduplicate_ui,
     mcs_filter1_ui,
     mcs_filter2_ui,
     project,
@@ -916,7 +907,6 @@ def mcs_analysis_properties(
     mcs_analysis_properties_df = mcs_analysis.get_mcs_properties(
         filter1=mcs_filter1_ui.value,
         filter2=mcs_filter2_ui.value,
-        deduplicate=mcs_deduplicate_ui.value,
     )
     mo.ui.table(mcs_analysis_properties_df, selection=None, page_size=15)
     return
