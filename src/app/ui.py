@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.13"
+__generated_with = "0.23.9"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -472,32 +472,53 @@ def show_mesh(
 @app.cell
 def set_volume_cutoff(project):
     volume_cutoff_ui = mo.ui.number(label="Minimum volume [$um^3$]", value=0.0, start=0)
-    volume_to_bl_button = mo.ui.run_button(label="Add to blacklist")
+    blacklist_id_ui = mo.ui.text(label="Exclude by ids", value="")
+    volume_to_bl_button = mo.ui.run_button(label="Exclude by volume")
+    blacklist_id_button = mo.ui.run_button(label="Exclude by ID")
     volume_clear_blacklist_button = mo.ui.button(
-        label="Clear blacklist", on_click=lambda _: project.clear_blacklist()
+        label="Clear blacklist",
+        on_click=lambda _: project.clear_blacklist(),
+        kind="warn",
     )
     mo.md(
-        f"<h2>Set minimum Volume</h2>{volume_cutoff_ui}<br>"
-        f"{volume_to_bl_button} {volume_clear_blacklist_button}"
+        f"<h2>Exclude Organelles</h2>{volume_cutoff_ui}<br>"
+        f"{blacklist_id_ui}<br>"
+        f"{volume_to_bl_button} {blacklist_id_button}<br>"
+        f"{volume_clear_blacklist_button}"
     )
-    return volume_clear_blacklist_button, volume_cutoff_ui, volume_to_bl_button
+    return (
+        blacklist_id_button,
+        blacklist_id_ui,
+        volume_clear_blacklist_button,
+        volume_cutoff_ui,
+        volume_to_bl_button,
+    )
 
 
 @app.cell
-def calc_blacklist(project, volume_cutoff_ui, volume_to_bl_button):
-    mo.stop(not volume_to_bl_button.value, "Add some organelles to the blacklist")
+def calc_blacklist_vol(project, volume_cutoff_ui, volume_to_bl_button):
+    mo.stop(not volume_to_bl_button.value, "Blacklist by volume backend")
     project.blacklist_by_volume(volume_cutoff_ui.value)
     return
 
 
 @app.cell
+def calc_blacklist_id(blacklist_id_button, blacklist_id_ui, project):
+    mo.stop(not blacklist_id_button.value, "Blacklist by id backend")
+    project.blacklist_by_id(blacklist_id_ui.value)
+    return
+
+
+@app.cell
 def show_blacklist(
+    blacklist_id_button,
     project,
     volume_clear_blacklist_button,
     volume_to_bl_button,
 ):
     volume_to_bl_button
     volume_clear_blacklist_button
+    blacklist_id_button
 
     mo.md(
         "<h2>Blacklisted Organelles</h2>"
@@ -559,12 +580,6 @@ def skeleton_progress(project, run_skeleton_button, skel_form):
         elif form["method"] == "vertex cluster":
             settings.pop("waves")
             project.skeletonize_vertex_clusters(**settings)
-    return
-
-
-@app.cell
-def _(record_counts):
-    record_counts
     return
 
 
@@ -781,10 +796,6 @@ def mcs_calc_ui_cell(change_settings_button, project, sources):
     mcs_min_dist_ui = mo.ui.number(value=0.0, label="Min distance threshold")
     mcs_filter1_ui = mo.ui.text(label="Labels 1", value="*")
     mcs_filter2_ui = mo.ui.text(label="Labels 2", value="*")
-    mcs_deduplicate_ui = mo.ui.checkbox(
-        value=True,
-        label="Deduplicate (Hide B->A if A->B exists)",
-    )
     mcs_overwrite_ui = mo.ui.checkbox(
         value=False, label="Overwrite existing mcs results"
     )
@@ -796,12 +807,10 @@ def mcs_calc_ui_cell(change_settings_button, project, sources):
             mcs_min_dist_ui,
             mcs_filter1_ui,
             mcs_filter2_ui,
-            mcs_deduplicate_ui,
             mcs_overwrite_ui,
         ]
     )
     return (
-        mcs_deduplicate_ui,
         mcs_filter1_ui,
         mcs_filter2_ui,
         mcs_max_dist_ui,
@@ -875,7 +884,6 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
 @app.cell
 def mcs_analysis_overview(
     mcs_analysis,
-    mcs_deduplicate_ui,
     mcs_filter1_ui,
     mcs_filter2_ui,
     project,
@@ -890,9 +898,8 @@ def mcs_analysis_overview(
         mcs_analysis.get_mcs_overview(
             filter1=mcs_filter1_ui.value,
             filter2=mcs_filter2_ui.value,
-            deduplicate=mcs_deduplicate_ui.value,
         ).reset_index(),
-        page_size=14,
+        page_size=15,
         selection=None,
         show_column_summaries=False,
     )
@@ -902,7 +909,6 @@ def mcs_analysis_overview(
 @app.cell
 def mcs_analysis_properties(
     mcs_analysis,
-    mcs_deduplicate_ui,
     mcs_filter1_ui,
     mcs_filter2_ui,
     project,
@@ -916,7 +922,6 @@ def mcs_analysis_properties(
     mcs_analysis_properties_df = mcs_analysis.get_mcs_properties(
         filter1=mcs_filter1_ui.value,
         filter2=mcs_filter2_ui.value,
-        deduplicate=mcs_deduplicate_ui.value,
     )
     mo.ui.table(mcs_analysis_properties_df, selection=None, page_size=15)
     return

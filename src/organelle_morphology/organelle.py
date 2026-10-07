@@ -286,7 +286,7 @@ class Organelle:
         volume = self.mesh_properties.volume
         surface = self.mesh_properties.area
 
-        if not ((volume > 0) or not surface > 0):
+        if (volume <= 0) or (surface <= 0):
             self.logger.debug(
                 f"Missing volume/surface in Organelle {self}. "
                 f"Volume: {volume}, Surface {surface}"
@@ -354,11 +354,19 @@ class Organelle:
         mcs_dict["min_dist_per_org"] = min_dist_list
         mcs_dict["max_dist_per_org"] = max_dist_list
 
-        mcs_dict["n_contacts_per_area"] = mcs_dict["n_contacts"] / surface
-        mcs_dict["n_contacts_per_volume"] = mcs_dict["n_contacts"] / volume
+        if surface > 0:
+            mcs_dict["n_contacts_per_area"] = mcs_dict["n_contacts"] / surface
+            mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
+        else:
+            mcs_dict["n_contacts_per_area"] = np.nan
+            mcs_dict["area_per_area"] = np.nan
 
-        mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
-        mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
+        if volume > 0:
+            mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
+            mcs_dict["n_contacts_per_volume"] = mcs_dict["n_contacts"] / volume
+        else:
+            mcs_dict["area_per_volume"] = np.nan
+            mcs_dict["n_contacts_per_volume"] = np.nan
 
         mcs_props = McsData(**numpy_to_python(mcs_dict))
         mcs_meta = McsMetadata(
