@@ -541,7 +541,7 @@ class DataSource:
 
     @property
     def chunks_to_ids(self):
-        if "chunks_to_ids " not in self.cache:
+        if "chunks_to_ids" not in self.cache:
             chunks_to_ids = defaultdict(list)
             for id_, chunks in self.ids_to_chunks.items():
                 for chunk in chunks:
