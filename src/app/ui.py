@@ -472,32 +472,53 @@ def show_mesh(
 @app.cell
 def set_volume_cutoff(project):
     volume_cutoff_ui = mo.ui.number(label="Minimum volume [$um^3$]", value=0.0, start=0)
-    volume_to_bl_button = mo.ui.run_button(label="Add to blacklist")
+    blacklist_id_ui = mo.ui.text(label="Exclude by ids", value="")
+    volume_to_bl_button = mo.ui.run_button(label="Exclude by volume")
+    blacklist_id_button = mo.ui.run_button(label="Exclude by ID")
     volume_clear_blacklist_button = mo.ui.button(
-        label="Clear blacklist", on_click=lambda _: project.clear_blacklist()
+        label="Clear blacklist",
+        on_click=lambda _: project.clear_blacklist(),
+        kind="warn",
     )
     mo.md(
-        f"<h2>Set minimum Volume</h2>{volume_cutoff_ui}<br>"
-        f"{volume_to_bl_button} {volume_clear_blacklist_button}"
+        f"<h2>Exclude Organelles</h2>{volume_cutoff_ui}<br>"
+        f"{blacklist_id_ui}<br>"
+        f"{volume_to_bl_button} {blacklist_id_button}<br>"
+        f"{volume_clear_blacklist_button}"
     )
-    return volume_clear_blacklist_button, volume_cutoff_ui, volume_to_bl_button
+    return (
+        blacklist_id_button,
+        blacklist_id_ui,
+        volume_clear_blacklist_button,
+        volume_cutoff_ui,
+        volume_to_bl_button,
+    )
 
 
 @app.cell
-def calc_blacklist(project, volume_cutoff_ui, volume_to_bl_button):
-    mo.stop(not volume_to_bl_button.value, "Add some organelles to the blacklist")
+def calc_blacklist_vol(project, volume_cutoff_ui, volume_to_bl_button):
+    mo.stop(not volume_to_bl_button.value, "Blacklist by volume backend")
     project.blacklist_by_volume(volume_cutoff_ui.value)
     return
 
 
 @app.cell
+def calc_blacklist_id(blacklist_id_button, blacklist_id_ui, project):
+    mo.stop(not blacklist_id_button.value, "Blacklist by id backend")
+    project.blacklist_by_id(blacklist_id_ui.value)
+    return
+
+
+@app.cell
 def show_blacklist(
+    blacklist_id_button,
     project,
     volume_clear_blacklist_button,
     volume_to_bl_button,
 ):
     volume_to_bl_button
     volume_clear_blacklist_button
+    blacklist_id_button
 
     mo.md(
         "<h2>Blacklisted Organelles</h2>"
@@ -559,12 +580,6 @@ def skeleton_progress(project, run_skeleton_button, skel_form):
         elif form["method"] == "vertex cluster":
             settings.pop("waves")
             project.skeletonize_vertex_clusters(**settings)
-    return
-
-
-@app.cell
-def _(record_counts):
-    record_counts
     return
 
 

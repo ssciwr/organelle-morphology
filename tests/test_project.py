@@ -345,7 +345,7 @@ def test_get_organelles(project_with_sources, mocker):
     assert mock_getter.call_count == 2
 
     mock_getter.reset_mock()
-    p.permanent_blacklist = ["mito*"]
+    p.permanent_blacklist = {"mito*"}
     p.get_organelles("mito*")
     mock_getter.assert_not_called()
 
@@ -371,7 +371,7 @@ def test_get_organelle_ids(project_with_sources, mocker):
     assert mock_getter.call_count == 2
 
     mock_getter.reset_mock()
-    p.permanent_blacklist = ["mito*"]
+    p.permanent_blacklist = {"mito*"}
     p.get_organelle_ids("mito*")
     mock_getter.assert_not_called()
 
@@ -417,6 +417,22 @@ def test_blacklist_by_volume_clear(project_with_sources):
     p.blacklist_by_volume(900)
     assert len(p.organelles) == 17
     assert all([o in ["mito_0003", "mito_0002"] for o in p.permanent_blacklist])
+
+    p.clear_blacklist()
+    assert len(p.organelles) == 19
+
+
+def test_blacklist_by_id(project_with_sources):
+    p = project_with_sources
+    all_ids = {o.id for o in p.organelles}
+    assert len(all_ids) == 19
+
+    # Blacklist a single organelle and a list of organelles
+    p.blacklist_by_id("mito_0002")
+    p.blacklist_by_id(["mito_0003", "mito_0004"])
+
+    assert {"mito_0002", "mito_0003", "mito_0004"}.issubset(p.permanent_blacklist)
+    assert len(p.organelles) == len(all_ids) - 3
 
     p.clear_blacklist()
     assert len(p.organelles) == 19

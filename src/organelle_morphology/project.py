@@ -103,8 +103,8 @@ class Project:
 
         # this permanent filter can be used to soft drop organelles from the project
         # for example if they are too small to be considered
-        self.permanent_whitelist = []
-        self.permanent_blacklist = []
+        self.permanent_whitelist = set()
+        self.permanent_blacklist = set()
 
         # The compression level at which we operate
         self.compression_level = compression_level
@@ -999,7 +999,7 @@ class Project:
         return generate_distance_matrix(self)
 
     def clear_blacklist(self):
-        self.permanent_blacklist = []
+        self.permanent_blacklist.clear()
 
     def blacklist_by_volume(self, max_vol: float):
         """Add organlles to the permanent blacklist based on their volume.
@@ -1011,13 +1011,19 @@ class Project:
         for o in self.organelles:
             if o.mesh_properties.volume < max_vol:
                 if o.id not in self.permanent_blacklist:
-                    self.permanent_blacklist.append(o.id)
+                    self.permanent_blacklist.add(o.id)
 
         self.logger.info(
             "Excluded organelles based on volume.\n"
             f"Removed organelles: {len(self.permanent_blacklist)}\n"
             f"Remaining organelles: {len(self.organelles)}"
         )
+
+    def blacklist_by_id(self, ids: str | list[str] = ""):
+        # resolve *, lists, etc.
+        ids = self.get_organelle_ids(ids)
+        for id_ in ids:
+            self.permanent_blacklist.add(id_)
 
     @property
     def clipping(

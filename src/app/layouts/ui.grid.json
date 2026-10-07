@@ -108,8 +108,11 @@
           0,
           105,
           8,
-          8
+          10
         ]
+      },
+      {
+        "position": null
       },
       {
         "position": null
@@ -148,9 +151,6 @@
         "scrollable": true
       },
       {
-        "position": null
-      },
-      {
         "position": [
           0,
           136,
@@ -187,8 +187,8 @@
         "position": [
           15,
           84,
-          7,
-          25
+          8,
+          26
         ]
       },
       {
