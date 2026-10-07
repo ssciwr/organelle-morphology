@@ -335,7 +335,7 @@ class Organelle:
 
         # calculate the mean and std from the sub_mean and std values for each mcs partner
         try:
-            overall_mean = np.average(mean_dist_list, weights=mean_dist_list)
+            overall_mean = np.average(mean_dist_list, weights=len_dist_list)
         except ZeroDivisionError:
             overall_mean = 0
 
