@@ -191,7 +191,7 @@ class Project:
         p = Project(
             args.projectpath,
             client=client,
-            loglevel="INFO",
+            loglevel=args.loglevel,
         )
         return p, args.data
 
@@ -258,7 +258,7 @@ class Project:
     @simplify.setter
     def simplify(self, simplify: float):
         self.logger.info(f"Setting simplify to {simplify}")
-        if 0.0 < simplify > 1.0:
+        if 0.0 > simplify or simplify > 1.0:
             raise ValueError(
                 "Simplify value must be between 0.0 and 1.0. "
                 "It is a percent value of how much to simplify."
