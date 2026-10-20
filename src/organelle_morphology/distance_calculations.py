@@ -20,6 +20,10 @@ from organelle_morphology.util import (
 
 logger = logging.getLogger(__name__)
 
+# chunk domains containing more organelles than this are decomposed further
+# in `generate_distance_matrix` (chunk_dd branch)
+MAX_ORGS_PER_DOMAIN = 500
+
 
 def get_min_dist(args):
     id_1, id_2, mesh_1, mesh_2, max_dist = args
@@ -50,6 +54,44 @@ def delayed_domain_min_dists(args):
 
             tasks.append(get_min_dist((id_1, id_2, mesh_1, mesh_2, max_dist)))
     return tasks
+
+
+def chunk_domain_masks(organelles, domain_idxs, dshape):
+    """Assign organelles to chunk domains.
+
+    A domain covers one chunk of the data and its direct neighbors. Domains
+    without an organelle in their center chunk are dropped.
+
+    Args:
+        organelles: organelles to distribute over the domains.
+        domain_idxs: chunk indices of all chunks of the data.
+        dshape: shape of the chunk grid.
+
+    Returns:
+        list[tuple[list[bool], list[tuple[int, ...]]]]: for each kept domain,
+            the organelle mask and the chunk indices the domain covers. Mask
+            and chunks are paired, so the mask index always refers to the
+            domain it was built from, even if domains are dropped or reordered.
+    """
+    domain_masks = []
+    for idx in domain_idxs:
+        neighbor_chunks = get_neighboring_chunks(idx, dshape)
+        has_org_in_center = False
+        mask = []
+        for org in organelles:
+            # in central block of domain:
+            if idx in org.chunks:
+                mask.append(True)
+                has_org_in_center = True
+            # in neighbor block of domain:
+            elif any([nb in org.chunks for nb in neighbor_chunks]):
+                mask.append(True)
+            # not in domain:
+            else:
+                mask.append(False)
+        if has_org_in_center:
+            domain_masks.append((mask, neighbor_chunks))
+    return domain_masks
 
 
 def make_domains(
@@ -415,40 +457,25 @@ def generate_distance_matrix(
             else:
                 dshape = source.data.blocks.shape
                 domain_idxs = list(np.ndindex(dshape))
-                domains = [get_neighboring_chunks(idx, dshape) for idx in domain_idxs]
-                project.logger.debug(f"len domains {len(domains)}")
+                # (mask, domain chunks) pairs: a mask and the chunk
+                # group it was built from have to stay aligned when domains
+                # are dropped or reordered
+                domain_masks = chunk_domain_masks(organelles, domain_idxs, dshape)
+                project.logger.debug(f"Masks unfiltered: {len(domain_idxs)}")
 
-                masks = [[] for _ in range(len(domains))]
-                for i, idxs in enumerate(domains):
-                    has_org_in_center = False
-                    for org in organelles:
-                        # in central block of domain:
-                        if domain_idxs[i] in org.chunks:
-                            masks[i].append(True)
-                            has_org_in_center = True
-                        # in neighbor block of domain:
-                        elif any([idx in org.chunks for idx in idxs]):
-                            masks[i].append(True)
-                        # not in domain:
-                        else:
-                            masks[i].append(False)
-                    if not has_org_in_center:
-                        masks[i] = []
-
-                project.logger.debug(f"Masks unfiltered: {len(masks)}")
-                m_mask = [any(m) for m in masks]
-                # primary masks over chunks
-                masks = [m for i, m in enumerate(masks) if i in np.nonzero(m_mask)[0]]
-
-                too_large = np.nonzero([len(np.nonzero(m)[0]) > 500 for m in masks])[0]
-                project.logger.debug(f"masks > 500: {len(too_large)}")
+                too_large = np.nonzero(
+                    [
+                        len(np.nonzero(m)[0]) > MAX_ORGS_PER_DOMAIN
+                        for m, _ in domain_masks
+                    ]
+                )[0]
+                project.logger.debug(f"masks > {MAX_ORGS_PER_DOMAIN}: {len(too_large)}")
 
                 if domain_decomposition:
                     t0 = time()
                     clp_of = source.clipping_corners[0]  # lower corner clipping offset
                     for i in too_large[::-1]:
-                        mask = masks.pop(i)
-                        local_blocks = domains[i]
+                        mask, local_blocks = domain_masks.pop(i)
                         local_meshes = meshes[mask]
 
                         corners = np.array(
@@ -473,15 +500,16 @@ def generate_distance_matrix(
                         for local_mask in local_masks:
                             global_mask = np.zeros_like(meshes, dtype=bool)
                             global_mask[mask] = local_mask
-                            masks.append(global_mask)
+                            domain_masks.append((global_mask, ()))
 
                         project.logger.debug(
                             f"decomposed {np.count_nonzero(mask)} orgs into {len(local_masks)}"
                         )
 
                     project.logger.debug(
-                        f"Decomposed {len(too_large)} chunks into {len(masks)} domains in {time() - t0} s"
+                        f"Decomposed {len(too_large)} chunks into {len(domain_masks)} domains in {time() - t0} s"
                     )
+                masks = [m for m, _ in domain_masks]
 
         else:
             # no domain decomposition -> all to all

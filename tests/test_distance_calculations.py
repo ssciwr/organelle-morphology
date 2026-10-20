@@ -1,13 +1,60 @@
+import logging
+
+from organelle_morphology import distance_calculations
 from organelle_morphology.distance_calculations import (
     MembraneContactSiteCalculator,
+    chunk_domain_masks,
     generate_distance_matrix,
     generate_mcs,
     get_min_dist,
 )
+from organelle_morphology.util import get_neighboring_chunks
+from dask.array import zeros
+from dask.delayed import delayed
 from pandas import DataFrame
 import pytest
 import numpy as np
 import trimesh
+
+
+class _StubOrganelle:
+    """Minimal organelle stand in for distance matrix calculations."""
+
+    def __init__(self, org_id, mesh, chunks):
+        self.id = org_id
+        self.mesh = delayed(mesh)
+        self.chunks = list(chunks)
+
+
+class _StubSource:
+    """Minimal source stand in: a chunked data array and its physical size."""
+
+    def __init__(self, data, resolution=(1.0, 1.0, 1.0)):
+        self.data = data
+        self.resolution = resolution
+        self.clipping_corners = (
+            np.zeros(3),
+            np.array(data.shape) * np.array(resolution),
+        )
+
+
+class _StubProject:
+    """Minimal project stand in, holding organelles and a dask client."""
+
+    def __init__(self, source, organelles, client, max_distance):
+        self.sources = {"stub": source}
+        self.organelles = organelles
+        self.client = client
+        self.max_distance = max_distance
+        self.use_cache = False
+        self.cache = {}
+        self.logger = logging.getLogger(__name__)
+
+
+def _box_organelle(org_id, center, chunks, size=2.0):
+    mesh = trimesh.creation.box((size, size, size))
+    mesh.apply_translation(center)
+    return _StubOrganelle(org_id, mesh, chunks)
 
 
 def test_distance_matrix(project_with_sources):
@@ -64,6 +111,63 @@ def test_distance_matrix_incomplete_dd_compair(project_with_sources):
     assert np.all(df == df2)
     assert np.all(df == df3)
     assert np.all(df == df4)
+
+
+def test_chunk_domain_masks_stay_paired():
+    """Each mask is paired with the chunk domain it was built from (#6)."""
+    organelles = [
+        _box_organelle("org_0", (0, 0, 0), [(1, 1, 1)]),
+        _box_organelle("org_1", (0, 0, 0), [(2, 1, 1)]),
+        _box_organelle("org_2", (0, 0, 0), [(0, 0, 0)]),
+    ]
+    dshape = (3, 3, 3)
+    domain_masks = chunk_domain_masks(organelles, list(np.ndindex(dshape)), dshape)
+
+    # only domains with an organelle in their center chunk are kept
+    expected = [
+        ((0, 0, 0), [True, False, True]),
+        ((1, 1, 1), [True, True, True]),
+        ((2, 1, 1), [True, True, False]),
+    ]
+    assert len(domain_masks) == len(expected)
+    for (center, expected_mask), (mask, blocks) in zip(expected, domain_masks):
+        assert mask == expected_mask
+        assert blocks == get_neighboring_chunks(center, dshape)
+
+
+def test_distance_matrix_chunk_dd_empty_domains(client, monkeypatch):
+    """Chunked domain decomposition keeps all pairs of sparse data (#6).
+
+    Domains whose center chunk holds no organelle are dropped from the domain
+    masks. The chunk domains have to be filtered along with them, otherwise the
+    sub decomposition is built for the wrong region of the dataset and the
+    organelle pairs of that domain are never evaluated, leaving silent `-1`
+    holes in the distance matrix.
+    """
+    # keep the test fast: decompose domains with more than 3 organelles
+    monkeypatch.setattr(distance_calculations, "MAX_ORGS_PER_DOMAIN", 3)
+
+    # 3x3x3 chunk grid, all organelles in the last chunk [40, 60)^3,
+    # so all 26 domains before it have no organelle in their center
+    data = zeros((60, 60, 60), chunks=(20, 20, 20))
+    organelles = [
+        _box_organelle(f"org_{i}", center, [(2, 2, 2)])
+        for i, center in enumerate(
+            [(53, 53, 53), (56, 53, 53), (53, 56, 53), (53, 53, 56)]
+        )
+    ]
+    project = _StubProject(_StubSource(data), organelles, client, max_distance=5)
+
+    # ground truth: all pairs are closer to each other than max_distance
+    df = generate_distance_matrix(project, domain_decomposition=False, chunk_dd=False)
+    off_diagonal = ~np.eye(len(organelles), dtype=bool)
+    assert np.all(df.values[off_diagonal] >= 0)
+
+    df_chunk_dd = generate_distance_matrix(
+        project, domain_decomposition=True, chunk_dd=True
+    )
+    assert np.all(df_chunk_dd.values[off_diagonal] >= 0), "holes in distance matrix"
+    np.testing.assert_array_equal(df_chunk_dd.values, df.values)
 
 
 def test_distance_matrix_no_source(project):
