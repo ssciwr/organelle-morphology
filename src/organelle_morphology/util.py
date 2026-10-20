@@ -232,10 +232,12 @@ def merge_delayed_trimeshes(tmeshes: list[Trimesh]):
     tmesh = Trimesh()
     for mesh in tmeshes:
         tmesh += mesh
+    # weld with the default tolerance: seam vertices of neighboring chunk
+    # fragments are bitwise equal (see block_mesher), a coarser fixed grid
+    # would collapse distinct vertices at fine data resolutions (#20)
     tmesh.merge_vertices(
         merge_tex=True,
         merge_norm=True,
-        digits_vertex=2,
         digits_norm=2,
         digits_uv=2,
     )
@@ -255,10 +257,10 @@ def merge_mesh_dict_values(d: dict):
 
     for mesh in meshes:
         tmesh += mesh
+    # see merge_delayed_trimeshes for why the default weld tolerance is used
     tmesh.merge_vertices(
         merge_tex=True,
         merge_norm=True,
-        digits_vertex=2,
         digits_norm=2,
         digits_uv=2,
     )
@@ -412,8 +414,8 @@ def merge_meshes(
 ) -> Delayed:
     """Merges delayed meshes into one delayed Mesh object
 
-    Needs overlapping meshes, otherwise the intersections will not be
-    connected.
+    Vertices coincident within the default weld tolerance are merged, so
+    meshes meeting exactly at a shared seam are connected correctly.
     """
 
     meshes = list(meshes)

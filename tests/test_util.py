@@ -3,10 +3,15 @@ from organelle_morphology.util import (
     block_to_coords,
     get_neighboring_chunks,
     measure_gaussian_curvature_delayed,
+    merge_mesh_dict_values,
+    merge_meshes,
     simplify_mesh,
 )
 import numpy as np
 import dask.array as da
+import pytest
+
+from .mesh_asserts import assert_watertight
 
 
 def test_measure_curvature_parametrized(project_with_sources):
@@ -147,3 +152,60 @@ def test_simplify_mesh_icosphere_aggression(mocker):
     simplified = simplify_mesh(mesh, factor=0.5, aggression=None)
     assert simplified.vertices.shape == (22, 3)
     assert spy.call_count == 16
+
+
+def _voxel_fragment(origin, open_side, resolution):
+    """Surface mesh of one voxel cube at the given voxel origin.
+
+    Mimics the per-chunk fragments of `block_mesher`: vertices sit on the
+    half-voxel grid (resolution * (k + 0.5)) and the fragment is open on the
+    side where the neighboring chunk fragment was cut away. Adjacent
+    fragments meet with bitwise-equal seam vertices.
+    """
+    base = np.asarray(origin, dtype=np.int64)
+    corners = np.array(
+        [(i, j, k) for i in (0, 1) for j in (0, 1) for k in (0, 1)], dtype=np.int64
+    )
+    verts = (base + corners + 0.5) * resolution
+    idx = {(i, j, k): n for n, (i, j, k) in enumerate(map(tuple, corners))}
+    quads = {
+        "-x": ((0, 0, 0), (0, 0, 1), (0, 1, 1), (0, 1, 0)),
+        "+x": ((1, 0, 0), (1, 1, 0), (1, 1, 1), (1, 0, 1)),
+        "-y": ((0, 0, 0), (0, 1, 0), (1, 1, 0), (1, 0, 0)),
+        "+y": ((0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)),
+        "-z": ((0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)),
+        "+z": ((0, 1, 0), (0, 1, 1), (1, 1, 1), (1, 1, 0)),
+    }
+    faces = []
+    for side, (a, b, c, d) in quads.items():
+        if side != open_side:
+            faces.extend(([idx[a], idx[b], idx[c]], [idx[a], idx[c], idx[d]]))
+    return trimesh.Trimesh(verts, np.array(faces), process=False)
+
+
+def _merge_mesh_dict_values(meshes):
+    """Take a list like merge_meshes, for parametrization"""
+    return merge_mesh_dict_values(dict(enumerate(meshes)))
+
+
+@pytest.mark.parametrize("merge", [merge_meshes, _merge_mesh_dict_values])
+@pytest.mark.parametrize("resolution", [0.01, 0.005])
+def test_merge_fragments_watertight_at_fine_resolution(merge, resolution):
+    """Regression test for #20: merged chunk fragments must be watertight.
+
+    At fine physical resolutions (e.g. s0/s1 of the example dataset) mesh
+    vertices are spaced by half a voxel, which is finer than a fixed 0.01 um
+    weld grid: welding with `digits_vertex=2` collapses distinct vertices and
+    creates degenerate faces and non-manifold edges. The seam vertices of the
+    two fragments are bitwise equal, so an exact weld closes the seam without
+    touching anything else.
+    """
+    fragments = [
+        _voxel_fragment((0, 0, 0), open_side="+x", resolution=resolution),
+        _voxel_fragment((1, 0, 0), open_side="-x", resolution=resolution),
+    ]
+    merged = merge(fragments).compute()
+
+    assert_watertight(merged)
+    assert len(merged.faces) == 20
+    np.testing.assert_allclose(merged.volume, 2 * resolution**3)

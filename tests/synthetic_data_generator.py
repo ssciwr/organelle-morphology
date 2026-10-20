@@ -17,7 +17,12 @@ def _array_trim(arr, margin=0):
 
 
 def generate_synthetic_dataset(
-    n_objects=30, object_size=20, object_distance=100, seed=42, working_dir=None
+    n_objects=30,
+    object_size=20,
+    object_distance=100,
+    seed=42,
+    working_dir=None,
+    resolution=(1, 1, 1),
 ) -> tuple[Path, dict]:
     if working_dir is None:
         temp_dir = Path(tempfile.mkdtemp())
@@ -33,8 +38,6 @@ def generate_synthetic_dataset(
         object_distance=object_distance,
         seed=seed,
     )
-
-    resolution = [1, 1, 1]
 
     cebra_dir = temp_dir
 

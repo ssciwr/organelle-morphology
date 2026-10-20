@@ -7,6 +7,8 @@ import dask.array as da
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from .mesh_asserts import assert_watertight
+
 
 def test_block_mesher_c_in_c(voxels_c_in_c):
     voxels = voxels_c_in_c
@@ -192,19 +194,39 @@ def test_calculate_mesh_clipped(project_with_sources, mocker):
         assert len(ids_to_chunks) == 343
 
 
-def test_calculate_mesh_boarder(project_with_sources, mocker):
-    p = project_with_sources
+@pytest.mark.parametrize(
+    ("project_fixture", "resolution"),
+    [
+        ("project_with_sources", 1.0),
+        ("project_with_sources_fine_resolution", 0.01),
+    ],
+)
+def test_calculate_mesh_boarder(request, mocker, project_fixture, resolution):
+    """Meshes of labels crossing chunk borders must be watertight.
+
+    Parametrized over the physical resolution (regression test for #20):
+    at 0.01 um/voxel the mesh vertex spacing (half a voxel) is finer than
+    the fixed 0.01 um weld grid that used to merge the chunk fragments,
+    which collapsed vertices and broke watertightness.
+    """
+    p = request.getfixturevalue(project_fixture)
     p.simplify = 0.0
     s = list(p.sources.values())[0]
+    assert s.resolution == (resolution, resolution, resolution)
 
-    for i in range(20):
-        mocker.resetall()
-        p.clear_memory_cache()
-        o1 = np.random.randint(4) + 1
-        o2 = np.random.randint(4) + 1
-        o3 = np.random.randint(4) + 1
+    # cube placements close to the data borders; o >= 2 puts the 4-voxel cube
+    # across the chunk borders at index 5 of the 10x10x10 test data
+    offsets = [(o, o, o) for o in (1, 2, 3, 4)]
+    offsets += [(2, 4, 3), (4, 3, 2), (3, 2, 4), (4, 4, 4)]
+
+    saw_multi_chunk = False
+    for o1, o2, o3 in offsets:
+        # stopall (not resetall): the patched `da.from_array` is also used
+        # below to build the data and must be the real one again
+        mocker.stopall()
+        p.clear_caches(True, silent=True)
         data = np.zeros((1000,), dtype=int).reshape((10, 10, 10))
-        data[o1 : o1 + 4, o2 : o1 + 4, o3 : o1 + 4] = 1
+        data[o1 : o1 + 4, o2 : o2 + 4, o3 : o3 + 4] = 1
         data = da.from_array(data, chunks=5)
         mock_data = mocker.patch("organelle_morphology.source.da.from_array")
         mock_data.return_value = data
@@ -216,7 +238,7 @@ def test_calculate_mesh_boarder(project_with_sources, mocker):
         #
 
         mesh = list(s.meshes.values())[0].compute()
-        assert mesh.is_watertight
+        assert_watertight(mesh)
         assert len(list(s.meshes.keys())) == 1
         assert (
             np.count_nonzero(
@@ -224,6 +246,10 @@ def test_calculate_mesh_boarder(project_with_sources, mocker):
             )
             == 0
         )
+        if any(len(chunks) > 1 for chunks in s.ids_to_chunks.values()):
+            saw_multi_chunk = True
+
+    assert saw_multi_chunk, "cube placements never crossed a chunk border"
 
 
 def test_get_meshes_curvature_colored(project_with_sources, mocker):
