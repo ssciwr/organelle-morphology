@@ -52,7 +52,7 @@ class Position_Analysis(Analysis):
         self,
         source: DataSource | str,
         bin_resolution: tuple[float, float, float],
-    ) -> da.Array:
+    ) -> np.ndarray:
         """Calculate a 3d heatmap of all organelles in the source.
 
         Args:
@@ -74,30 +74,32 @@ class Position_Analysis(Analysis):
             bin_resolution=bin_resolution,
             axes_labels=("x", "y", "z"),
         )
+
+        if cache_key not in source.cache:
+            binsize = ((np.array(bin_resolution) + 1e-9) // source.resolution).astype(
+                int
+            )
+            n_missing = (binsize - (source.data.shape % binsize)) % binsize
+
+            data = source.data.astype(bool)
+            data = da.pad(data, [(0, i) for i in n_missing])
+
+            logger.debug(f"Density3D calculation, binsize {binsize}")
+            source.cache[cache_key] = da.coarsen(
+                np.mean,
+                data,
+                {a: b for a, b in zip((0, 1, 2), binsize)},
+                trim_excess=False,
+            ).compute()
+
+        density = source.cache[cache_key]
+
         if pos_meta not in [r.meta for r in self.own_records]:
-            if cache_key not in source.cache:
-                binsize = (np.array(bin_resolution) // source.resolution).astype(int)
-                n_missing = (binsize - (source.data.shape % binsize)) % binsize
-
-                data = source.data.astype(bool)
-                data = da.pad(data, [(0, i) for i in n_missing])
-
-                logger.debug(f"Density3D calculation, binsize {binsize}")
-                density = da.coarsen(
-                    np.mean,
-                    data,
-                    {a: b for a, b in zip((0, 1, 2), binsize)},
-                    trim_excess=False,
-                ).compute()
-                source.cache[cache_key] = density
-
-            density = source.cache[cache_key]
             record = Record(
                 PositionProperties(density=density), pos_meta, project=self.project
             )
             self.project.registry.add(record)
-
-        return source.cache[cache_key]
+        return density
 
     def density2D(
         self,
@@ -145,21 +147,21 @@ class Position_Analysis(Analysis):
             rot_axis=rot_axis,
             axes_labels=axes_labels,
         )
-        if pos_meta not in [r.meta for r in self.own_records]:
-            density = self.density3D(source, bin_resolution)
-            if cache_key not in source.cache:
-                rot_axes = [0, 1, 2]
-                rot_axes.remove(rot_axis)
-                density = rotate(density, rot_angle, rot_axes, reshape=True)
-                density_2D = np.mean(density, axis=marginal_axis)
-                source.cache[cache_key] = density_2D
+        density = self.density3D(source, bin_resolution)
+        if cache_key not in source.cache:
+            rot_axes = [0, 1, 2]
+            rot_axes.remove(rot_axis)
+            density = rotate(density, rot_angle, rot_axes, reshape=True)
+            source.cache[cache_key] = np.mean(density, axis=marginal_axis)
 
-            density_2D = source.cache[cache_key]
+        density_2D = source.cache[cache_key]
+
+        if pos_meta not in [r.meta for r in self.own_records]:
             record = Record(
                 PositionProperties(density=density_2D), pos_meta, project=self.project
             )
             self.project.registry.add(record)
-        return source.cache[cache_key]
+        return density_2D
 
     def density1D(
         self,
@@ -203,27 +205,26 @@ class Position_Analysis(Analysis):
             axes_labels=axes_labels,
         )
 
-        if pos_meta not in [r.meta for r in self.own_records]:
-            # restore also 2d/3d from cache
-            marginal_axes = [0, 1, 2]
-            marginal_axes.remove(axis)
-            density2d = self.density2D(
-                source=source,
-                bin_resolution=bin_resolution,
-                marginal_axis=marginal_axes[1],
-                rot_angle=rot_angle,
-                rot_axis=rot_axis,
-            )
-            if cache_key not in source.cache:
-                density_1D = np.mean(density2d, axis=marginal_axes[0])
-                source.cache[cache_key] = density_1D
+        # restore also 2d/3d from cache
+        marginal_axes = [0, 1, 2]
+        marginal_axes.remove(axis)
+        density2d = self.density2D(
+            source=source,
+            bin_resolution=bin_resolution,
+            marginal_axis=marginal_axes[1],
+            rot_angle=rot_angle,
+            rot_axis=rot_axis,
+        )
+        if cache_key not in source.cache:
+            source.cache[cache_key] = np.mean(density2d, axis=marginal_axes[0])
 
-            density_1D = source.cache[cache_key]
+        density_1D = source.cache[cache_key]
+        if pos_meta not in [r.meta for r in self.own_records]:
             record = Record(
                 PositionProperties(density=density_1D), pos_meta, project=self.project
             )
             self.project.registry.add(record)
-        return source.cache[cache_key]
+        return density_1D
 
     def plot_density(self, record: Record, ax=None):
         """Plot density from a Position_Analysis record.
