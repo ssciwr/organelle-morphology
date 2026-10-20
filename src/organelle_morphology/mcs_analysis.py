@@ -28,9 +28,7 @@ class Mcs_Analysis(Analysis):
     def mcs_labels(self) -> list:
         return list({s.meta.mcs_label for s in self.own_records})
 
-    def get_mcs_properties(
-        self, filter1: str = "*", filter2: str = "*"
-    ) -> pd.DataFrame:
+    def get_mcs_properties(self) -> pd.DataFrame:
         """The properties of the MCS between organelles
         Gathers data from all the organelles into one dataframe.
 
@@ -64,7 +62,7 @@ class Mcs_Analysis(Analysis):
 
         return mcs_df
 
-    def get_mcs_overview(self, filter1: str = "*", filter2: str = "*"):
+    def get_mcs_overview(self):
         def _weighted_stats(x):
             # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
             mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
@@ -148,7 +146,7 @@ class Mcs_Analysis(Analysis):
                 index=new_index,
             )
 
-        mcs_df = self.get_mcs_properties(filter1=filter1, filter2=filter2)
+        mcs_df = self.get_mcs_properties()
         overview = mcs_df.groupby(level=0).apply(_weighted_stats)
         overview.sort_index(axis=1, inplace=True)
         return overview.T

@@ -895,10 +895,7 @@ def mcs_analysis_overview(
     )
     record_counts
     mo.ui.table(
-        mcs_analysis.get_mcs_overview(
-            filter1=mcs_filter1_ui.value,
-            filter2=mcs_filter2_ui.value,
-        ).reset_index(),
+        mcs_analysis.get_mcs_overview().reset_index(),
         page_size=15,
         selection=None,
         show_column_summaries=False,
@@ -919,10 +916,7 @@ def mcs_analysis_properties(
         mo.md("No MCS calculations run yet"),
     )
     record_counts
-    mcs_analysis_properties_df = mcs_analysis.get_mcs_properties(
-        filter1=mcs_filter1_ui.value,
-        filter2=mcs_filter2_ui.value,
-    )
+    mcs_analysis_properties_df = mcs_analysis.get_mcs_properties()
     mo.ui.table(mcs_analysis_properties_df, selection=None, page_size=15)
     return
 
