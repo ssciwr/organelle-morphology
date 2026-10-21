@@ -263,8 +263,10 @@ class Project:
                 "Simplify value must be between 0.0 and 1.0. "
                 "It is a percent value of how much to simplify."
             )
+        if getattr(self, "_simplify", None) != simplify:
+            self.clear_caches()
+
         self._simplify = simplify
-        self.clear_caches()
 
     def add_source(
         self,
