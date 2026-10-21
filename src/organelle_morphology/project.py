@@ -9,6 +9,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import trimesh
+import dask
 from dask.base import compute
 from dask.delayed import Delayed
 from dask.distributed import Client, LocalCluster
@@ -203,6 +204,18 @@ class Project:
             root_logger = logging.getLogger()
             root_logger.setLevel(getattr(logging, loglevel.upper()))
             self.logger.debug(f"Set logging level to: {loglevel}")
+
+    def set_debug_scheduler(self, debug: bool):
+        """Set the dask scheduler to single threaded
+        This allowes reaching breakpoints in delayed functions.
+
+        Args:
+            debug: If True set single-threaded, if False, revert to default.
+        """
+        if debug:
+            dask.config.set(scheduler="single-threaded")
+        else:
+            dask.config.set(scheduler=None)
 
     @property
     def metadata(self) -> ProjectMetadata:
