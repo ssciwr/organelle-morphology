@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Iterable, Optional
 
+import igl
 import matplotlib as mpl
 import networkx
 import numpy as np
@@ -278,55 +279,120 @@ def merge_mesh_dict_values(d: dict, resolution: Optional[Iterable[float]] = None
     return tmesh
 
 
-def simplify_mesh(mesh, factor=0.1, aggression: Optional[float] = None):
+def _decimate_quadric(mesh: Trimesh, max_m: int) -> Optional[Trimesh]:
+    """Decimate a trimesh with libigl's quadric-error edge collapse (qslim).
+
+    libigl enforces the link condition, so collapses that would create
+    non-manifold topology are rejected and the topology of the input mesh is
+    preserved. Returns None if the mesh cannot be decimated or if the target
+    face count is not reached (partial decimation).
+    """
+    vertices = np.asfortranarray(np.asarray(mesh.vertices, dtype=np.float64))
+    faces = np.asfortranarray(np.asarray(mesh.faces, dtype=np.int32))
+    try:
+        new_vertices, new_faces, _, _ = igl.qslim(vertices, faces, max_m)
+    except Exception:
+        logger.debug("igl.qslim failed", exc_info=True)
+        return None
+
+    if np.ndim(new_faces) != 2 or not (0 < len(new_faces) <= max_m):
+        # empty result (decimation refused) or target not reached
+        return None
+
+    return Trimesh(new_vertices, new_faces, process=False)
+
+
+def _decimation_is_sound(mesh: Trimesh, require_closed: bool, orig_euler: int) -> bool:
+    """Acceptance fence for a decimated mesh.
+
+    The result must not contain degenerate or duplicate faces. If the input
+    was watertight, the result must also be watertight, winding consistent
+    and have the same Euler number. Open inputs (e.g.
+    organelles cut by the clipping plane) stay open and are not checked for
+    closure.
+    """
+    faces = np.asarray(mesh.faces)
+    if faces.shape[0] == 0:
+        return False
+
+    # no degenerate faces (repeated vertex index or zero area)
+    repeated_index = (
+        (faces[:, 0] == faces[:, 1])
+        | (faces[:, 1] == faces[:, 2])
+        | (faces[:, 0] == faces[:, 2])
+    ).any()
+    if repeated_index or not np.all(mesh.area_faces > 0):
+        return False
+
+    # no duplicate faces
+    if len(np.unique(np.sort(faces, axis=1), axis=0)) != faces.shape[0]:
+        return False
+
+    if require_closed:
+        return bool(
+            mesh.is_watertight
+            and mesh.is_winding_consistent
+            and mesh.euler_number == orig_euler
+        )
+    return True
+
+
+def simplify_mesh(mesh, factor=0.1):
     """Try to simplify a trimesh object.
 
-    Can fail due to unknown issue in trimesh for larger
-    simplification values. In case of failure, or if the mesh is too small
-    the original mesh is returned.
+    The mesh is decimated with libigl's quadric error metric (`igl.qslim`),
+    with `factor` being the fraction of faces to remove. Small meshes with
+    less than 20 vertices are returned unchanged.
 
-    The aggression value is scale sensitive and badly defined.
-    It gets automatically raised if the mesh does not get simplified.
+    A decimated mesh is only accepted if it keeps the volume within +-10%,
+    and, if the input mesh was watertight, if it is still watertight,
+    winding consistent and has an unchanged Euler number and no degenerate
+    or duplicate faces. Meshes that are open as input (e.g. organelles cut
+    by the clipping plane) stay open and are never forced closed. If a check
+    fails, the decimation is retried with a reduced factor. In case of
+    failure the original mesh is returned.
     """
     # don't bother with small meshes:
     if mesh.vertices.shape[0] < 20:
         return mesh
 
-    tune_agg = False
-    if aggression is None:
-        aggression = 1
-        tune_agg = True
-
-    orig_n_verts = mesh.vertices.shape[0]
+    orig_n_faces = mesh.faces.shape[0]
     orig_vol = mesh.volume
+    orig_euler = mesh.euler_number
+    require_closed = mesh.is_watertight
 
     for _ in range(10):
-        try:
-            new_mesh = mesh.simplify_quadric_decimation(factor, aggression=aggression)
+        max_m = int(round((1.0 - factor) * orig_n_faces))
 
-            if orig_vol and (
-                (new_mesh.volume > (orig_vol * 1.1))
-                or (new_mesh.volume < (orig_vol * 0.9))
-            ):
-                # too much volume change
-                factor = factor * 0.8
-
-            elif len(new_mesh.vertices) <= 4:
-                # too simplified
-                factor = factor * 0.8
-
-            elif new_mesh.vertices.shape[0] > (orig_n_verts * (1 - (factor - 0.1))):
-                # not simplified enough
-                if tune_agg:
-                    aggression += 1
-
-            else:
-                # success
-                mesh = new_mesh
-                break
-
-        except IndexError:
+        if max_m < 4:
+            # too simplified
             factor = factor * 0.8
+            continue
+
+        new_mesh = _decimate_quadric(mesh, max_m)
+
+        if new_mesh is None or len(new_mesh.vertices) <= 8:
+            # decimation failed or too simplified
+            factor = factor * 0.8
+
+        elif orig_vol and abs(new_mesh.volume - orig_vol) > abs(orig_vol) * 0.1:
+            # too much volume change
+            factor = factor * 0.8
+
+        elif not _decimation_is_sound(new_mesh, require_closed, orig_euler):
+            # decimation broke the mesh; back off and retry
+            factor = factor * 0.8
+
+        else:
+            # success
+            mesh = new_mesh
+            break
+
+    else:
+        logger.warning(
+            f"Could not simplify mesh ({orig_n_faces} faces, factor {factor}), "
+            "returning the original mesh"
+        )
 
     return mesh
 
