@@ -24,6 +24,7 @@ dependencies:
   - zensical
   - mkdocstrings-python
   - pip:
+      - libigl
       - python-fcl
       - setuptools==65.7.0
       - "trimesh[easy,recommend]<5.0.0"

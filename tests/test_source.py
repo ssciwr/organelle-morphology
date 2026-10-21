@@ -252,6 +252,43 @@ def test_calculate_mesh_boarder(request, mocker, project_fixture, resolution):
     assert saw_multi_chunk, "cube placements never crossed a chunk border"
 
 
+def test_meshes_stay_watertight_with_simplify(project_with_sources, mocker):
+    p = project_with_sources
+    s = list(p.sources.values())[0]
+
+    face_counts = {}
+    for simplify in (0.0, 0.5):
+        p.simplify = simplify
+        for _ in range(3):
+            mocker.resetall()
+            p.clear_memory_cache()
+            o1 = np.random.randint(2) + 1
+            o2 = np.random.randint(2) + 1
+            o3 = np.random.randint(2) + 1
+            data = np.zeros((1000,), dtype=int).reshape((10, 10, 10))
+            x, y, z = np.indices((7, 7, 7))
+            ball = ((x - 3) ** 2 + (y - 3) ** 2 + (z - 3) ** 2) <= 2.9**2
+            data[o1 : o1 + 7, o2 : o2 + 7, o3 : o3 + 7] = ball
+            data = da.from_array(data, chunks=5)
+            mock_data = mocker.patch("organelle_morphology.source.da.from_array")
+            mock_data.return_value = data
+
+            mesh = list(s.meshes.values())[0].compute()
+            assert mesh.is_watertight
+            assert mesh.is_winding_consistent
+            assert mesh.euler_number == 2
+            faces = np.asarray(mesh.faces)
+            assert not (
+                (faces[:, 0] == faces[:, 1])
+                | (faces[:, 1] == faces[:, 2])
+                | (faces[:, 0] == faces[:, 2])
+            ).any()
+            face_counts.setdefault(simplify, []).append(len(faces))
+
+    # simplification actually decimated the meshes
+    assert max(face_counts[0.5]) < min(face_counts[0.0])
+
+
 def test_get_meshes_curvature_colored(project_with_sources, mocker):
     p = project_with_sources
     s = list(p.sources.values())[0]
