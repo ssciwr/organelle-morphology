@@ -926,7 +926,7 @@ class DataSource:
         for ind in duplicate_ids:
             chunk_idxs = ids_to_chunks[ind]
             loc_meshes = [meshes_chunked[idx][ind] for idx in chunk_idxs]
-            merged_mesh = merge_meshes(loc_meshes, color=0)
+            merged_mesh = merge_meshes(loc_meshes, color=0, resolution=self.resolution)
             if simplify:
                 merged_mesh = delayed_simplify_mesh(merged_mesh, simplify)
             meshes[ind] = merged_mesh

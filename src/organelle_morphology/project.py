@@ -725,7 +725,9 @@ class Project:
             tasks = []
             for i, mesh_d in np.ndenumerate(s.mesh_fragments):
                 path = exp_source / f"{i}.glb"
-                mm = merge_mesh_dict_values(mesh_d)
+                # weld in the source's voxel units, the fragments of a
+                # chunk dict all stem from the same source
+                mm = merge_mesh_dict_values(mesh_d, resolution=s.resolution)
                 tasks.append(export_delayed_trimesh(mm, path))
             self.logger.debug(f"Running {len(tasks)} export tasks")
             results.append(compute(*tasks, scheduler="synchronous"))

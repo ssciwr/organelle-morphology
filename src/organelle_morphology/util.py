@@ -227,20 +227,37 @@ def color_delayed_trimesh(tmesh: Trimesh, color: int, transp: bool) -> Trimesh:
     return tmesh
 
 
+def _weld_fragments(tmesh: Trimesh, resolution: Optional[Iterable[float]] = None):
+    """Weld coincident vertices of concatenated mesh fragments.
+
+    Seam vertices of neighboring chunk fragments carry float noise from
+    scaling to physical coordinates; welding in voxel units merges noise
+    well below 0.01 voxel without ever collapsing distinct vertices,
+    which are spaced half a voxel apart (#20). Vertices are scaled back
+    onto the original coordinate grid afterwards.
+
+    If no resolution is supplied, an exact weld is performed.
+    """
+    weld_kwargs = dict(merge_tex=True, merge_norm=True, digits_norm=2, digits_uv=2)
+    if resolution is None:
+        tmesh.merge_vertices(**weld_kwargs)
+        return
+
+    # per-axis scaling: the resolution may be anisotropic
+    scaling = np.asarray(resolution, dtype=np.float64)
+    tmesh.vertices = tmesh.vertices / scaling
+    tmesh.merge_vertices(digits_vertex=2, **weld_kwargs)
+    tmesh.vertices = tmesh.vertices * scaling
+
+
 @delayed
-def merge_delayed_trimeshes(tmeshes: list[Trimesh]):
+def merge_delayed_trimeshes(
+    tmeshes: list[Trimesh], resolution: Optional[Iterable[float]] = None
+):
     tmesh = Trimesh()
     for mesh in tmeshes:
         tmesh += mesh
-    # weld with the default tolerance: seam vertices of neighboring chunk
-    # fragments are bitwise equal (see block_mesher), a coarser fixed grid
-    # would collapse distinct vertices at fine data resolutions (#20)
-    tmesh.merge_vertices(
-        merge_tex=True,
-        merge_norm=True,
-        digits_norm=2,
-        digits_uv=2,
-    )
+    _weld_fragments(tmesh, resolution)
     return tmesh
 
 
@@ -251,19 +268,13 @@ def export_delayed_trimesh(tmesh: Trimesh, file: Path):
 
 
 @delayed
-def merge_mesh_dict_values(d: dict):
+def merge_mesh_dict_values(d: dict, resolution: Optional[Iterable[float]] = None):
     meshes = list(d.values())
     tmesh = Trimesh()
 
     for mesh in meshes:
         tmesh += mesh
-    # see merge_delayed_trimeshes for why the default weld tolerance is used
-    tmesh.merge_vertices(
-        merge_tex=True,
-        merge_norm=True,
-        digits_norm=2,
-        digits_uv=2,
-    )
+    _weld_fragments(tmesh, resolution)
     return tmesh
 
 
@@ -410,12 +421,17 @@ def get_skeleton_info(skeleton):
 
 
 def merge_meshes(
-    meshes: Iterable[Delayed], color: Optional[int] = None, transp=False
+    meshes: Iterable[Delayed],
+    color: Optional[int] = None,
+    transp=False,
+    resolution: Optional[Iterable[float]] = None,
 ) -> Delayed:
     """Merges delayed meshes into one delayed Mesh object
 
-    Vertices coincident within the default weld tolerance are merged, so
-    meshes meeting exactly at a shared seam are connected correctly.
+    Vertices coincident within the weld tolerance are merged, so meshes
+    meeting at a shared seam are connected correctly. If the voxel size
+    (`resolution`, micrometers per voxel, per axis) is given, welding is
+    done in voxel units (see `_weld_fragments`), otherwise exactly.
     """
 
     meshes = list(meshes)
@@ -429,7 +445,7 @@ def merge_meshes(
     batch_size = 1000
     while len(meshes) > 1:
         if len(meshes) <= batch_size:
-            return merge_delayed_trimeshes(meshes)
+            return merge_delayed_trimeshes(meshes, resolution=resolution)
         else:
             new_meshes = []
             for i in range(0, len(meshes), batch_size):
@@ -437,7 +453,7 @@ def merge_meshes(
                 if len(batch) == 1:
                     new_meshes.append(batch[0])
                 else:
-                    merged = merge_delayed_trimeshes(batch)
+                    merged = merge_delayed_trimeshes(batch, resolution=resolution)
                     new_meshes.append(merged)
             meshes = new_meshes
     return meshes[0]

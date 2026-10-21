@@ -183,29 +183,61 @@ def _voxel_fragment(origin, open_side, resolution):
     return trimesh.Trimesh(verts, np.array(faces), process=False)
 
 
-def _merge_mesh_dict_values(meshes):
+def _merge_mesh_dict_values(meshes, **kwargs):
     """Take a list like merge_meshes, for parametrization"""
-    return merge_mesh_dict_values(dict(enumerate(meshes)))
+    return merge_mesh_dict_values(dict(enumerate(meshes)), **kwargs)
 
 
 @pytest.mark.parametrize("merge", [merge_meshes, _merge_mesh_dict_values])
 @pytest.mark.parametrize("resolution", [0.01, 0.005])
-def test_merge_fragments_watertight_at_fine_resolution(merge, resolution):
+@pytest.mark.parametrize("weld_units", ["um", "voxel"])
+def test_merge_fragments_watertight_at_fine_resolution(merge, resolution, weld_units):
     """Regression test for #20: merged chunk fragments must be watertight.
 
     At fine physical resolutions (e.g. s0/s1 of the example dataset) mesh
     vertices are spaced by half a voxel, which is finer than a fixed 0.01 um
-    weld grid: welding with `digits_vertex=2` collapses distinct vertices and
-    creates degenerate faces and non-manifold edges. The seam vertices of the
-    two fragments are bitwise equal, so an exact weld closes the seam without
-    touching anything else.
+    weld grid: welding with `digits_vertex=2` on micrometer coordinates
+    collapses distinct vertices and creates degenerate faces and
+    non-manifold edges. Welding on a 0.01-voxel grid (or exactly) closes
+    the seam — whose vertices are bitwise equal — without touching
+    anything else.
     """
     fragments = [
         _voxel_fragment((0, 0, 0), open_side="+x", resolution=resolution),
         _voxel_fragment((1, 0, 0), open_side="-x", resolution=resolution),
     ]
-    merged = merge(fragments).compute()
+    kwargs = {"resolution": resolution} if weld_units == "voxel" else {}
+    merged = merge(fragments, **kwargs).compute()
 
+    assert_watertight(merged)
+    assert len(merged.faces) == 20
+    np.testing.assert_allclose(merged.volume, 2 * resolution**3)
+
+
+@pytest.mark.parametrize("merge", [merge_meshes, _merge_mesh_dict_values])
+@pytest.mark.parametrize("resolution", [0.01, 0.005])
+def test_merge_fragments_weld_tolerates_subvoxel_seam_noise(merge, resolution):
+    """The voxel-unit weld closes seams carrying sub-voxel float noise (#20).
+
+    Seam vertices of neighboring chunk fragments may differ by tiny float
+    noise well below 0.01 voxel (e.g. from scaling round-trips). An exact
+    weld misses such vertices and leaves the seam open; welding on a
+    0.01-voxel grid merges them, while distinct vertices (spaced half a
+    voxel apart) are still never collapsed.
+    """
+    fragments = [
+        _voxel_fragment((0, 0, 0), open_side="+x", resolution=resolution),
+        _voxel_fragment((1, 0, 0), open_side="-x", resolution=resolution),
+    ]
+    # perturb the seam vertices of the second fragment by 0.004 voxel
+    seam = fragments[1].vertices[:, 0] == 1.5 * resolution
+    fragments[1].vertices[seam] += np.array([0.004, -0.003, 0.002]) * resolution
+
+    # exact weld: the perturbed seam vertices don't match, seam stays open
+    assert not merge(fragments).compute().is_watertight
+
+    # voxel-unit weld: the noise rounds onto the 0.01-voxel grid, seam closes
+    merged = merge(fragments, resolution=resolution).compute()
     assert_watertight(merged)
     assert len(merged.faces) == 20
     np.testing.assert_allclose(merged.volume, 2 * resolution**3)
