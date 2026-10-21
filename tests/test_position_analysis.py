@@ -110,3 +110,60 @@ def test_plot(project_with_sources):
 
     # import matplotlib.pyplot as plt
     # plt.show()
+
+
+def test_plot_density_3d_axis_order(project_with_sources):
+    """3D density plots use x = first array dimension:
+    a density nonzero at index (i, j, k) plots at x=i, y=j, z=k."""
+    p = project_with_sources
+    posan = Position_Analysis(project=p)
+    posan.density3D(p.sources["synth_data"], (2, 3, 4))
+    record = [r for r in posan.own_records if r.meta.dimensionality == 3][0]
+
+    density = np.zeros((7, 9, 11))
+    density[2, 3, 5] = 1.0
+    record.data.density = density
+
+    ax = posan.plot_density(record)
+    x, y, z = ax.collections[0]._offsets3d
+    np.testing.assert_array_equal(x, [2])
+    np.testing.assert_array_equal(y, [3])
+    np.testing.assert_array_equal(z, [5])
+    assert (ax.get_xlabel(), ax.get_ylabel(), ax.get_zlabel()) == ("x", "y", "z")
+
+
+def test_density3D_anisotropic_axes(project_with_anisotropic_sources):
+    """Binning uses per-axis bin sizes aligned with the array axes.
+    An x/z axis swap changes shape and object bin positions.
+    """
+    p = project_with_anisotropic_sources
+    s = p.sources["synth_data"]
+    posan = Position_Analysis(project=p)
+
+    bin_resolution = (4.0, 4.0, 10.0)  # array order
+    density = posan.density3D(s, bin_resolution)
+
+    # array-order resolution (2, 4, 10) gives per-axis bin sizes (2, 1, 1)
+    binsize = (2, 1, 1)
+    expected_shape = tuple(
+        -(-size // b)
+        for size, b in zip(s.data.shape, binsize)  # ceil division
+    )
+    assert density.shape == expected_shape
+
+    # averaging along x yields different numbers than along z
+    profile_x = density.sum(axis=(1, 2))
+    profile_z = density.sum(axis=(0, 1))
+    assert profile_x.shape != profile_z.shape or not np.array_equal(
+        profile_x, profile_z
+    )
+
+    # the largest organelle must show up in its expected per-axis bin range
+    data = np.asarray(s.data)
+    labels, counts = np.unique(data, return_counts=True)
+    label = int(labels[np.argmax(counts * (labels != 0))])
+    coords = np.argwhere(data == label)
+    bin_min = coords.min(axis=0) // np.array(binsize)
+    bin_max = coords.max(axis=0) // np.array(binsize)
+    bin_range = tuple(slice(lo, hi + 1) for lo, hi in zip(bin_min, bin_max))
+    assert density[bin_range].max() > 0

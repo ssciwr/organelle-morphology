@@ -254,15 +254,16 @@ class Position_Analysis(Analysis):
                 return ax
 
             coords = np.where(nonzero_mask)
-            x, y, z = coords[2], coords[1], coords[0]
+            # array order: x, y, z = first, second, third dimension
+            x, y, z = coords[0], coords[1], coords[2]
             densities = density[nonzero_mask]
 
             ax.scatter(x, y, z, c=densities, cmap="viridis", s=20)
             ax.set_title(f"3D Density Plot - {record.meta.source}")
             if (labels := record.meta.axes_labels) is not None:
-                ax.set_xlabel(labels[2])
+                ax.set_xlabel(labels[0])
                 ax.set_ylabel(labels[1])
-                ax.set_zlabel(labels[0])
+                ax.set_zlabel(labels[2])
             return ax
 
         elif len(density.shape) == 2:
