@@ -133,12 +133,28 @@ def _synthetic_data(n_objects=30, object_size=20, object_distance=100, seed=42):
     return (project_path, original_meshes)
 
 
-@pytest.fixture(scope="function")
-def synthetic_data(_synthetic_data, tmp_path: Path):
-    """Creating symlink in separate dir for each function call
+@pytest.fixture(scope="session")
+def _synthetic_data_fine_resolution():
+    """A fixture for a synthetic dataset at 0.01 um/voxel.
+
+    Regression fixture for #20: at fine physical resolutions the mesh
+    vertices (spaced by half a voxel) sit closer together than a fixed
+    0.01 um weld grid, so welding chunk fragments must not use one.
+    """
+    return generate_synthetic_dataset(
+        n_objects=5,
+        object_size=20,
+        object_distance=100,
+        seed=43,
+        resolution=(0.01, 0.01, 0.01),
+    )
+
+
+def _symlink_dataset(project_path: Path, tmp_path: Path) -> Path:
+    """Create a symlinked copy of a dataset in a separate dir.
+
     Necessary so projects don't share caches.
     """
-    project_path, original_meshes = _synthetic_data
     new_project = tmp_path / project_path.name
     new_project.mkdir()
     for item in project_path.iterdir():
@@ -152,7 +168,16 @@ def synthetic_data(_synthetic_data, tmp_path: Path):
             else:
                 shutil.copy2(item, dest)
 
-    return (new_project, original_meshes)
+    return new_project
+
+
+@pytest.fixture(scope="function")
+def synthetic_data(_synthetic_data, tmp_path: Path):
+    """Creating symlink in separate dir for each function call
+    Necessary so projects don't share caches.
+    """
+    project_path, original_meshes = _synthetic_data
+    return (_symlink_dataset(project_path, tmp_path), original_meshes)
 
 
 @pytest.fixture()
@@ -189,6 +214,20 @@ def project(project_path, client):  # noqa: F811
 @pytest.fixture
 def project_with_sources(project):
     """A fixture for a valid project instance, incl. added sources"""
+    project.add_source("synth_data", "mito")
+    yield project
+    project.clear_caches(True, silent=True)
+
+
+@pytest.fixture
+def project_with_sources_fine_resolution(
+    _synthetic_data_fine_resolution,
+    tmp_path: Path,
+    client,  # noqa: F811
+):
+    """A project with sources at 0.01 um/voxel (regression fixture for #20)"""
+    project_path, _ = _synthetic_data_fine_resolution
+    project = Project(_symlink_dataset(project_path, tmp_path), client=client)
     project.add_source("synth_data", "mito")
     yield project
     project.clear_caches(True, silent=True)

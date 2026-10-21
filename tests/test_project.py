@@ -314,6 +314,44 @@ def test_set_clipping(project_with_sources, mocker):
     mock_clear_cache.assert_called_once()
 
 
+def test_set_simplify(project_with_sources, mocker):
+    p = project_with_sources
+    s = project_with_sources.sources["synth_data"]
+    mock_clear_cache = mocker.patch.object(s, "clear_memory_cache")
+    p.simplify = 0.0
+
+    assert p.simplify == 0.0
+    mock_clear_cache.assert_called_once()
+
+
+def test_set_simplify_unchanged_keeps_caches(project_with_sources, mocker):
+    p = project_with_sources
+    s = project_with_sources.sources["synth_data"]
+    s.cache["test"] = "test_content"
+    s_cache = s.cache
+    mock_clear_cache = mocker.spy(s, "clear_memory_cache")
+
+    p.simplify = p.simplify
+
+    mock_clear_cache.assert_not_called()
+    assert s._cache is s_cache
+    assert s_cache["test"] == "test_content"
+
+
+def test_set_simplify_invalidates_cached_meshes(project_with_sources):
+    """Cached meshes are keyed on simplify (see #20); a change must
+    invalidate them so re-computation reflects the new value."""
+    p = project_with_sources
+    s = p.sources["synth_data"]
+    n_simplified = len(s.meshes[1].compute().vertices)
+
+    p.simplify = 0.0
+
+    assert "-0.0/" in s.cache.cache_name
+    n_full = len(s.meshes[1].compute().vertices)
+    assert n_full >= n_simplified
+
+
 def test_organelles(project_with_sources):
     orgs = project_with_sources.organelles
     assert len(orgs) == 19

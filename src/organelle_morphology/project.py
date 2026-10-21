@@ -9,6 +9,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import trimesh
+import dask
 from dask.base import compute
 from dask.delayed import Delayed
 from dask.distributed import Client, LocalCluster
@@ -204,6 +205,18 @@ class Project:
             root_logger.setLevel(getattr(logging, loglevel.upper()))
             self.logger.debug(f"Set logging level to: {loglevel}")
 
+    def set_debug_scheduler(self, debug: bool):
+        """Set the dask scheduler to single threaded
+        This allowes reaching breakpoints in delayed functions.
+
+        Args:
+            debug: If True set single-threaded, if False, revert to default.
+        """
+        if debug:
+            dask.config.set(scheduler="single-threaded")
+        else:
+            dask.config.set(scheduler=None)
+
     @property
     def metadata(self) -> ProjectMetadata:
         clip = None
@@ -263,8 +276,10 @@ class Project:
                 "Simplify value must be between 0.0 and 1.0. "
                 "It is a percent value of how much to simplify."
             )
+        if getattr(self, "_simplify", None) != simplify:
+            self.clear_caches()
+
         self._simplify = simplify
-        self.clear_caches()
 
     def add_source(
         self,
@@ -725,7 +740,9 @@ class Project:
             tasks = []
             for i, mesh_d in np.ndenumerate(s.mesh_fragments):
                 path = exp_source / f"{i}.glb"
-                mm = merge_mesh_dict_values(mesh_d)
+                # weld in the source's voxel units, the fragments of a
+                # chunk dict all stem from the same source
+                mm = merge_mesh_dict_values(mesh_d, resolution=s.resolution)
                 tasks.append(export_delayed_trimesh(mm, path))
             self.logger.debug(f"Running {len(tasks)} export tasks")
             results.append(compute(*tasks, scheduler="synchronous"))
