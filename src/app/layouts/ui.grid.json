@@ -329,7 +329,7 @@
         "position": [
           0,
           237,
-          8,
+          9,
           23
         ]
       },
@@ -345,7 +345,8 @@
           263,
           24,
           20
-        ]
+        ],
+        "scrollable": true
       },
       {
         "position": [
@@ -353,7 +354,8 @@
           283,
           24,
           36
-        ]
+        ],
+        "scrollable": true
       },
       {
         "position": [

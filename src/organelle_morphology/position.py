@@ -15,11 +15,69 @@ from organelle_morphology.source import DataSource
 logger = logging.getLogger(__name__)
 
 
+def _density_bin_sizes(
+    source: DataSource, bin_resolution: tuple[float, float, float]
+) -> tuple[np.ndarray, tuple[float, float, float]]:
+    """Per-axis density bin sizes in voxels and bin widths in micrometers.
+
+    A bin spans floor(bin_resolution / voxel resolution) voxels per axis,
+    at least one voxel. Both are in array order (x, y, z = first, second,
+    third data dimension), so that width[i] is the size in micrometers of
+    one bin along array axis i.
+
+    Args:
+        source: The source the density is calculated on
+        bin_resolution: Requested binning resolution in micrometers
+
+    Returns:
+        Binsize as an int array (for array arithmetic) and the bin width
+        in micrometers as a tuple of floats
+    """
+    resolution = np.asarray(source.resolution)
+    binsize = ((np.array(bin_resolution) + 1e-9) // resolution).astype(int)
+    if (binsize < 1).any():
+        logger.warning(
+            "Requested bin resolution smaller than the voxel resolution "
+            f"{tuple(resolution)}, using one voxel per bin"
+        )
+        binsize = np.maximum(binsize, 1)
+    bin_width = tuple(float(w) for w in binsize * resolution)
+    return binsize, bin_width
+
+
+def _set_volume_limits(
+    ax, offset: np.ndarray, widths: tuple[float, ...], shape: tuple[int, ...]
+) -> None:
+    """Limit a 3d density plot to the full binned volume.
+
+    The volume starts at the lower clipping corner of the source (zero
+    without clipping), so not only the filled bins are shown.
+
+    Args:
+        ax: 3d matplotlib axes to limit
+        offset: Lower clipping corner in micrometers, per array axis
+        widths: Width of one density bin in micrometers, per array axis
+        shape: Shape of the density array
+    """
+    ax.set_xlim(offset[0], offset[0] + shape[0] * widths[0])
+    ax.set_ylim(offset[1], offset[1] + shape[1] * widths[1])
+    ax.set_zlim(offset[2], offset[2] + shape[2] * widths[2])
+
+
 @dataclass(frozen=True)
 class PositionMeta(PropertyBlock):
+    """Metadata of one Position_Analysis record.
+
+    All axis tuples are in array order (x, y, z = first, second, third
+    data dimension) and all sizes in micrometers.
+    """
+
     source: str
     dimensionality: int
     bin_resolution: tuple[float, float, float]
+    # actual width of one density bin in micrometers per array axis;
+    # None for records saved before this field existed
+    bin_width: Optional[tuple[float, float, float]] = None
     marginal_axis_2d: Optional[int] = None
     axis_1d: Optional[int] = None
     rot_angle: Optional[float] = None
@@ -58,7 +116,8 @@ class Position_Analysis(Analysis):
         Args:
             source: The source containing the organelle of interest,
                 or the name of the respective organelle defined while loading
-            bin_resolution: binning resolution in micrometers
+            bin_resolution: binning resolution in micrometers, in array
+                order (x, y, z = first, second, third data dimension)
         """
         res = bin_resolution
         cache_key = f"density3d_{res[0]:.6f}-{res[1]:.6f}-{res[2]:.6f}"
@@ -68,17 +127,17 @@ class Position_Analysis(Analysis):
                 source
             ]
 
+        binsize, bin_width = _density_bin_sizes(source, bin_resolution)
+
         pos_meta = PositionMeta(
             source=source.org_name,
             dimensionality=3,
             bin_resolution=bin_resolution,
+            bin_width=bin_width,
             axes_labels=("x", "y", "z"),
         )
 
         if cache_key not in source.cache:
-            binsize = ((np.array(bin_resolution) + 1e-9) // source.resolution).astype(
-                int
-            )
             n_missing = (binsize - (source.data.shape % binsize)) % binsize
 
             data = source.data.astype(bool)
@@ -131,6 +190,9 @@ class Position_Analysis(Analysis):
             source: DataSource = {s.org_name: s for s in self.project.sources.values()}[
                 source
             ]
+        # rotation keeps the per-axis voxel size, so the bin widths of the
+        # 3d density describe the axes of the 2d result as well
+        _, bin_width = _density_bin_sizes(source, bin_resolution)
         axes_labels = None
         if rot_angle == 0:
             axes_labels = [0, 1, 2]
@@ -142,6 +204,7 @@ class Position_Analysis(Analysis):
             source=source.org_name,
             dimensionality=2,
             bin_resolution=bin_resolution,
+            bin_width=bin_width,
             marginal_axis_2d=marginal_axis,
             rot_angle=rot_angle,
             rot_axis=rot_axis,
@@ -191,6 +254,7 @@ class Position_Analysis(Analysis):
                 source
             ]
 
+        _, bin_width = _density_bin_sizes(source, bin_resolution)
         axes_labels = None
         if rot_angle == 0:
             axes_names = ["x", "y", "z"]
@@ -199,6 +263,7 @@ class Position_Analysis(Analysis):
             source=source.org_name,
             dimensionality=1,
             bin_resolution=bin_resolution,
+            bin_width=bin_width,
             axis_1d=axis,
             rot_angle=rot_angle,
             rot_axis=rot_axis,
@@ -226,8 +291,49 @@ class Position_Analysis(Analysis):
             self.project.registry.add(record)
         return density_1D
 
+    def _clipping_offset(self, record: Record) -> np.ndarray:
+        """Lower clipping corner of the record's source in micrometers.
+
+        The density is calculated on the clipped volume, so bin 0 of the
+        density sits at the lower clipping corner. Plot positions are
+        offset by this corner to describe the position within the full
+        data extent, like the show scene. Zero without clipping, or if the
+        record's source is not loaded in the project.
+
+        Note: the offset is read from the source at plot time; plotting a
+        record after changing the project clipping reflects the new
+        clipping, not the one the record was calculated with.
+
+        Args:
+            record: Record containing PositionProperties and PositionMeta
+
+        Returns:
+            Lower clipping corner in micrometers, per array axis
+        """
+        source = {s.org_name: s for s in self.project.sources.values()}.get(
+            record.meta.source
+        )
+        if source is None:
+            logger.warning(
+                f"Source {record.meta.source} of the record is not loaded in "
+                "the project, plotting without clipping offset"
+            )
+            return np.zeros(3)
+        return np.asarray(source.clipping_corners[0], dtype=float)
+
     def plot_density(self, record: Record, ax=None):
         """Plot density from a Position_Analysis record.
+
+        All plot axes are in micrometers within the full data extent: a
+        bin with index i along an array axis is drawn at i * bin_width,
+        using the actual bin width recorded in the meta. Positions are
+        offset by the lower clipping corner of the record's source, so
+        with clipping the lower clipping corner is not at zero — the same
+        coordinate frame as the show view. For records saved before
+        bin_width existed, the requested bin_resolution is used instead.
+        Axis names follow the array order convention (x, y, z = first,
+        second, third data dimension), like the clipping and show
+        settings.
 
         Args:
             record: Record containing PositionProperties and PositionMeta
@@ -243,43 +349,76 @@ class Position_Analysis(Analysis):
 
         density = record.data.density
 
+        # width of one density bin in micrometers, per array axis
+        widths = record.meta.bin_width or tuple(record.meta.bin_resolution)
+        # lower clipping corner of the source, per array axis: bin 0 of
+        # the density sits at this corner of the full data extent
+        offset = self._clipping_offset(record)
+
         if len(density.shape) == 3:
             if not (isinstance(ax, plt.Axes) and ax.name == "3d"):
                 fig = plt.figure()
                 ax = fig.add_subplot(111, projection="3d")
 
+            ax.set_title(f"3D Density Plot - {record.meta.source}")
+            if (labels := record.meta.axes_labels) is not None:
+                ax.set_xlabel(f"{labels[0]} [$\\mu$m]")
+                ax.set_ylabel(f"{labels[1]} [$\\mu$m]")
+                ax.set_zlabel(f"{labels[2]} [$\\mu$m]")
+
             nonzero_mask = density != 0
             if not nonzero_mask.any():
-                ax.set_title(f"3D Density Plot - {record.meta.source}")
+                _set_volume_limits(ax, offset, widths, density.shape)
                 return ax
 
             coords = np.where(nonzero_mask)
-            # array order: x, y, z = first, second, third dimension
-            x, y, z = coords[0], coords[1], coords[2]
+            # array order: x, y, z = first, second, third dimension,
+            # positions scaled to micrometers, offset by the lower
+            # clipping corner
+            x, y, z = (
+                offset[0] + coords[0] * widths[0],
+                offset[1] + coords[1] * widths[1],
+                offset[2] + coords[2] * widths[2],
+            )
             densities = density[nonzero_mask]
 
             ax.scatter(x, y, z, c=densities, cmap="viridis", s=20)
-            ax.set_title(f"3D Density Plot - {record.meta.source}")
-            if (labels := record.meta.axes_labels) is not None:
-                ax.set_xlabel(labels[0])
-                ax.set_ylabel(labels[1])
-                ax.set_zlabel(labels[2])
+
+            # show the full binned volume, not only the filled bins,
+            # offset by the lower clipping corner
+            _set_volume_limits(ax, offset, widths, density.shape)
             return ax
 
         elif len(density.shape) == 2:
-            ax.imshow(density)
+            # the first array axis of the density becomes the horizontal
+            # plot axis, the second the vertical one, both in micrometers
+            # within the full data extent
+            marginal_axis = record.meta.marginal_axis_2d
+            widths_2d = [w for i, w in enumerate(widths) if i != marginal_axis]
+            offset_2d = [o for i, o in enumerate(offset) if i != marginal_axis]
+            extent = (
+                offset_2d[0],
+                offset_2d[0] + density.shape[0] * widths_2d[0],
+                offset_2d[1],
+                offset_2d[1] + density.shape[1] * widths_2d[1],
+            )
+            ax.imshow(density.T, origin="lower", extent=extent)
             ax.set_title(f"2D Density Plot - {record.meta.source}")
             ax.axis("auto")
             if (labels := record.meta.axes_labels) is not None:
-                ax.set_xlabel(labels[1])
-                ax.set_ylabel(labels[0])
+                ax.set_xlabel(f"{labels[0]} [$\\mu$m]")
+                ax.set_ylabel(f"{labels[1]} [$\\mu$m]")
             return ax
 
         elif len(density.shape) == 1:
-            ax.plot(density)
+            bin_width = widths[record.meta.axis_1d]
+            ax.plot(
+                offset[record.meta.axis_1d] + np.arange(density.shape[0]) * bin_width,
+                density,
+            )
             ax.set_title(f"1D Density Plot - {record.meta.source}")
             if (labels := record.meta.axes_labels) is not None:
-                ax.set_xlabel(labels[0])
+                ax.set_xlabel(f"{labels[0]} [$\\mu$m]")
             ax.set_ylabel("Mean density")
             return ax
         else:

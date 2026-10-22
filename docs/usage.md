@@ -127,11 +127,15 @@ Create 2d or 1d histograms of organelle densities. In contrast to most analysis,
 
 First you have to choose which organelle type to consider.
 Then select the bin size, choosing a higher bin size can speed up the calculations.
+If the bin size is below the voxel size, one voxel per bin is used instead.
 
 Select whether you want a 2d or 1d histogram.
 For 2d you can select which axis to collapse, for 1d you can select the axis which you want to retain.
+As everywhere else, x, y, z refer to the first, second and third dimension of the data as it is in memory.
 
 Before running the calculations, you can rotate the 3d volume if necessary to align it better to other data.
+
+The plots show positions in micrometers, referring to the full data extent.
 
 ### Analysis Records
 

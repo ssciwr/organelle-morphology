@@ -171,6 +171,7 @@ def _symlink_dataset(project_path: Path, tmp_path: Path) -> Path:
     return new_project
 
 
+@pytest.fixture(scope="session")
 def _anisotropic_synthetic_data(
     n_objects=30, object_size=20, object_distance=100, seed=42
 ):
@@ -203,8 +204,8 @@ def synthetic_data(_synthetic_data, tmp_path: Path):
 @pytest.fixture(scope="function")
 def anisotropic_synthetic_data(_anisotropic_synthetic_data, tmp_path: Path):
     """Function-scoped working copy of the anisotropic dataset."""
-    _project_path, original_meshes = anisotropic_synthetic_data
-    return _symlink_dataset(_project_path, tmp_path)
+    _project_path, original_meshes = _anisotropic_synthetic_data
+    return (_symlink_dataset(_project_path, tmp_path), original_meshes)
 
 
 @pytest.fixture()

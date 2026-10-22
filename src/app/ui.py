@@ -886,13 +886,7 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
 
 
 @app.cell
-def mcs_analysis_overview(
-    mcs_analysis,
-    mcs_filter1_ui,
-    mcs_filter2_ui,
-    project,
-    record_counts,
-):
+def mcs_analysis_overview(mcs_analysis, project, record_counts):
     mo.stop(
         not project.registry.get_by_type("McsData"),
         mo.md("No MCS calculations run yet"),
@@ -908,13 +902,7 @@ def mcs_analysis_overview(
 
 
 @app.cell
-def mcs_analysis_properties(
-    mcs_analysis,
-    mcs_filter1_ui,
-    mcs_filter2_ui,
-    project,
-    record_counts,
-):
+def mcs_analysis_properties(mcs_analysis, project, record_counts):
     mo.stop(
         not project.registry.get_by_type("McsData"),
         mo.md("No MCS calculations run yet"),
