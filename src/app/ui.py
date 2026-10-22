@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.9"
+__generated_with = "0.25.1"
 app = marimo.App(
     width="medium",
     app_title="Organelle Morphology",
@@ -39,7 +39,10 @@ def _():
 @app.cell
 def _():
     project_path_ui = mo.ui.file_browser(
-        selection_mode="directory", multiple=False, label="Project directory"
+        selection_mode="directory",
+        multiple=False,
+        label="Project directory",
+        restrict_navigation=False,
     )
 
     project_hint_loading = mo.md(
@@ -118,6 +121,7 @@ def _(project):
         selection_mode="file",
         label="Source xml",
         multiple=False,
+        restrict_navigation=False,
     )
     new_organelle_name_ui = mo.ui.text(placeholder="Organelle name [mito, er, ..]")
 
@@ -882,13 +886,7 @@ def mcs_analysis_set_filter(mcs_analysis, project, record_counts):
 
 
 @app.cell
-def mcs_analysis_overview(
-    mcs_analysis,
-    mcs_filter1_ui,
-    mcs_filter2_ui,
-    project,
-    record_counts,
-):
+def mcs_analysis_overview(mcs_analysis, project, record_counts):
     mo.stop(
         not project.registry.get_by_type("McsData"),
         mo.md("No MCS calculations run yet"),
@@ -904,13 +902,7 @@ def mcs_analysis_overview(
 
 
 @app.cell
-def mcs_analysis_properties(
-    mcs_analysis,
-    mcs_filter1_ui,
-    mcs_filter2_ui,
-    project,
-    record_counts,
-):
+def mcs_analysis_properties(mcs_analysis, project, record_counts):
     mo.stop(
         not project.registry.get_by_type("McsData"),
         mo.md("No MCS calculations run yet"),

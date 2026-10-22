@@ -38,7 +38,7 @@ from organelle_morphology.util import (
 class Timepoint:
     name: str
     file: Path
-    resolution: list[int]
+    resolution_disk_order: list[int]
     n5: str
     downsamplingFactors: list = field(default_factory=list)
     levels: list[str] = field(default_factory=list)
@@ -55,6 +55,14 @@ class Data_level:
 
 @dataclass(frozen=True)
 class SourceMetadata(PropertyBlock):
+    """Metadata of a data source.
+
+    All axis tuples (`size`, `resolution`, `downsampling`) are in array
+    order, i.e. x, y, z = first, second, third dimension as z5py returns
+    the data. Disk-order attributes are
+    converted at metadata load.
+    """
+
     data_root: Path
     downsampling: tuple[tuple[int, ...], ...]
     levels: tuple[str, ...]
@@ -152,7 +160,9 @@ class DataSource:
                 timepoints[name_parts[1]] = Timepoint(
                     name=name_parts[1],
                     file=n5,
-                    resolution=obj.attrs["resolution"],
+                    # kept raw in disk order for the load-time consistency
+                    # guard in load_metadata
+                    resolution_disk_order=obj.attrs["resolution"],
                     n5=obj.attrs["n5"],
                 )
             if len(name_parts) == 3:
@@ -160,15 +170,20 @@ class DataSource:
                 assert isinstance(obj, z5py.dataset.Dataset), "Unkown data structure"
                 tp = timepoints[name_parts[1]]
 
+                # z5py passes n5 attributes through unreversed (disk order);
+                # convert to array order here, the single conversion point
+                # at metadata load
+                downsampling_factor = tuple(obj.attrs["downsamplingFactors"][::-1])
+
                 dl = Data_level(
                     level=name_parts[2],
                     chunks=obj.chunks,
                     chunks_per_dimension=obj.chunks_per_dimension,
-                    downsamplingFactor=tuple(obj.attrs["downsamplingFactors"]),
+                    downsamplingFactor=downsampling_factor,
                     data=obj,
                 )
 
-                tp.downsamplingFactors.append(tuple(obj.attrs["downsamplingFactors"]))
+                tp.downsamplingFactors.append(downsampling_factor)
                 tp.levels.append(name_parts[2])
 
                 setattr(tp, name_parts[2], dl)
@@ -253,7 +268,13 @@ class DataSource:
 
         self.timepoint = list(timepoints.values())[0]
 
-        assert resolution == self.timepoint.resolution[::-1]
+        # Guard: XML voxel size and n5 timepoint resolution must agree.
+        # Both are in disk order and must be compared unreversed.
+        n5_resolution = [float(r) for r in self.timepoint.resolution_disk_order]
+        assert resolution == n5_resolution, (
+            "XML voxelSize and n5 timepoint resolution disagree: "
+            f"{resolution} vs {n5_resolution} (both in disk order)"
+        )
 
         coarse_level = self.timepoint.levels[0]
         for level in self.timepoint.levels:
@@ -262,10 +283,12 @@ class DataSource:
 
         self._metadata = SourceMetadata(
             data_root=self.xml_path / filename,
+            # array order, converted from disk order in load_n5
             downsampling=tuple(self.timepoint.downsamplingFactors),
             levels=tuple(self.timepoint.levels),
             size=tuple([int(i) for i in size.split(" ")][::-1]),
-            resolution=tuple(resolution),
+            # disk order -> array order
+            resolution=tuple(resolution[::-1]),
             unit=_unit,
             name=name,
             coarse_level=coarse_level,

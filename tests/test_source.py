@@ -1,6 +1,8 @@
 import pytest
 from organelle_morphology.block_mesher import block_mesher
 
+import xml.etree.ElementTree as ET
+
 import numpy as np
 from dask.base import compute
 import dask.array as da
@@ -8,6 +10,9 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 from .mesh_asserts import assert_watertight
+from organelle_morphology.project import Project
+
+from .synthetic_data_generator import generate_synthetic_dataset
 
 
 def test_block_mesher_c_in_c(voxels_c_in_c):
@@ -369,3 +374,74 @@ def test_get_coarse_centroid(project_with_sources):
     p = project_with_sources
     center = p.sources["synth_data"].global_coarse_centroid
     np.testing.assert_allclose(center, [120.444444, 129.666667, 180.666667])
+
+
+def test_anisotropic_metadata_in_array_order(project_with_anisotropic_sources):
+    """All metadata tuples are in array order.
+
+    The anisotropic fixture has disk-order voxel size [10, 4, 2] and a
+    disk-order downsampling factor (4, 8, 2) at level s2; converted to
+    array order these become (2, 4, 10) and (2, 8, 4). Any axis swap
+    changes the expected values.
+    """
+    p = project_with_anisotropic_sources
+    s = p.sources["synth_data"]
+
+    assert s.metadata.size == s.data.shape
+    assert s.data_resolution == (2.0, 4.0, 10.0)
+    assert s.metadata.downsampling[2] == (2, 8, 4)
+
+    # per array axis: resolution = data resolution * downsampling factor
+    p.compression_level = "s2"
+    assert s.resolution == (2.0 * 2, 4.0 * 8, 10.0 * 4)
+
+
+def test_metadata_resolution_mismatch_raises(tmp_path, client):
+    """Metadata load fails loudly when XML voxelSize and n5 resolution
+    disagree (both are compared in disk order)."""
+    dataset_dir, _ = generate_synthetic_dataset(
+        n_objects=2,
+        object_size=15,
+        object_distance=60,
+        seed=7,
+        working_dir=tmp_path,
+        resolution=[6, 3, 1],
+    )
+
+    # tamper with the XML voxel size so it no longer matches the n5 attrs
+    xml_path = dataset_dir / "synth_data.xml"
+    tree = ET.parse(xml_path)
+    voxel_size = (
+        tree.getroot()
+        .find("SequenceDescription")
+        .find("ViewSetups")
+        .find("ViewSetup")
+        .find("voxelSize")
+        .find("size")
+    )
+    voxel_size.text = "9 9 9"
+    tree.write(xml_path)
+
+    project = Project(dataset_dir, client=client)
+    with pytest.raises(AssertionError, match="resolution disagree"):
+        project.add_source("synth_data", "mito")
+
+
+def test_anisotropic_regionprops_spacing(project_with_anisotropic_sources):
+    """Regionprops uses per-axis spacing aligned with the array axes:
+    voxel volume = voxel count * product of the per-axis spacing and
+    centroid_i = mean index_i * spacing_i."""
+    p = project_with_anisotropic_sources
+    s = p.sources["synth_data"]
+    p.compression_level = "s2"
+
+    spacing = np.array(s.resolution)  # array order, non-palindromic
+    data = np.asarray(s.data)
+
+    labels, counts = np.unique(data, return_counts=True)
+    label = int(labels[np.argmax(counts * (labels != 0))])
+    props = s.basic_geometric_properties[f"mito_{label:04d}"]
+
+    coords = np.argwhere(data == label)
+    assert props["voxel_volume"] == pytest.approx(len(coords) * np.prod(spacing))
+    np.testing.assert_allclose(props["voxel_centroid"], coords.mean(axis=0) * spacing)
