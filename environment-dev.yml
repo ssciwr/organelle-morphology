@@ -29,6 +29,6 @@ dependencies:
       - setuptools==65.7.0
       - "trimesh[easy,recommend]<5.0.0"
       - xdg
-      - skeletor
+      - skeletor[fast,ncollpyde]<1.9.0
       - zmesh
       - -e ./
