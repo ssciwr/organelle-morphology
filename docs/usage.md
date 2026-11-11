@@ -76,7 +76,7 @@ When the `Project` contains some analysis records from a previous run, you can l
 
 ### Show Mesh
 
-Here you can preview the mesh in 3D. By default the meshes are colored by organelle type.  
+Here you can preview the mesh in 3D. By default the meshes are colored by organelle type.
 In one corner you can see some axis markers in red, green, and blue.
 These mark the corner closest to the origin.
 Red corresponds to the first (outer) dimension, green to the second and blue to the third (inner) dimension.
@@ -99,6 +99,7 @@ Does not work with other coloring options in parallel.
 Additional to the meshes, the chosen clipping box is shown, as well as an box enclosing the unclipped data.
 
 The (0,0,0) corner is marked with three arrows along the axes. The red one points in x direction, the green one in y direction and the blue one in z direction.
+Here x, y, z always refer to the first, second, and third dimension of the data *as it is in memory*
 
 ### Set minimum Volume
 
@@ -126,11 +127,15 @@ Create 2d or 1d histograms of organelle densities. In contrast to most analysis,
 
 First you have to choose which organelle type to consider.
 Then select the bin size, choosing a higher bin size can speed up the calculations.
+If the bin size is below the voxel size, one voxel per bin is used instead.
 
 Select whether you want a 2d or 1d histogram.
 For 2d you can select which axis to collapse, for 1d you can select the axis which you want to retain.
+As everywhere else, x, y, z refer to the first, second and third dimension of the data as it is in memory.
 
 Before running the calculations, you can rotate the 3d volume if necessary to align it better to other data.
+
+The plots show positions in micrometers, referring to the full data extent.
 
 ### Analysis Records
 

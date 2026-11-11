@@ -23,7 +23,25 @@ def generate_synthetic_dataset(
     seed=42,
     working_dir=None,
     resolution=(1, 1, 1),
+    downsampling_factors=None,
 ) -> tuple[Path, dict]:
+    """Generate a synthetic bdv-n5 dataset.
+
+    Args:
+        n_objects: number of objects to place in the volume
+        object_size: maximum size scale of the objects
+        object_distance: spacing grid for object placement
+        seed: random seed for object generation and placement
+        working_dir: directory in which to create the dataset directory
+        resolution: voxel size in disk order (x, y, z), as stored in the
+            n5/XML attributes. Default: isotropic [1, 1, 1]
+        downsampling_factors: per-level downsampling factors in disk order
+            (x, y, z), as stored in the n5 attributes. Default: isotropic
+            levels 1, 2, 4, 16
+
+    Returns:
+        Tuple of the dataset directory and the dict of generated meshes.
+    """
     if working_dir is None:
         temp_dir = Path(tempfile.mkdtemp())
     else:
@@ -39,15 +57,19 @@ def generate_synthetic_dataset(
         seed=seed,
     )
 
+    if resolution is None:
+        resolution = [1, 1, 1]
+
     cebra_dir = temp_dir
 
     filename = cebra_dir / "synth_data.n5"
     f = z5py.File(filename, mode="a", use_zarr_format=False)
     group = f.create_group("setup0/timepoint0")
 
-    downsampling_factors = ([1, 1, 1], [2, 2, 2], [4, 4, 4], [16, 16, 16])
+    if downsampling_factors is None:
+        downsampling_factors = ([1, 1, 1], [2, 2, 2], [4, 4, 4], [16, 16, 16])
     for i, factor in enumerate(downsampling_factors):
-        down_sampled = block_reduce(voxel_array, factor[0], func=np.median)
+        down_sampled = block_reduce(voxel_array, tuple(factor), func=np.median)
         down_sampled = np.asarray(down_sampled, dtype="uint16")
         group.create_dataset(f"s{i}", data=down_sampled, dtype="uint16")
 

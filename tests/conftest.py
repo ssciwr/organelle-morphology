@@ -171,6 +171,27 @@ def _symlink_dataset(project_path: Path, tmp_path: Path) -> Path:
     return new_project
 
 
+@pytest.fixture(scope="session")
+def _anisotropic_synthetic_data(
+    n_objects=30, object_size=20, object_distance=100, seed=42
+):
+    """A fixture for an anisotropic synthetic dataset.
+
+    Resolution and downsampling factors are non-palindromic and
+    axis-asymmetric (given in disk order), so that any axis swap changes
+    the numerical results.
+    """
+    project_path, original_meshes = generate_synthetic_dataset(
+        n_objects=n_objects,
+        object_size=object_size,
+        object_distance=object_distance,
+        seed=seed,
+        resolution=[10, 4, 2],
+        downsampling_factors=([1, 1, 1], [2, 2, 2], [4, 8, 2], [16, 16, 16]),
+    )
+    return (project_path, original_meshes)
+
+
 @pytest.fixture(scope="function")
 def synthetic_data(_synthetic_data, tmp_path: Path):
     """Creating symlink in separate dir for each function call
@@ -180,10 +201,23 @@ def synthetic_data(_synthetic_data, tmp_path: Path):
     return (_symlink_dataset(project_path, tmp_path), original_meshes)
 
 
+@pytest.fixture(scope="function")
+def anisotropic_synthetic_data(_anisotropic_synthetic_data, tmp_path: Path):
+    """Function-scoped working copy of the anisotropic dataset."""
+    _project_path, original_meshes = _anisotropic_synthetic_data
+    return (_symlink_dataset(_project_path, tmp_path), original_meshes)
+
+
 @pytest.fixture()
 def project_path(synthetic_data):
     """Returns a path that conains a valid project"""
     return synthetic_data[0]
+
+
+@pytest.fixture()
+def anisotropic_project_path(anisotropic_synthetic_data):
+    """Returns a path that contains an anisotropic project"""
+    return anisotropic_synthetic_data[0]
 
 
 @pytest.fixture(scope="session")
@@ -212,6 +246,14 @@ def project(project_path, client):  # noqa: F811
 
 
 @pytest.fixture
+def anisotropic_project(anisotropic_project_path, client):  # noqa: F811
+    """A fixture for a valid project instance on anisotropic data"""
+    project = Project(anisotropic_project_path, client=client)
+    yield project
+    project.clear_caches(True, silent=True)
+
+
+@pytest.fixture
 def project_with_sources(project):
     """A fixture for a valid project instance, incl. added sources"""
     project.add_source("synth_data", "mito")
@@ -231,3 +273,11 @@ def project_with_sources_fine_resolution(
     project.add_source("synth_data", "mito")
     yield project
     project.clear_caches(True, silent=True)
+
+
+@pytest.fixture
+def project_with_anisotropic_sources(anisotropic_project):
+    """A fixture for an anisotropic project instance, incl. added sources"""
+    anisotropic_project.add_source("synth_data", "mito")
+    yield anisotropic_project
+    anisotropic_project.clear_caches(True, silent=True)
