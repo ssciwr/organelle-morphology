@@ -389,7 +389,8 @@ def test_anisotropic_metadata_in_array_order(project_with_anisotropic_sources):
 
     assert s.metadata.size == s.data.shape
     assert s.data_resolution == (2.0, 4.0, 10.0)
-    assert s.metadata.downsampling[2] == (2, 8, 4)
+    idx = s.metadata.levels.index("s2")
+    assert s.metadata.downsampling[idx] == (2, 8, 4)
 
     # per array axis: resolution = data resolution * downsampling factor
     p.compression_level = "s2"
