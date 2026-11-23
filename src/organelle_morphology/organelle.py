@@ -14,10 +14,15 @@ import organelle_morphology
 from organelle_morphology.records import PropertyBlock, Record
 from organelle_morphology.util import (
     bounding_box_delayed,
-    color_delayed_trimesh_vertices,
+    color_delayed_trimesh_faces,
     numpy_to_python,
     reset_color_delayed,
 )
+
+# Version of the on-disk MCS record schema. Bump whenever the meaning of the
+# stored aggregates changes; records with any other version are rejected on
+# load instead of being mixed with freshly calculated values.
+CURRENT_MCS_SCHEMA_VERSION = 2
 
 
 def organelle_types() -> list[str]:
@@ -41,6 +46,7 @@ class OrganelleMetadata(PropertyBlock):
 class McsMetadata(PropertyBlock):
     mcs_label: str
     max_dist: float
+    schema_version: int
     min_dist: float = 0.0
     filter_1: str = "*"
     filter_2: str = "*"
@@ -50,6 +56,12 @@ class McsMetadata(PropertyBlock):
     organelle_meta: InitVar[Optional[OrganelleMetadata]] = None
 
     def __post_init__(self, organelle_meta: Optional[OrganelleMetadata]):
+        if self.schema_version != CURRENT_MCS_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported MCS schema_version {self.schema_version}, "
+                f"expected {CURRENT_MCS_SCHEMA_VERSION}: pre-fix MCS records "
+                "are invalid and must be recalculated."
+            )
         if organelle_meta is not None:
             for f in fields(organelle_meta):
                 setattr(
@@ -73,6 +85,7 @@ class MeshData(PropertyBlock):
 @dataclass
 class McsData(PropertyBlock):
     n_contacts: int
+    n_partners: int
     total_area: float
     mean_area: float
     std_area: float
@@ -113,7 +126,8 @@ class Organelle:
         self._skeleton = None
         self._sampled_skeleton = None
         self._skeleton_info = {}
-        self._mcs = defaultdict(dict)
+        # label -> partner id -> list of own MCS patch entries
+        self._mcs = defaultdict(lambda: defaultdict(list))
         self._chunks = None
 
     @classmethod
@@ -207,12 +221,22 @@ class Organelle:
             mcs_label = labels[0]
 
         if mcs_partners_dict := self.mcs.get(mcs_label):
-            for i, mcs_dict in enumerate(mcs_partners_dict.values()):
-                j = i % 20
-                colored = color_delayed_trimesh_vertices(
+            for i, patches in enumerate(mcs_partners_dict.values()):
+                if not patches:
+                    continue
+                # Colour per partner for now (ticket 04 moves to per patch).
+                faces = np.unique(
+                    np.concatenate(
+                        [
+                            np.asarray(patch["faces_index"], dtype=np.int64)
+                            for patch in patches
+                        ]
+                    )
+                )
+                colored = color_delayed_trimesh_faces(
                     colored,
-                    mcs_dict["vertices_index"],
-                    [c * 255 for c in cm(j)],
+                    faces,
+                    [c * 255 for c in cm(i % 20)],
                 )
         return colored
 
@@ -259,29 +283,51 @@ class Organelle:
         return self.source.get_meshes_curvature_colored(labels=self.label)[0]
 
     def add_mcs(self, mcs_dict, mcs_meta):
-        """Add mcs information to this organelle.
+        """Append the own-side MCS patches of one partner to this organelle.
+
+        A pair can form several appositions, so each patch is stored as its own
+        entry. Repeated calls for the same ``(label, partner)`` append rather
+        than overwrite.
 
         Args:
-            mcs_dict (dict): per-side MCS result from the geometry core.
+            mcs_dict (dict): per-side MCS result from the geometry core,
+                containing a ``patches`` list.
+            mcs_meta (dict): label parameters (band, id filters) for the run.
         """
         mcs_target = mcs_dict["partner_id"]
         mcs_label = mcs_dict["mcs_label"]
+        patches = mcs_dict.get("patches", ())
+        if not patches:
+            return
 
-        mcs_entry = {
-            "vertices_index": mcs_dict["vertices_index"],
-            "distances": mcs_dict["distances"],
-            "area": mcs_dict["area"],
-            "meta": mcs_meta,
-        }
+        entries = self._mcs[mcs_label][mcs_target]
+        for patch in patches:
+            entries.append(
+                {
+                    "patch_id": patch["patch_id"],
+                    "faces_index": patch["faces_index"],
+                    "distances": patch["distances"],
+                    "area": patch["area"],
+                    "truncated": patch["truncated"],
+                    "partner_patch_ids": patch["partner_patch_ids"],
+                    "meta": mcs_meta,
+                }
+            )
 
-        self._mcs[mcs_label][mcs_target] = mcs_entry
+    def calc_mcs_dict_entry(self, mcs_label, mcs_meta=None):
+        """Aggregate this organelle's patches for ``mcs_label`` into a record.
 
-    def calc_mcs_dict_entry(self, mcs_label):
+        ``n_contacts`` counts own patches (across partners), ``n_partners``
+        counts partners. Areas are aggregated over patches; distance means and
+        standard deviations are weighted by patch area. Per-partner distances
+        stay aligned with the ``partners`` tuple.
+
+        Args:
+            mcs_label (str): label of the MCS run.
+            mcs_meta (dict, optional): label parameters for the run
+                (``min_distance``, ``max_distance``, ``ids_filter_1/2``). Falls
+                back to the project's label entry or the stored patch metadata.
         """
-        Calculate the properties of the mcs partners for the given mcs label
-
-        """
-
         mcs_dict = {}
         volume = self.mesh_properties.volume
         surface = self.mesh_properties.area
@@ -292,91 +338,126 @@ class Organelle:
                 f"Volume: {volume}, Surface {surface}"
             )
 
-        len_dist_list = []
-        mean_dist_list = []
-        std_dist_list = []
-        area_list = []
-        partners = []
-        min_dist_list = []
-        max_dist_list = []
+        # Only partners with at least one usable patch contribute.
+        partner_patches = []
+        for partner, patches in self.mcs[mcs_label].items():
+            usable = [
+                patch
+                for patch in patches
+                if len(np.asarray(patch["distances"])) > 0
+            ]
+            if usable:
+                partner_patches.append((partner, usable))
 
-        for partner, entry in self.mcs[mcs_label].items():
-            partners.append(partner)
-            mean_dist_list.append(np.mean(entry["distances"]))
-            std_dist_list.append(np.std(entry["distances"]))
-            len_dist_list.append(len(entry["distances"]))
-            min_dist_list.append(np.min(entry["distances"]))
-            max_dist_list.append(np.max(entry["distances"]))
-            area_list.append(entry["area"])
-
-        mean_dist_list = np.array(mean_dist_list)
-        std_dist_list = np.array(std_dist_list)
-        len_dist_list = np.array(len_dist_list)
-        if len(len_dist_list) == 0 or 0 in len_dist_list:
+        if not partner_patches:
             self.logger.debug(
                 "No distributions found for mcs %s in organelle %s", mcs_label, self
             )
             return
-        assert entry
 
-        mcs_dict["n_contacts"] = len(len_dist_list)
+        partners = [partner for partner, _ in partner_patches]
+        patches = [patch for _, own in partner_patches for patch in own]
+
+        patch_areas = np.array(
+            [float(patch["area"]) for patch in patches], dtype=np.float64
+        )
+        patch_means = np.array(
+            [np.mean(patch["distances"]) for patch in patches], dtype=np.float64
+        )
+        patch_stds = np.array(
+            [np.std(patch["distances"]) for patch in patches], dtype=np.float64
+        )
+        patch_min = np.array(
+            [np.min(patch["distances"]) for patch in patches], dtype=np.float64
+        )
+        patch_max = np.array(
+            [np.max(patch["distances"]) for patch in patches], dtype=np.float64
+        )
+
+        total_area = float(np.sum(patch_areas))
+        mcs_dict["n_contacts"] = len(patches)
+        mcs_dict["n_partners"] = len(partners)
         mcs_dict["partners"] = partners
+        mcs_dict["total_area"] = total_area
+        mcs_dict["mean_area"] = float(np.mean(patch_areas))
+        mcs_dict["std_area"] = (
+            float(np.std(patch_areas)) if len(patch_areas) > 1 else 0.0
+        )
+        mcs_dict["min_dist"] = float(np.min(patch_min))
+        mcs_dict["max_dist"] = float(np.max(patch_max))
 
-        mcs_dict["total_area"] = np.sum(area_list)
-        mcs_dict["mean_area"] = np.mean(area_list)
-
-        mcs_dict["min_dist"] = np.min(min_dist_list)
-        mcs_dict["max_dist"] = np.max(max_dist_list)
-
-        if len(area_list) == 1:
-            mcs_dict["std_area"] = 0
-        else:
-            mcs_dict["std_area"] = np.std(area_list)
-
-        # calculate the mean and std from the sub_mean and std values for each mcs partner
-        try:
-            overall_mean = np.average(mean_dist_list, weights=len_dist_list)
-        except ZeroDivisionError:
-            overall_mean = 0
-
-        try:
-            overall_var = np.average(
-                (std_dist_list**2 + (mean_dist_list - overall_mean) ** 2),
-                weights=len_dist_list,
+        # Area-weighted mean and variance across patches. This is equivalent
+        # to weighting every distance sample by its patch's area, without
+        # concatenating the per-patch distance arrays.
+        total_weight = float(np.sum(patch_areas))
+        if total_weight > 0:
+            overall_mean = float(
+                np.average(patch_means, weights=patch_areas)
             )
-        except ZeroDivisionError:
-            overall_var = 0
-        overall_std = np.sqrt(overall_var)
-
+            overall_var = float(
+                np.average(
+                    patch_stds**2 + (patch_means - overall_mean) ** 2,
+                    weights=patch_areas,
+                )
+            )
+        else:
+            overall_mean = float(np.mean(patch_means))
+            overall_var = float(
+                np.mean(patch_stds**2 + (patch_means - overall_mean) ** 2)
+            )
         mcs_dict["mean_dist"] = overall_mean
-        mcs_dict["std_dist"] = overall_std
+        mcs_dict["std_dist"] = float(np.sqrt(max(overall_var, 0.0)))
 
-        mcs_dict["min_dist_per_org"] = min_dist_list
-        mcs_dict["max_dist_per_org"] = max_dist_list
+        min_dist_per_org = []
+        max_dist_per_org = []
+        offset = 0
+        for _, own in partner_patches:
+            stop = offset + len(own)
+            min_dist_per_org.append(float(np.min(patch_min[offset:stop])))
+            max_dist_per_org.append(float(np.max(patch_max[offset:stop])))
+            offset = stop
+        mcs_dict["min_dist_per_org"] = min_dist_per_org
+        mcs_dict["max_dist_per_org"] = max_dist_per_org
 
         if surface > 0:
             mcs_dict["n_contacts_per_area"] = mcs_dict["n_contacts"] / surface
-            mcs_dict["area_per_area"] = mcs_dict["total_area"] / surface
+            mcs_dict["area_per_area"] = total_area / surface
         else:
             mcs_dict["n_contacts_per_area"] = np.nan
             mcs_dict["area_per_area"] = np.nan
 
         if volume > 0:
-            mcs_dict["area_per_volume"] = mcs_dict["total_area"] / volume
+            mcs_dict["area_per_volume"] = total_area / volume
             mcs_dict["n_contacts_per_volume"] = mcs_dict["n_contacts"] / volume
         else:
             mcs_dict["area_per_volume"] = np.nan
             mcs_dict["n_contacts_per_volume"] = np.nan
 
+        label_meta = self._mcs_label_meta(mcs_label, mcs_meta)
         mcs_props = McsData(**numpy_to_python(mcs_dict))
-        mcs_meta = McsMetadata(
+        meta = McsMetadata(
             organelle_meta=self.metadata,
             mcs_label=mcs_label,
-            min_dist=entry["meta"]["min_distance"],
-            max_dist=entry["meta"]["max_distance"],
+            min_dist=float(label_meta.get("min_distance", 0.0)),
+            max_dist=float(label_meta.get("max_distance", 0.0)),
+            filter_1=label_meta.get("ids_filter_1", "*"),
+            filter_2=label_meta.get("ids_filter_2", "*"),
+            schema_version=CURRENT_MCS_SCHEMA_VERSION,
         )
-        stat = Record(mcs_props, mcs_meta, project=self.project)
+        stat = Record(mcs_props, meta, project=self.project)
         self.project.registry.add(stat)
+
+    def _mcs_label_meta(self, mcs_label, mcs_meta=None) -> dict:
+        """Resolve the parameters of an MCS run from the most precise source."""
+        if mcs_meta is not None:
+            return mcs_meta
+        label_meta = self.project._mcs_labels.get(mcs_label)
+        if label_meta is not None:
+            return label_meta
+        for patches in self.mcs[mcs_label].values():
+            if patches:
+                return patches[0].get("meta") or {}
+        return {}
 
     @property
     def mcs(self) -> dict:

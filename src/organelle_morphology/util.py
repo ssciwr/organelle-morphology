@@ -175,6 +175,17 @@ def color_delayed_trimesh_vertices(tmesh, vertices, color):
 
 
 @delayed
+def color_delayed_trimesh_faces(tmesh, faces, color):
+    """Colour all vertices incident to the given faces."""
+    faces = np.asarray(faces, dtype=np.int64)
+    if faces.size == 0:
+        return tmesh
+    vertices = np.unique(np.asarray(tmesh.faces)[faces].reshape(-1))
+    tmesh.visual.vertex_colors[vertices] = color
+    return tmesh
+
+
+@delayed
 def color_delayed_trimesh_rgba(
     tmesh: Trimesh,
     values,

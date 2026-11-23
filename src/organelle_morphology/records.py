@@ -415,10 +415,21 @@ class RecordRegistry:
 
         logger.info(f"Found {len(files)} record files.")
         count = 0
+        rejected = []
         for file in files:
             try:
                 self.add(Record.from_yaml(file))
                 count += 1
-            except ValueError as e:
-                logger.warning(e)
+            except (ValueError, TypeError) as e:
+                rejected.append((file, e))
+                logger.warning("Rejected record file %s: %s", file, e)
+
+        if rejected:
+            details = "; ".join(f"{file}: {error}" for file, error in rejected)
+            logger.warning(
+                "Rejected %d record file(s) with a missing or unsupported "
+                "schema: %s",
+                len(rejected),
+                details,
+            )
         self.logger.info(f"Successfully loaded {count} records")
