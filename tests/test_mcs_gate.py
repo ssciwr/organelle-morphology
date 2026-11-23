@@ -21,10 +21,6 @@ from organelle_morphology.distance_calculations import (
     generate_mcs,
     get_min_dist,
 )
-from organelle_morphology.mcs_geometry import (
-    get_mesh_geometry,
-    min_dist_upper,
-)
 
 
 def _icosphere_pair(gap, radius=1.0, subdivisions=2):
@@ -222,6 +218,45 @@ def test_gate_selects_small_gap_icospheres():
         assert np.all(distances <= 0.1 + 1e-9)
 
 
+def _flipped_plane(extent=2.0, cells=10, z=0.0):
+    """A grid plane whose normals point away from a partner above it."""
+    plane = _grid_plane(extent=extent, cells=cells, z=z)
+    plane.faces = np.asarray(plane.faces)[:, ::-1]
+    return plane
+
+
+def test_gate_keeps_one_sided_contact():
+    """A side without its own MCS must not suppress the other side's record.
+
+    A sphere hovers above a plane whose winding points away from it, so the
+    plane has no facing (hence no member) surface points while the sphere
+    still has a facing bottom cap inside the band. The apposition is
+    one-sided; the sphere's side must still be recorded.
+    """
+    plane = _flipped_plane()
+    sphere = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    sphere.apply_translation((0.0, 0.0, 1.002))
+    upper, lower = _pair_matrices(
+        {"plane": plane, "sphere": sphere}, max_distance=0.1
+    )
+    org_plane = _GateOrganelle("plane", plane)
+    org_sphere = _GateOrganelle("sphere", sphere)
+    project = _GateProject(
+        [org_plane, org_sphere], upper, lower, max_distance=0.1
+    )
+
+    label = generate_mcs(project, "plane", "sphere", max_distance=0.1)
+
+    assert label in org_sphere.mcs
+    assert org_sphere.mcs[label]["plane"]
+    assert all(patch["area"] > 0 for patch in org_sphere.mcs[label]["plane"])
+    # the plane contributes no patch, so it gets no aggregate entry
+    assert label not in org_plane.mcs
+    assert org_plane.mcs_dict_entries == {}
+    assert org_sphere.mcs_dict_entries == {label: True}
+    assert project._mcs_labels[label]["organelles"] == {"sphere"}
+
+
 def test_gate_ignores_min_distance_pair_filter():
     """A pair whose global minimum is below min_distance is kept.
 
@@ -261,32 +296,43 @@ def test_gate_ignores_min_distance_pair_filter():
     assert distances.max() > 0.05
 
 
-def test_lower_bound_never_exceeds_true_minimum():
-    """``max(d_AB - h_A, d_BA - h_B)`` is rigorous on analytic fixtures."""
-    plane_a = _grid_plane(extent=1.0, cells=20, z=0.0)
-    plane_b = _grid_plane(extent=1.0, cells=20, z=0.1)
-    geometry_a = get_mesh_geometry(plane_a)
-    geometry_b = get_mesh_geometry(plane_b)
-    d_ab, d_ba = min_dist_upper(geometry_a, geometry_b)
-    lower = max(
-        d_ab - geometry_a.sampling_radius,
-        d_ba - geometry_b.sampling_radius,
-        0.0,
-    )
-    assert min(d_ab, d_ba) >= 0.1 - 1e-9  # upper bound above the true minimum
-    assert lower <= 0.1 + 1e-9
+def test_lower_bound_brackets_the_true_minimum_on_analytic_fixtures():
+    """``get_min_dist``'s bounds bracket independently known minima.
 
-    sphere_a, sphere_b = _icosphere_pair(gap=0.5)
-    geometry_a = get_mesh_geometry(sphere_a)
-    geometry_b = get_mesh_geometry(sphere_b)
-    d_ab, d_ba = min_dist_upper(geometry_a, geometry_b)
-    lower = max(
-        d_ab - geometry_a.sampling_radius,
-        d_ba - geometry_b.sampling_radius,
-        0.0,
-    )
-    assert min(d_ab, d_ba) >= 0.5 - 1e-9
-    assert lower <= 0.5 + 1e-9
+    The previous version recomputed the lower-bound formula from
+    ``min_dist_upper`` itself, which passes by construction. Here the true
+    minima are known from the fixture geometry and the public ``get_min_dist``
+    result must satisfy ``lower <= true <= upper`` for both argument orders.
+    """
+    gap = 0.2
+    tol = 1e-12
+
+    # two equal spheres: the closest surface points lie on the center line
+    sphere_a, sphere_b = _icosphere_pair(gap=gap, radius=1.0, subdivisions=3)
+    for id_1, id_2, mesh_1, mesh_2 in (
+        ("a", "b", sphere_a, sphere_b),
+        ("b", "a", sphere_b, sphere_a),
+    ):
+        pair, upper, lower = get_min_dist((id_1, id_2, mesh_1, mesh_2, None))
+        assert pair == (id_1, id_2)
+        assert -tol <= lower <= gap + tol
+        assert gap - tol <= upper
+        assert lower <= upper + tol
+
+    # a sphere hovering above a finite plane: the true minimum is the vertical
+    # gap at the plane centre, which lies well inside the triangulated square
+    plane = _grid_plane(extent=2.0, cells=10, z=0.0)
+    sphere = trimesh.creation.icosphere(subdivisions=3, radius=1.0)
+    sphere.apply_translation((0.0, 0.0, 1.0 + gap))
+    for id_1, id_2, mesh_1, mesh_2 in (
+        ("s", "p", sphere, plane),
+        ("p", "s", plane, sphere),
+    ):
+        pair, upper, lower = get_min_dist((id_1, id_2, mesh_1, mesh_2, None))
+        assert pair == (id_1, id_2)
+        assert -tol <= lower <= gap + tol
+        assert gap - tol <= upper
+        assert lower <= upper + tol
 
 
 def test_get_min_dist_is_symmetric_and_returns_lower_bound():

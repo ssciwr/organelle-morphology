@@ -875,11 +875,13 @@ class Project:
         ids_filter_1: str = "*",
         ids_filter_2: str = "*",
         overwrite_mcs_label=False,
+        subdivision_depth: int = 3,
     ):
         """
         This function is used to search for membrane contact sites within a project.
-        Pairs will only be selected when their minimum mesh distance is between
-        the requested min and max distance.
+        Pairs are gated conservatively by ``max_distance`` only; the distance
+        band ``[min_distance, max_distance]`` filters surface points while the
+        per-side MCS patches are computed.
 
         Args:
             project (Project): The project object containing the distance
@@ -894,6 +896,9 @@ class Project:
                 organelles using glob-style patterns. Defaults to "*".
             overwrite_mcs_label (bool, optional): If the label exists, it
                 should be overwritten. Defaults to False.
+            subdivision_depth (int, optional): Maximum midpoint refinement
+                depth for boundary faces. Defaults to 3, the documented
+                accuracy setting.
 
         Returns:
             str: The label of this mcs search
@@ -906,6 +911,7 @@ class Project:
             max_distance=max_distance,
             min_distance=min_distance,
             overwrite=overwrite_mcs_label,
+            subdivision_depth=subdivision_depth,
         )
 
     @property
@@ -1013,10 +1019,12 @@ class Project:
 
         Each entry is ``min(d_AB, d_BA)``, the smaller of the two
         bidirectional vertex-to-surface minima. It overestimates the true
-        surface-to-surface minimum by at most ``max(h_A, h_B)``, the sampling
-        radii of the two meshes. ``-1`` marks pairs that were not evaluated
-        (domain decomposition) or lie beyond the computed ``max_distance``.
-        Use :attr:`distance_matrix_lower` for the rigorous lower bound.
+        surface-to-surface minimum by at most ``max(h_A, h_B)``: ``d_AB``
+        alone errs by at most ``h_A`` and ``d_BA`` by at most ``h_B``, where
+        ``h`` is a mesh's sampling radius. ``-1`` marks pairs that were not
+        evaluated (domain decomposition) or lie beyond the computed
+        ``max_distance``. Use :attr:`distance_matrix_lower` for the rigorous
+        lower bound.
         """
 
         return generate_distance_matrix(self)

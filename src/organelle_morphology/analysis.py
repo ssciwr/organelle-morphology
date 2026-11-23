@@ -16,19 +16,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Column group used for non-contact columns in the structured DataFrames built
-# by ``Misc_Analysis.get_dataframe``. Contact columns use their full MCS label
-# as the group, so a label containing "-" (e.g. "0-0.1,mito-er") stays intact.
+# Column group used for columns that are not MCS properties in the structured
+# DataFrames built by ``Misc_Analysis.get_dataframe``. MCS columns use their
+# full label as the group, so a label containing "-" (e.g. "0-0.1,mito-er")
+# stays intact.
 STATIC_COLUMN_GROUP = "static"
+
+
+def _static_columns(values: dict[str, Any]) -> dict[tuple[str, str], Any]:
+    """Prefix non-MCS property names with :data:`STATIC_COLUMN_GROUP`."""
+    return {(STATIC_COLUMN_GROUP, key): value for key, value in values.items()}
 
 
 def column_display_name(column) -> str:
     """Human-readable label for a column of ``Misc_Analysis.get_dataframe``.
 
-    Structured columns are ``(group, property)`` tuples; non-contact columns
-    use :data:`STATIC_COLUMN_GROUP` and render as the bare property name,
-    contact columns as ``"<mcs_label> | <property>"``. Plain labels (for
-    example ``"Measure"``) are returned unchanged as strings.
+    Structured columns are ``(group, property)`` tuples; non-MCS columns use
+    :data:`STATIC_COLUMN_GROUP` and render as the bare property name, MCS
+    columns as ``"<mcs_label> | <property>"``. Plain labels (for example
+    ``"Measure"``) are returned unchanged as strings.
     """
     if isinstance(column, tuple) and len(column) == 2:
         group, prop = column
@@ -255,11 +261,18 @@ class Misc_Analysis(Analysis):
     def get_contact_stats(
         self, organelle: Organelle, selected: set[str]
     ) -> dict[tuple[str, str], Any]:
-        """Extracts requested contact site (MCS) data.
+        """Extract the requested MCS properties for one organelle.
 
-        Returns a mapping keyed by ``(mcs_label, property)``. The MCS label is
-        kept whole (it may contain ``-``, e.g. ``"0-0.1,mito-er"``), so callers
-        never have to split a concatenated column name.
+        Args:
+            organelle: Organelle whose aggregate MCS records are read.
+            selected: Requested property names; MCS property names are
+                extracted, everything else is ignored.
+
+        Returns:
+            dict[tuple[str, str], Any]: Mapping keyed by
+            ``(mcs_label, property)``. The label is kept whole (it may
+            contain ``-``, e.g. ``"0-0.1,mito-er"``), so callers never have
+            to split a concatenated column name.
         """
         contact_keys = set(self.get_contact_properties())
         to_extract = selected.intersection(contact_keys)
@@ -285,12 +298,12 @@ class Misc_Analysis(Analysis):
     ) -> pd.DataFrame:
         """
         Returns a unified DataFrame with a user-defined selection of properties
-        from mesh, skeleton, geometry, and contact sources.
+        from mesh, skeleton, geometry, and MCS sources.
         check get_properties to see all potentially available properties.
 
         Column contract: a 2-level column MultiIndex with names
-        ``("group", "property")``. Non-contact columns use
-        :data:`STATIC_COLUMN_GROUP` (``"static"``) as the group; contact
+        ``("group", "property")``. Non-MCS columns use
+        :data:`STATIC_COLUMN_GROUP` (``"static"``) as the group; MCS
         columns use the full MCS label as the group, for example
         ``("0-0.1,mito-er", "n_contacts")``. This keeps labels containing
         ``"-"`` intact and removes any string parsing of column names.
@@ -338,28 +351,15 @@ class Misc_Analysis(Analysis):
 
             # Aggregate properties from all specialized helper methods
             row.update(
-                {
-                    (STATIC_COLUMN_GROUP, key): value
-                    for key, value in self.get_organelle_mesh_properties(
-                        org, selected_set
-                    ).items()
-                }
+                _static_columns(
+                    self.get_organelle_mesh_properties(org, selected_set)
+                )
             )
             row.update(
-                {
-                    (STATIC_COLUMN_GROUP, key): value
-                    for key, value in self.get_skeleton_stats(
-                        org, selected_set
-                    ).items()
-                }
+                _static_columns(self.get_skeleton_stats(org, selected_set))
             )
             row.update(
-                {
-                    (STATIC_COLUMN_GROUP, key): value
-                    for key, value in self.get_geometry_stats(
-                        org, selected_set
-                    ).items()
-                }
+                _static_columns(self.get_geometry_stats(org, selected_set))
             )
             row.update(self.get_contact_stats(org, selected_set))
 

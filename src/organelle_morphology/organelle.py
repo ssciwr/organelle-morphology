@@ -102,6 +102,34 @@ class McsData(PropertyBlock):
     area_per_volume: float
 
 
+def _distance_stats(distances, sample_areas):
+    """Area-weighted mean and standard deviation of one patch's samples.
+
+    Samples carry unequal areas (whole faces versus equal-area subdivision
+    leaves), so an unweighted mean would over-represent finely refined parts
+    of the patch. Missing weights fall back to equal weighting.
+    """
+    distances = np.asarray(distances, dtype=np.float64)
+    weights = (
+        np.asarray(sample_areas, dtype=np.float64)
+        if sample_areas is not None
+        else None
+    )
+    if distances.size == 0:
+        return np.nan, np.nan
+    if (
+        weights is not None
+        and weights.shape == distances.shape
+        and float(weights.sum()) > 0.0
+    ):
+        mean = float(np.average(distances, weights=weights))
+        variance = float(np.average((distances - mean) ** 2, weights=weights))
+    else:
+        mean = float(np.mean(distances))
+        variance = float(np.var(distances))
+    return mean, float(np.sqrt(max(variance, 0.0)))
+
+
 class Organelle:
     _name = "organelle_name"
     logger = logging.getLogger(__name__)
@@ -302,6 +330,7 @@ class Organelle:
                     "patch_id": patch["patch_id"],
                     "faces_index": patch["faces_index"],
                     "distances": patch["distances"],
+                    "sample_areas": patch.get("sample_areas"),
                     "area": patch["area"],
                     "truncated": patch["truncated"],
                     "partner_patch_ids": patch["partner_patch_ids"],
@@ -309,13 +338,25 @@ class Organelle:
                 }
             )
 
+    def clear_mcs(self, mcs_label):
+        """Drop this organelle's in-memory MCS patches for ``mcs_label``.
+
+        Used by the overwrite path before recomputing a label so that repeated
+        runs replace their previous results instead of appending to them.
+
+        Args:
+            mcs_label (str): label of the MCS run to discard.
+        """
+        self._mcs.pop(mcs_label, None)
+
     def calc_mcs_dict_entry(self, mcs_label, mcs_meta=None):
         """Aggregate this organelle's patches for ``mcs_label`` into a record.
 
         ``n_contacts`` counts own patches (across partners), ``n_partners``
         counts partners. Areas are aggregated over patches; distance means and
-        standard deviations are weighted by patch area. Per-partner distances
-        stay aligned with the ``partners`` tuple.
+        standard deviations weight every sample by its own area (patch area
+        across patches). Per-partner distances stay aligned with the
+        ``partners`` tuple.
 
         Args:
             mcs_label (str): label of the MCS run.
@@ -356,11 +397,15 @@ class Organelle:
         patch_areas = np.array(
             [float(patch["area"]) for patch in patches], dtype=np.float64
         )
+        patch_stats = [
+            _distance_stats(patch["distances"], patch.get("sample_areas"))
+            for patch in patches
+        ]
         patch_means = np.array(
-            [np.mean(patch["distances"]) for patch in patches], dtype=np.float64
+            [mean for mean, _ in patch_stats], dtype=np.float64
         )
         patch_stds = np.array(
-            [np.std(patch["distances"]) for patch in patches], dtype=np.float64
+            [std for _, std in patch_stats], dtype=np.float64
         )
         patch_min = np.array(
             [np.min(patch["distances"]) for patch in patches], dtype=np.float64
@@ -381,14 +426,12 @@ class Organelle:
         mcs_dict["min_dist"] = float(np.min(patch_min))
         mcs_dict["max_dist"] = float(np.max(patch_max))
 
-        # Area-weighted mean and variance across patches. This is equivalent
-        # to weighting every distance sample by its patch's area, without
-        # concatenating the per-patch distance arrays.
-        total_weight = float(np.sum(patch_areas))
-        if total_weight > 0:
-            overall_mean = float(
-                np.average(patch_means, weights=patch_areas)
-            )
+        # Pool the per-patch (already area-weighted) means and variances,
+        # weighting each patch by its area. This is equivalent to weighting
+        # every distance sample by its own area, without concatenating the
+        # per-patch distance arrays.
+        if total_area > 0:
+            overall_mean = float(np.average(patch_means, weights=patch_areas))
             overall_var = float(
                 np.average(
                     patch_stds**2 + (patch_means - overall_mean) ** 2,

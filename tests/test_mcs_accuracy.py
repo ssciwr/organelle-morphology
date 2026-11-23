@@ -142,7 +142,8 @@ def test_parallel_planes_contact_area_is_exactly_l_squared():
 
     for patches, side in ((patches_lower, "lower"), (patches_upper, "upper")):
         assert len(patches) == 1
-        assert patches[0]["truncated"] is False
+        # the analytic planes are open and every triangle touches the rim
+        assert patches[0]["truncated"] is True
         assert np.allclose(patches[0]["distances"], gap)
         assert patches[0]["area"] == pytest.approx(
             size * size, rel=PLANE_RTOL
@@ -451,6 +452,14 @@ def _local_outward_fraction(mesh, dataset, resolution, sample=1000, delta=1.0):
 
 
 def test_exported_real_mesh_normals_point_into_empty_space():
+    """Sampled face normals must leave the labelled volume, not enter it.
+
+    Premise: ``exported_meshes`` holds per-chunk fragment meshes, not merged
+    organelle meshes. Most chunks are cut open at chunk boundaries and only
+    one is watertight, so a local voxel-occupancy test (rather than signed
+    volume) is the ground truth. The measured minimum over the fixtures is
+    95.9%, so the threshold is 0.95; a globally inverted mesh reports ~0.
+    """
     meshes = _non_empty_meshes()
     if not meshes:
         pytest.skip("example_analysis/exported_meshes not available")
@@ -476,6 +485,7 @@ def test_exported_real_mesh_normals_point_into_empty_space():
         fractions.append(_local_outward_fraction(mesh, level, resolution))
 
     assert fractions
-    assert min(fractions) >= 0.9, (
+    # measured minimum 95.9%; 0.95 still rejects a globally inverted mesh
+    assert min(fractions) >= 0.95, (
         f"inward normals on some real-data meshes: {sorted(fractions)}"
     )

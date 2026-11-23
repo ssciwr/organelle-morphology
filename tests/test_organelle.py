@@ -11,7 +11,7 @@ from organelle_morphology.organelle import (
     Mitochondrium,
 )
 
-from .test_mcs_geometry import _deep_u_mesh, _icosphere
+from .mesh_fixtures import deep_u_mesh, icosphere
 
 
 class _StubSource:
@@ -54,11 +54,16 @@ def _patch(
     area,
     truncated=False,
     partner_indices=(),
+    sample_areas=None,
 ):
+    distances = np.asarray(distances, dtype=np.float64)
+    if sample_areas is None:
+        sample_areas = np.full(len(distances), float(area) / len(distances))
     return {
         "patch_id": f"{self_id}~{partner_id}~{index}",
         "faces_index": np.arange(len(distances), dtype=np.int64),
-        "distances": np.asarray(distances, dtype=np.float64),
+        "distances": distances,
+        "sample_areas": np.asarray(sample_areas, dtype=np.float64),
         "area": float(area),
         "truncated": truncated,
         "partner_patch_ids": tuple(
@@ -218,6 +223,36 @@ def test_add_mcs_appends_patch_entries(project):
     assert [entry["area"] for entry in entries] == [1.0, 2.0]
 
 
+def test_clear_mcs_drops_only_the_requested_label(project):
+    """Overwrite support: clearing a label removes its patches on this organelle."""
+    org = _make_organelle(project)
+    label = "0.0-0.1,-"
+    other_label = "0.1-0.2,-"
+    partner = "mito_0002"
+    meta = _mcs_meta(label)
+    org.add_mcs(
+        _mcs_dict(label, org.id, partner, [_patch(org.id, partner, 0, [0.01], 1.0)]),
+        meta,
+    )
+    org.add_mcs(
+        _mcs_dict(
+            other_label,
+            org.id,
+            partner,
+            [_patch(org.id, partner, 0, [0.15], 1.0)],
+        ),
+        _mcs_meta(other_label),
+    )
+
+    org.clear_mcs(label)
+
+    assert label not in org.mcs
+    assert org.mcs[other_label][partner][0]["patch_id"] == f"{org.id}~{partner}~0"
+    # clearing an unknown label is a no-op
+    org.clear_mcs("missing")
+    assert other_label in org.mcs
+
+
 def test_calc_mcs_dict_entry_counts_patches_for_one_partner(project):
     """One pair with two appositions gives two own patches, one partner."""
     org = _make_organelle(project, volume=10.0, surface=20.0)
@@ -266,6 +301,50 @@ def test_calc_mcs_dict_entry_counts_patches_for_one_partner(project):
     ) / 4.0
     assert data.mean_dist == pytest.approx(expected_mean)
     assert data.std_dist == pytest.approx(np.sqrt(expected_var))
+
+
+def test_calc_mcs_dict_entry_area_weights_within_patch(project):
+    """Samples inside one patch are weighted by their own area, not equally.
+
+    Whole faces contribute a single sample carrying the whole face area while
+    subdivided faces contribute equal-area leaves, so an unweighted mean is
+    biased toward finely refined parts of the same patch.
+    """
+    org = _make_organelle(project)
+    label = "0.0-0.1,-"
+    partner = "mito_0002"
+    meta = _mcs_meta(label)
+    distances = np.array([0.02, 0.08])
+    sample_areas = np.array([9.0, 1.0])
+
+    org.add_mcs(
+        _mcs_dict(
+            label,
+            org.id,
+            partner,
+            [
+                _patch(
+                    org.id,
+                    partner,
+                    0,
+                    distances,
+                    area=10.0,
+                    sample_areas=sample_areas,
+                )
+            ],
+        ),
+        meta,
+    )
+    org.calc_mcs_dict_entry(label, meta)
+
+    data = _mcs_record(project, org.id, label).data
+    expected_mean = float(np.average(distances, weights=sample_areas))
+    expected_var = float(np.average((distances - expected_mean) ** 2, weights=sample_areas))
+    assert expected_mean == pytest.approx(0.026)
+    assert data.mean_dist == pytest.approx(expected_mean)
+    assert data.std_dist == pytest.approx(np.sqrt(expected_var))
+    # unweighted mean would be 0.05, so this rejects the old behaviour
+    assert data.mean_dist != pytest.approx(0.05)
 
 
 def test_calc_mcs_dict_entry_multi_partner_metadata(project):
@@ -334,8 +413,8 @@ def test_calc_mcs_dict_entry_skips_when_no_patches(project):
 
 def test_u_case_patch_counts_per_side(project):
     """Sphere has one MCS, the deep U has two, for the same label."""
-    sphere = _icosphere(radius=1.0, center=(0, 0, 0))
-    u_mesh = _deep_u_mesh()
+    sphere = icosphere(radius=1.0, center=(0, 0, 0))
+    u_mesh = deep_u_mesh()
 
     sphere_patches, u_patches = pair_patches(
         "sphere", "u", sphere, u_mesh, 0.0, 0.1

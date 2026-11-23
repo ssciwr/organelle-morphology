@@ -31,15 +31,17 @@ def get_min_dist(args):
     """Bidirectional vertex-to-surface bounds for one organelle pair.
 
     ``d_AB`` is the smallest exact distance from a vertex of mesh A to the
-    surface of mesh B, ``d_BA`` the same with the roles swapped. Their minimum
-    is an upper bound on the true surface-to-surface minimum (error bounded by
-    the sampling radius of the queried mesh), while
+    surface of mesh B, ``d_BA`` the same with the roles swapped. ``d_AB``
+    overestimates the true surface-to-surface minimum by at most ``h_A``, A's
+    sampling radius; ``d_BA`` by at most ``h_B``. The stored
+    ``min(d_AB, d_BA)`` therefore has an error of at most
+    ``max(h_A, h_B)``, while
 
     ``max(d_AB - h_A, d_BA - h_B, 0)``
 
-    is a rigorous lower bound (``h`` = sampling radius from ticket 01). The
-    lower bound is clamped at zero because surface distances are non-negative;
-    this also keeps zero a valid, distinguishable bound.
+    is a rigorous lower bound (``h`` = sampling radius of the respective
+    mesh). The lower bound is clamped at zero because surface distances are
+    non-negative; this also keeps zero a valid, distinguishable bound.
 
     Args:
         args: ``(id_1, id_2, mesh_1, mesh_2, max_dist)``.
@@ -243,10 +245,11 @@ def generate_distance_matrix(
 
     The returned matrix holds, for every computed pair, the minimum of the two
     bidirectional vertex-to-surface minima (``min(d_AB, d_BA)``). That value is
-    an **upper bound** on the true surface-to-surface minimum; the error is
-    bounded by ``max(h_A, h_B)``, the sampling radii of the two meshes. Entries
-    are ``-1`` when the pair was not evaluated (domain decomposition) or lies
-    beyond ``max_distance``.
+    an **upper bound** on the true surface-to-surface minimum: ``d_AB`` alone
+    errs by at most ``h_A`` and ``d_BA`` by at most ``h_B``, so the minimum
+    errs by at most ``max(h_A, h_B)`` (``h`` = a mesh's sampling radius).
+    Entries are ``-1`` when the pair was not evaluated (domain decomposition)
+    or lies beyond ``max_distance``.
 
     Beside the upper-bound matrix, a second cached DataFrame
     (``cache["distance_matrix_lower"]``) holds the rigorous lower bound
@@ -464,6 +467,7 @@ def generate_mcs(
     max_distance: float,
     min_distance: float = 0,
     overwrite=False,
+    subdivision_depth: int = 3,
 ) -> str:
     """Generates the MCS (Membrane Contact Site) pairs for a given project.
     The MCSs are calculated between two sets of organelles, defined by the
@@ -483,6 +487,10 @@ def generate_mcs(
 
         overwrite (bool, optional): Whether to overwrite existing MCS data.
             Defaults to False.
+        subdivision_depth (int, optional): Maximum midpoint refinement depth
+            for faces straddling a band/facing boundary. Defaults to 3, the
+            documented accuracy setting; raising it refines boundary areas
+            further at 4x the leaves per level.
 
     Returns:
         str: The label of this MCS search
@@ -495,6 +503,14 @@ def generate_mcs(
     mcs_label = f"{min_distance}-{max_distance},{label_1}-{label_2}"
     if project._mcs_labels.get(mcs_label) and not overwrite:
         return mcs_label
+    if overwrite:
+        # Replace, never append: drop every organelle's in-memory patches for
+        # this label and unregister its aggregate records before recomputing.
+        for organelle in project.organelles:
+            organelle.clear_mcs(mcs_label)
+        for record in list(project.registry.get_by_type("McsData")):
+            if record.meta.mcs_label == mcs_label:
+                project.registry.clear_record(record)
     mcs_meta = {
         "ids_filter_1": ids_filter_1,
         "ids_filter_2": ids_filter_2,
@@ -548,6 +564,7 @@ def generate_mcs(
             meshes[id_2],
             max_distance,
             min_distance,
+            subdivision_depth,
         )
         tasks[(id_1, id_2)] = mcs_calc_delayed
 
@@ -560,26 +577,31 @@ def generate_mcs(
     empty_pairs = 0
     for id_1, id_2 in pairs:
         mcs_source, mcs_target = results[(id_1, id_2)]
-        if not mcs_source["patches"] or not mcs_target["patches"]:
+        org1 = project.get_organelles(id_1)[0]
+        org2 = project.get_organelles(id_2)[0]
+        if org1.id == mcs_source["self_id"]:
+            mcs_1, mcs_2 = mcs_source, mcs_target
+        else:
+            mcs_1, mcs_2 = mcs_target, mcs_source
+
+        # The two sides of an apposition are independent: one side may have no
+        # facing surface point in the band while the other does. Store each
+        # side on its own and only skip the pair when both are empty.
+        added = False
+        if mcs_1["patches"]:
+            org1.add_mcs(mcs_1, mcs_meta)
+            org_ids.add(id_1)
+            added = True
+        if mcs_2["patches"]:
+            org2.add_mcs(mcs_2, mcs_meta)
+            org_ids.add(id_2)
+            added = True
+        if not added:
             # The conservative gate also yields pairs without any in-band
             # surface point; they do not form an MCS on either side.
             empty_pairs += 1
-            continue
-
-        org1 = project.get_organelles(id_1)[0]
-        org2 = project.get_organelles(id_2)[0]
-        org_ids.add(id_1)
-        org_ids.add(id_2)
-
-        # add mcs to organelle
-        if org1.id == mcs_source["self_id"]:
-            org1.add_mcs(mcs_source, mcs_meta)
-            org2.add_mcs(mcs_target, mcs_meta)
-        else:
-            org1.add_mcs(mcs_target, mcs_meta)
-            org2.add_mcs(mcs_source, mcs_meta)
     if empty_pairs:
-        logger.debug(f"Skipped {empty_pairs} gated pairs without contact")
+        logger.debug(f"Skipped {empty_pairs} gated pairs without an MCS")
 
     project._mcs_labels[mcs_label] = {
         "max_distance": max_distance,
@@ -613,6 +635,9 @@ def calc_mcs_delayed(
     mesh_2,
     max_dist,
     min_dist,
+    # Depth 3 is the documented accuracy setting; its cost on the largest
+    # benchmark pair was accepted (ADR 0002), so it stays the default.
+    subdivision_depth=3,
 ):
     patches_1, patches_2 = pair_patches(
         id_1,
@@ -621,6 +646,7 @@ def calc_mcs_delayed(
         mesh_2,
         min_dist,
         max_dist,
+        subdivision_depth,
     )
     mcs_1 = _mcs_patch_dict(mcs_label, id_1, id_2, patches_1)
     mcs_2 = _mcs_patch_dict(mcs_label, id_2, id_1, patches_2)
