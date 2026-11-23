@@ -91,9 +91,12 @@ class _GateOrganelle:
         self.mcs_dict_entries = {}
 
     def add_mcs(self, mcs, mcs_meta):
-        self.mcs.setdefault(mcs["mcs_label"], {})[mcs["partner_id"]] = mcs
+        entries = self.mcs.setdefault(mcs["mcs_label"], {}).setdefault(
+            mcs["partner_id"], []
+        )
+        entries.extend(mcs["patches"])
 
-    def calc_mcs_dict_entry(self, mcs_label):
+    def calc_mcs_dict_entry(self, mcs_label, mcs_meta=None):
         self.mcs_dict_entries[mcs_label] = True
 
 
@@ -210,11 +213,11 @@ def test_gate_selects_small_gap_icospheres():
     assert list(project._mcs_labels) == [label]
     for organelle, partner_id in ((org_a, "b"), (org_b, "a")):
         assert label in organelle.mcs
-        entry = organelle.mcs[label][partner_id]
-        assert entry["patches"]
-        assert entry["area"] > 0
+        patches = organelle.mcs[label][partner_id]
+        assert patches
+        assert all(patch["area"] > 0 for patch in patches)
         distances = np.concatenate(
-            [patch["distances"] for patch in entry["patches"]]
+            [patch["distances"] for patch in patches]
         )
         assert np.all(distances <= 0.1 + 1e-9)
 
@@ -247,10 +250,10 @@ def test_gate_ignores_min_distance_pair_filter():
 
     assert label == "0.01-0.1,plane-sphere"
     assert label in org_sphere.mcs
-    entry = org_sphere.mcs[label]["plane"]
-    assert entry["patches"]
+    patches = org_sphere.mcs[label]["plane"]
+    assert patches
     distances = np.concatenate(
-        [patch["distances"] for patch in entry["patches"]]
+        [patch["distances"] for patch in patches]
     )
     assert np.all(distances >= 0.01 - 1e-9)
     assert np.all(distances <= 0.1 + 1e-9)
