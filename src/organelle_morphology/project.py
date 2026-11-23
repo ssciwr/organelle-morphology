@@ -1009,11 +1009,29 @@ class Project:
 
     @property
     def distance_matrix(self):
-        """
-        Returns the distance matrix of all organeles in the project in micro meters.
+        """Upper-bound surface distance matrix of all organelles (µm).
+
+        Each entry is ``min(d_AB, d_BA)``, the smaller of the two
+        bidirectional vertex-to-surface minima. It overestimates the true
+        surface-to-surface minimum by at most ``max(h_A, h_B)``, the sampling
+        radii of the two meshes. ``-1`` marks pairs that were not evaluated
+        (domain decomposition) or lie beyond the computed ``max_distance``.
+        Use :attr:`distance_matrix_lower` for the rigorous lower bound.
         """
 
         return generate_distance_matrix(self)
+
+    @property
+    def distance_matrix_lower(self):
+        """Rigorous lower-bound surface distance matrix of all organelles (µm).
+
+        Companion to :attr:`distance_matrix`: every evaluated pair stores
+        ``max(d_AB - h_A, d_BA - h_B, 0)``, which can never exceed the true
+        surface-to-surface minimum. ``-1`` marks pairs that were not evaluated.
+        """
+
+        generate_distance_matrix(self)
+        return self.cache["distance_matrix_lower"]
 
     def clear_blacklist(self):
         self.permanent_blacklist.clear()

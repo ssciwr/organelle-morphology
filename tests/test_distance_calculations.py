@@ -87,19 +87,23 @@ def test_distance_matrix_incomplete(project_with_sources):
 def test_distance_matrix_incomplete_dd_compair(project_with_sources):
     project_with_sources.max_distance = 10
     df = generate_distance_matrix(project_with_sources, domain_decomposition=False)
+    lower = project_with_sources.cache["distance_matrix_lower"]
     project_with_sources.clear_caches(True)
     project_with_sources.max_distance = 10
     df2 = generate_distance_matrix(project_with_sources, domain_decomposition=True)
+    lower2 = project_with_sources.cache["distance_matrix_lower"]
     project_with_sources.clear_caches(True)
     project_with_sources.max_distance = 10
     df3 = generate_distance_matrix(
         project_with_sources, domain_decomposition=False, chunk_dd=True
     )
+    lower3 = project_with_sources.cache["distance_matrix_lower"]
     project_with_sources.clear_caches(True)
     project_with_sources.max_distance = 10
     df4 = generate_distance_matrix(
         project_with_sources, domain_decomposition=True, chunk_dd=True
     )
+    lower4 = project_with_sources.cache["distance_matrix_lower"]
 
     idxs = np.nonzero((0 <= df) & (df <= 10))
     pairs = list(zip(*idxs))
@@ -111,6 +115,11 @@ def test_distance_matrix_incomplete_dd_compair(project_with_sources):
     assert np.all(df == df2)
     assert np.all(df == df3)
     assert np.all(df == df4)
+
+    # the lower bound matrix must agree across all decomposition strategies
+    assert np.all(lower == lower2)
+    assert np.all(lower == lower3)
+    assert np.all(lower == lower4)
 
 
 def test_chunk_domain_masks_stay_paired():
@@ -178,6 +187,7 @@ def test_distance_matrix_no_source(project):
 def test_distance_matrix_cached(project_with_sources):
     dummy = "DUMMY"
     project_with_sources.cache["distance_matrix"] = dummy
+    project_with_sources.cache["distance_matrix_lower"] = "DUMMY_LOWER"
     project_with_sources.cache["max_distance_computed"] = 100
 
     assert generate_distance_matrix(project_with_sources) is dummy
@@ -199,6 +209,8 @@ def test_get_min_dist():
     assert d1[1] == 2.0
     assert d2[1] == 0.0
     assert d3[1] == 0.0
+    # the lower bound never exceeds the upper bound and is clamped at zero
+    assert all(0.0 <= r[2] <= r[1] for r in [d1, d2, d3])
 
 
 def test_generate_mcs(project_with_sources):

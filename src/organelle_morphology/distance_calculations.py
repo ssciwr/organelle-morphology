@@ -17,7 +17,6 @@ from organelle_morphology.mcs_geometry import (
 )
 from organelle_morphology.util import (
     block_to_coords,
-    boxes_overlap,
     get_neighboring_chunks,
 )
 
@@ -29,24 +28,58 @@ MAX_ORGS_PER_DOMAIN = 500
 
 
 def get_min_dist(args):
+    """Bidirectional vertex-to-surface bounds for one organelle pair.
+
+    ``d_AB`` is the smallest exact distance from a vertex of mesh A to the
+    surface of mesh B, ``d_BA`` the same with the roles swapped. Their minimum
+    is an upper bound on the true surface-to-surface minimum (error bounded by
+    the sampling radius of the queried mesh), while
+
+    ``max(d_AB - h_A, d_BA - h_B, 0)``
+
+    is a rigorous lower bound (``h`` = sampling radius from ticket 01). The
+    lower bound is clamped at zero because surface distances are non-negative;
+    this also keeps zero a valid, distinguishable bound.
+
+    Args:
+        args: ``(id_1, id_2, mesh_1, mesh_2, max_dist)``.
+
+    Returns:
+        tuple: ``((id_1, id_2), upper, lower)``. ``upper`` is ``nan`` when the
+        pair lies beyond ``max_dist`` (the matrix stores it as ``-1``); the
+        lower bound is kept so the pair gate can still rule the pair in.
+    """
     id_1, id_2, mesh_1, mesh_2, max_dist = args
     geometry_1 = get_mesh_geometry(mesh_1)
     geometry_2 = get_mesh_geometry(mesh_2)
     d_1, d_2 = min_dist_upper(geometry_1, geometry_2)
-    value = min(d_1, d_2)
+    upper = min(d_1, d_2)
+    lower = max(
+        d_1 - geometry_1.sampling_radius,
+        d_2 - geometry_2.sampling_radius,
+        0.0,
+    )
     # Keep the historical matrix semantics: pairs beyond max_dist stay
     # uncomputed (-1) instead of storing an out-of-band distance.
-    if max_dist is not None and value > max_dist:
-        value = np.nan
-    return (id_1, id_2), value
+    if max_dist is not None and upper > max_dist:
+        upper = np.nan
+    if not np.isfinite(upper):
+        upper = np.nan
+    if not np.isfinite(lower):
+        lower = np.nan
+    return (id_1, id_2), upper, lower
 
 
-def _check_overlap(box, bounding_boxes):
-    is_in = np.empty((len(bounding_boxes),), dtype=bool)
-    for i, org_bb in enumerate(bounding_boxes):
-        is_in[i] = boxes_overlap(box, org_bb)
+def _check_overlap(box, mins, maxs):
+    """Boolean mask: which axis-aligned boxes overlap ``box``.
 
-    return is_in
+    ``mins``/``maxs`` are the lower and upper corners of all boxes, one row
+    per box, so the whole mask is built without a Python loop.
+    """
+    if len(mins) == 0:
+        return np.zeros((0,), dtype=bool)
+    lower, upper = np.asarray(box[0]), np.asarray(box[1])
+    return np.all((maxs >= lower) & (mins <= upper), axis=1)
 
 
 @delayed
@@ -82,24 +115,27 @@ def chunk_domain_masks(organelles, domain_idxs, dshape):
             and chunks are paired, so the mask index always refers to the
             domain it was built from, even if domains are dropped or reordered.
     """
+    # invert the chunk -> organelle relation once instead of scanning every
+    # organelle's chunk list for every domain and neighbour
+    chunk_to_orgs = {}
+    for org_index, org in enumerate(organelles):
+        for chunk in set(org.chunks):
+            chunk_to_orgs.setdefault(tuple(chunk), []).append(org_index)
+
     domain_masks = []
     for idx in domain_idxs:
+        idx = tuple(idx)
         neighbor_chunks = get_neighboring_chunks(idx, dshape)
-        has_org_in_center = False
-        mask = []
-        for org in organelles:
-            # in central block of domain:
-            if idx in org.chunks:
-                mask.append(True)
-                has_org_in_center = True
-            # in neighbor block of domain:
-            elif any([nb in org.chunks for nb in neighbor_chunks]):
-                mask.append(True)
-            # not in domain:
-            else:
-                mask.append(False)
-        if has_org_in_center:
-            domain_masks.append((mask, neighbor_chunks))
+        center_orgs = chunk_to_orgs.get(idx)
+        if not center_orgs:
+            continue
+        member_orgs = set(center_orgs)
+        for chunk in neighbor_chunks:
+            member_orgs.update(chunk_to_orgs.get(chunk, ()))
+
+        mask = np.zeros(len(organelles), dtype=bool)
+        mask[list(member_orgs)] = True
+        domain_masks.append((mask.tolist(), neighbor_chunks))
     return domain_masks
 
 
@@ -166,13 +202,22 @@ def make_domains(
     logger.debug(f"bounding_boxes {len(bounding_boxes)}")
     logger.debug("bounding boxes finished, stating overlap calculations")
 
+    # corners once, so each pool task carries two small (n, 3) arrays instead
+    # of pickling the full nested bounding box structure
+    bounds = np.asarray(bounding_boxes, dtype=np.float64)
+    if bounds.size:
+        mins = np.ascontiguousarray(bounds[:, 0, :])
+        maxs = np.ascontiguousarray(bounds[:, 1, :])
+    else:
+        mins = np.empty((0, 3), dtype=np.float64)
+        maxs = np.empty((0, 3), dtype=np.float64)
+
     tasks = []
     for x, y, z in zip(xg, yg, zg):
         start = np.array((x, y, z))
         end = start + cube_size
         box = (start, end)
-        tasks.append((box, bounding_boxes))
-    # masks = list(map(lambda b: _check_overlap(b, bounding_boxes), tasks))
+        tasks.append((box, mins, maxs))
     t0 = time()
     n_procs = 100  # manually adjusted
     if os.name == "nt":
@@ -194,6 +239,32 @@ def generate_distance_matrix(
     domain_decomposition=True,
     chunk_dd=False,
 ) -> pd.DataFrame:
+    """Compute (and cache) the pairwise organelle distance matrix.
+
+    The returned matrix holds, for every computed pair, the minimum of the two
+    bidirectional vertex-to-surface minima (``min(d_AB, d_BA)``). That value is
+    an **upper bound** on the true surface-to-surface minimum; the error is
+    bounded by ``max(h_A, h_B)``, the sampling radii of the two meshes. Entries
+    are ``-1`` when the pair was not evaluated (domain decomposition) or lies
+    beyond ``max_distance``.
+
+    Beside the upper-bound matrix, a second cached DataFrame
+    (``cache["distance_matrix_lower"]``) holds the rigorous lower bound
+    ``max(d_AB - h_A, d_BA - h_B, 0)`` for every evaluated pair. The pair gate
+    in :func:`generate_mcs` uses it to decide whether a pair can possibly come
+    within ``max_distance``. Both caches are keyed by ``max_distance_computed``;
+    a cache that predates the lower matrix is recomputed.
+
+    Args:
+        project: project holding organelles and the mesh cache.
+        domain_decomposition: restrict pair calculations to overlapping
+            spatial domains (default) instead of all-to-all.
+        chunk_dd: use the chunk-grid domain decomposition path.
+
+    Returns:
+        pandas.DataFrame: symmetric upper-bound distance matrix indexed by
+        organelle id, in micrometres.
+    """
     cache = project.cache
     max_dist = project.max_distance
     max_cached = 0
@@ -210,9 +281,13 @@ def generate_distance_matrix(
     if "max_distance_computed" in cache:
         max_cached = cache["max_distance_computed"]
 
-    if (
-        "distance_matrix" not in cache or not project.use_cache
-    ) or max_dist > max_cached:
+    cache_complete = (
+        "distance_matrix" in cache
+        and "distance_matrix_lower" in cache
+        and project.use_cache
+        and max_dist <= max_cached
+    )
+    if not cache_complete:
         project.logger.info("Initializing distance matrix")
 
         organelles = np.array(project.organelles)
@@ -224,13 +299,6 @@ def generate_distance_matrix(
 
         project.logger.info("Calculating distance matrix")
         num_rows = len(meshes)
-
-        distance_matrix = np.ones((num_rows, num_rows)) * -1
-        distance_df = pd.DataFrame(
-            distance_matrix,
-            index=organelles_ids,
-            columns=organelles_ids,
-        )
 
         if domain_decomposition and not chunk_dd:
             # domain decomposition into chunks of
@@ -339,12 +407,47 @@ def generate_distance_matrix(
             t1 = time()
 
         project.logger.debug(f"Min distances calculated in: {t1 - t0} s")
-        for res in results:
-            distance_df.loc[res[0]] = res[1]
-            distance_df.loc[res[0][::-1]] = res[1]
-        distance_df.fillna(-1, inplace=True)
+
+        # Fill both matrices by index arrays. A pair can appear in several
+        # overlapping domains; duplicate writes are identical values.
+        id_to_index = {org_id: i for i, org_id in enumerate(organelles_ids)}
+        upper_values = np.full((num_rows, num_rows), -1.0)
+        lower_values = np.full((num_rows, num_rows), -1.0)
+        if results:
+            rows = np.fromiter(
+                (id_to_index[res[0][0]] for res in results),
+                dtype=np.intp,
+                count=len(results),
+            )
+            columns = np.fromiter(
+                (id_to_index[res[0][1]] for res in results),
+                dtype=np.intp,
+                count=len(results),
+            )
+            upper = np.fromiter(
+                (res[1] for res in results), dtype=np.float64, count=len(results)
+            )
+            lower = np.fromiter(
+                (res[2] for res in results), dtype=np.float64, count=len(results)
+            )
+            upper_values[rows, columns] = upper
+            upper_values[columns, rows] = upper
+            lower_values[rows, columns] = lower
+            lower_values[columns, rows] = lower
+
+        distance_df = pd.DataFrame(
+            np.where(np.isnan(upper_values), -1.0, upper_values),
+            index=organelles_ids,
+            columns=organelles_ids,
+        )
+        lower_df = pd.DataFrame(
+            np.where(np.isnan(lower_values), -1.0, lower_values),
+            index=organelles_ids,
+            columns=organelles_ids,
+        )
 
         cache["distance_matrix"] = distance_df
+        cache["distance_matrix_lower"] = lower_df
         cache["max_distance_computed"] = max_dist
 
     else:
@@ -402,33 +505,38 @@ def generate_mcs(
     ids_1 = project.get_organelle_ids(ids_filter_1)
     ids_2 = project.get_organelle_ids(ids_filter_2)
     distance_matrix = project.distance_matrix
+    distance_lower = project.cache["distance_matrix_lower"]
 
-    # filter dataframe and get row, column where the distance is between min_distance and max_distance
-    rows, columns = np.where(
-        (distance_matrix >= min_distance) & (distance_matrix <= max_distance)
+    # A pair can only be excluded when it provably lies beyond max_distance:
+    # gate on the rigorous lower bound, never on the upper-bound matrix and
+    # never on min_distance (the band filters surface points inside the
+    # geometry core). -1/NaN mark uncomputed entries and are not distances.
+    lower_values = distance_lower.to_numpy(dtype=np.float64, copy=False)
+    candidate = (
+        np.isfinite(lower_values)
+        & (lower_values >= 0.0)
+        & (lower_values <= max_distance)
+    )
+    rows, columns = np.nonzero(np.triu(candidate, k=1))
+
+    matrix_ids = np.asarray(distance_matrix.index)
+    in_filter_1 = np.isin(matrix_ids, ids_1)
+    in_filter_2 = np.isin(matrix_ids, ids_2)
+    pair_mask = (in_filter_1[rows] & in_filter_2[columns]) | (
+        in_filter_2[rows] & in_filter_1[columns]
     )
 
-    # generate the pairs of organelles
-    pairs = set()
-    for i, j in zip(rows, columns):
-        org_1_id = distance_matrix.index[i]
-        org_2_id = distance_matrix.columns[j]
-
-        if org_1_id == org_2_id:
-            continue
-
-        if org_1_id not in ids_1 or org_2_id not in ids_2:
-            continue
-
-        pairs.add(tuple(sorted([org_1_id, org_2_id])))
+    pairs = [
+        tuple(sorted((matrix_ids[i], matrix_ids[j])))
+        for i, j in zip(rows[pair_mask], columns[pair_mask])
+    ]
 
     project.logger.info(f"Found {len(pairs)} pairs of organelles to calculate MCS")
 
-    meshes = {}
-    for ids in pairs:
-        for ind in ids:
-            if ind not in meshes:
-                meshes[ind] = project.get_organelles(ind)[0].mesh
+    needed_ids = {org_id for pair in pairs for org_id in pair}
+    meshes = {
+        org_id: project.get_organelles(org_id)[0].mesh for org_id in needed_ids
+    }
 
     tasks = {}
     for id_1, id_2 in pairs:
@@ -441,7 +549,7 @@ def generate_mcs(
             max_distance,
             min_distance,
         )
-        tasks[id_1 + id_2] = mcs_calc_delayed
+        tasks[(id_1, id_2)] = mcs_calc_delayed
 
     logger.debug(f"Running {len(tasks)} mcs calculations..")
     results = compute(tasks)[0]
@@ -449,13 +557,19 @@ def generate_mcs(
 
     org_ids = set()
     t0 = time()
+    empty_pairs = 0
     for id_1, id_2 in pairs:
+        mcs_source, mcs_target = results[(id_1, id_2)]
+        if not mcs_source["patches"] or not mcs_target["patches"]:
+            # The conservative gate also yields pairs without any in-band
+            # surface point; they do not form an MCS on either side.
+            empty_pairs += 1
+            continue
+
         org1 = project.get_organelles(id_1)[0]
         org2 = project.get_organelles(id_2)[0]
         org_ids.add(id_1)
         org_ids.add(id_2)
-
-        mcs_source, mcs_target = results[id_1 + id_2]
 
         # add mcs to organelle
         if org1.id == mcs_source["self_id"]:
@@ -464,6 +578,8 @@ def generate_mcs(
         else:
             org1.add_mcs(mcs_target, mcs_meta)
             org2.add_mcs(mcs_source, mcs_meta)
+    if empty_pairs:
+        logger.debug(f"Skipped {empty_pairs} gated pairs without contact")
 
     for org_id in org_ids:
         org = project.get_organelles(org_id)[0]
