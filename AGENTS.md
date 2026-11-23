@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are GitHub issues on KRiedmiller/organelle-morphology (the `fork` remote), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live as local markdown files under `.scratch/` in this repo. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
