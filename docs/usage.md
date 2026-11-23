@@ -143,6 +143,8 @@ Running analysis generates records of these analysis. They contain the measureme
 
 Here you see an overview of all currently loaded records, and you can save them to the project folder.
 
+Record filenames are a stable hash of the record's identity (its metadata, name, and the project and source metadata), so re-running an analysis overwrites the same file instead of accumulating copies. Files saved by older versions, before this scheme, are ignored when loading.
+
 ### Curvature Analysis
 
 Calculate the curvature on the mesh.
