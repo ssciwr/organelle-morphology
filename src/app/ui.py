@@ -921,7 +921,6 @@ def mcs_analysis_patches(mcs_analysis, project, record_counts):
         not project.registry.get_by_type("McsData"),
         mo.md("No MCS calculations run yet"),
     )
-    record_counts
     mcs_patches_df = mcs_analysis.get_mcs_patches()
     mo.stop(
         mcs_patches_df.empty,
@@ -930,13 +929,14 @@ def mcs_analysis_patches(mcs_analysis, project, record_counts):
             "session (records persist aggregates only)."
         ),
     )
-    mo.vstack(
-        [
-            mo.md("### MCS patches"),
-            mo.ui.table(mcs_patches_df, selection=None, page_size=15),
-        ]
+    mo.output.replace(
+        mo.vstack(
+            [
+                mo.md("### MCS patches"),
+                mo.ui.table(mcs_patches_df, selection=None, page_size=15),
+            ]
+        )
     )
-    return
 
 
 @app.cell
