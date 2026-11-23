@@ -4,6 +4,31 @@ from organelle_morphology.analysis import Analysis
 from organelle_morphology.organelle import McsData
 from typing import Optional
 
+# Per-patch table contract. Patch geometry is in-memory only, so this frame is
+# empty (but typed) after loading aggregate records from YAML.
+PATCH_COLUMNS = [
+    "mcs_label",
+    "organelle",
+    "partner",
+    "patch_id",
+    "area",
+    "mean_dist",
+    "min_dist",
+    "max_dist",
+    "truncated",
+]
+_PATCH_DTYPES = {
+    "mcs_label": "object",
+    "organelle": "object",
+    "partner": "object",
+    "patch_id": "object",
+    "area": "float64",
+    "mean_dist": "float64",
+    "min_dist": "float64",
+    "max_dist": "float64",
+    "truncated": "bool",
+}
+
 
 class Mcs_Analysis(Analysis):
     """Methods to calculate mcs statistics"""
@@ -28,10 +53,22 @@ class Mcs_Analysis(Analysis):
     def mcs_labels(self) -> list:
         return list({s.meta.mcs_label for s in self.own_records})
 
+    def _selected_records(self) -> list:
+        """Records matching the configured MCS label filter."""
+        return [
+            stat
+            for stat in self.own_records
+            if not self.mcs_label_filter
+            or stat.meta.mcs_label in self.mcs_label_filter
+        ]
+
     def get_mcs_properties(self) -> pd.DataFrame:
         """The properties of the MCS between organelles
         Gathers data from all the organelles into one dataframe.
 
+        One row per ``(mcs_label, organelle)`` aggregate; the columns are the
+        ``McsData`` fields, including ``n_contacts`` (own patch count) and
+        ``n_partners``.
 
         Returns:
             pd.DataFrame
@@ -40,29 +77,84 @@ class Mcs_Analysis(Analysis):
         if len(self.mcs_labels) == 0:
             raise RuntimeError("No mcs labels found, run a mcs search first!")
 
-        mcs_properties = {}
-
-        for stat in self.own_records:
-            for label in self.mcs_labels:
-                if self.mcs_label_filter and (label not in self.mcs_label_filter):
-                    continue
-                elif label == stat.meta.mcs_label:
-                    mcs_properties[(label, stat.meta.organelle_id)] = (
-                        stat.data.to_dict()
-                    )
-
-        if len(mcs_properties) == 0:
+        records = self._selected_records()
+        if len(records) == 0:
             raise RuntimeError(
                 "No matching mcs labels found, adjust your filter settings!"
             )
 
+        mcs_properties = {
+            (stat.meta.mcs_label, stat.meta.organelle_id): stat.data.to_dict()
+            for stat in records
+        }
+
         mcs_df = pd.DataFrame(mcs_properties).T
+        mcs_df.index = pd.MultiIndex.from_tuples(
+            mcs_df.index, names=["mcs_label", "organelle"]
+        )
         mcs_df.sort_index(inplace=True)
-        mcs_df.index.names = ["mcs_label", "organelle"]
 
         return mcs_df
 
+    def get_mcs_patches(self) -> pd.DataFrame:
+        """Per-patch geometry for the current session.
+
+        Flattens the in-memory ``Organelle.mcs`` patch lists into one row per
+        patch, with the columns listed in :data:`PATCH_COLUMNS`. Patch geometry
+        is never persisted, so after ``load_all_from_yaml`` (or before any MCS
+        search) this returns an empty DataFrame with the same typed columns.
+
+        Filters: ``self.ids`` for organelles and ``self.mcs_label_filter`` for
+        labels.
+        """
+        rows = []
+        for organelle in self.project.get_organelles(ids=self.ids):
+            for label, partners in organelle.mcs.items():
+                if self.mcs_label_filter and label not in self.mcs_label_filter:
+                    continue
+                for partner, patches in partners.items():
+                    for patch in patches:
+                        distances = np.asarray(
+                            patch["distances"], dtype=np.float64
+                        )
+                        if distances.size:
+                            mean_dist = float(np.mean(distances))
+                            min_dist = float(np.min(distances))
+                            max_dist = float(np.max(distances))
+                        else:
+                            mean_dist = min_dist = max_dist = np.nan
+                        rows.append(
+                            {
+                                "mcs_label": label,
+                                "organelle": organelle.id,
+                                "partner": partner,
+                                "patch_id": patch["patch_id"],
+                                "area": float(patch["area"]),
+                                "mean_dist": mean_dist,
+                                "min_dist": min_dist,
+                                "max_dist": max_dist,
+                                "truncated": bool(patch["truncated"]),
+                            }
+                        )
+
+        if not rows:
+            return pd.DataFrame(
+                {
+                    column: pd.Series(dtype=dtype)
+                    for column, dtype in _PATCH_DTYPES.items()
+                }
+            )
+
+        return pd.DataFrame(rows, columns=PATCH_COLUMNS).astype(_PATCH_DTYPES)
+
     def get_mcs_overview(self):
+        """Aggregate per-label overview.
+
+        Weights are own patch counts (``McsData.n_contacts``). ``total_pairs``
+        counts unordered organelle edges (each reciprocal pair once) and does
+        not require the partner to have its own record.
+        """
+
         def _weighted_stats(x):
             # Calculate the weighted mean and standard deviation for 'mean_area' and 'mean_dist'
             mean_area = np.average(x["mean_area"], weights=x["n_contacts"])
@@ -93,25 +185,26 @@ class Mcs_Analysis(Analysis):
             mean_contacts_per_vol = x["n_contacts_per_volume"].mean()
             mean_contacts_per_area = x["n_contacts_per_area"].mean()
 
-            # Calculate deduplicated total contact *pairs*
-            partners_list = [list(ps) for ps in x.partners]
-            orgs = list(x.index.get_level_values(1))
-            total_pairs = 0
-            try:
-                for org, partners in zip(orgs, partners_list):
-                    total_pairs += len(partners)
-                    for partner in partners:
-                        i = orgs.index(partner)
-                        partners_list[i].remove(org)
-            except ValueError:
-                total_pairs = np.nan
+            # Deduplicate contact *pairs* without mutating record data. A pair
+            # is an unordered edge; partners without their own record (e.g.
+            # filtered out) still form an edge instead of raising.
+            organelle_ids = x.index.get_level_values(1)
+            edges = {
+                frozenset((organelle, partner))
+                for organelle, partners in zip(organelle_ids, x["partners"])
+                for partner in partners
+            }
+            total_pairs = len(edges)
+            total_partners = x["n_partners"].sum()
 
             new_columns = [
                 ("overall", "total_pairs"),
                 ("overall", "total_sites"),
                 ("overall", "total_area"),
+                ("overall", "total_partners"),
                 ("per organelle", "mean_contacts"),
                 ("per organelle", "std_contacts"),
+                ("per organelle", "mean_partners"),
                 ("per organelle", "mean_total_area"),
                 ("per organelle", "std_area"),
                 ("per organelle", "mean_contacts_per_volume"),
@@ -130,8 +223,10 @@ class Mcs_Analysis(Analysis):
                     total_pairs,
                     total_contacts,
                     total_area,
+                    total_partners,
                     mean_n_contacts,
                     std_n_contacts,
+                    x["n_partners"].mean(),
                     mean_total_area,
                     std_total_area,
                     mean_contacts_per_vol,
