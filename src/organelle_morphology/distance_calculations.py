@@ -465,51 +465,25 @@ def generate_mcs(
             org1.add_mcs(mcs_target, mcs_meta)
             org2.add_mcs(mcs_source, mcs_meta)
 
-    for org_id in org_ids:
-        org = project.get_organelles(org_id)[0]
-        org.calc_mcs_dict_entry(mcs_label)
-    logger.debug(f"Transfered mcs to organelles in {time() - t0}")
-
     project._mcs_labels[mcs_label] = {
         "max_distance": max_distance,
         "min_distance": min_distance,
         "organelles": org_ids,
     }
+
+    for org_id in org_ids:
+        org = project.get_organelles(org_id)[0]
+        org.calc_mcs_dict_entry(mcs_label, mcs_meta)
+    logger.debug(f"Transfered mcs to organelles in {time() - t0}")
     return mcs_label
 
 
-def _mcs_patch_dict(mcs_label, self_id, partner_id, mesh, patches):
-    """Temporary stopgap record shape consumed by ``Organelle.add_mcs``.
-
-    Ticket 03 replaces the aggregate keys with per-patch records. Until then
-    keep the old consumer keys (``vertices_index``, ``distances``, ``area``)
-    plus the new ``patches`` list.
-    """
-    if patches:
-        distances = np.concatenate(
-            [np.asarray(patch["distances"], dtype=np.float64) for patch in patches]
-        )
-        area = float(sum(patch["area"] for patch in patches))
-        faces_index = np.unique(
-            np.concatenate(
-                [np.asarray(patch["faces_index"], dtype=np.int64) for patch in patches]
-            )
-        )
-        vertices_index = np.unique(
-            np.asarray(mesh.faces, dtype=np.int64)[faces_index].reshape(-1)
-        )
-    else:
-        distances = np.empty(0, dtype=np.float64)
-        area = 0.0
-        vertices_index = np.empty(0, dtype=np.int64)
-
+def _mcs_patch_dict(mcs_label, self_id, partner_id, patches):
+    """Per-side MCS result: identity plus the side's patch list."""
     return {
         "self_id": self_id,
         "partner_id": partner_id,
         "mcs_label": mcs_label,
-        "vertices_index": vertices_index,
-        "distances": distances,
-        "area": area,
         "patches": patches,
     }
 
@@ -532,6 +506,6 @@ def calc_mcs_delayed(
         min_dist,
         max_dist,
     )
-    mcs_1 = _mcs_patch_dict(mcs_label, id_1, id_2, mesh_1, patches_1)
-    mcs_2 = _mcs_patch_dict(mcs_label, id_2, id_1, mesh_2, patches_2)
+    mcs_1 = _mcs_patch_dict(mcs_label, id_1, id_2, patches_1)
+    mcs_2 = _mcs_patch_dict(mcs_label, id_2, id_1, patches_2)
     return mcs_1, mcs_2
