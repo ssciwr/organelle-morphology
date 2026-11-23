@@ -1,6 +1,87 @@
-import numpy as np
+from types import SimpleNamespace
 
-from organelle_morphology.organelle import Mitochondrium
+import numpy as np
+import pytest
+
+from organelle_morphology.mcs_geometry import pair_patches
+from organelle_morphology.organelle import (
+    CURRENT_MCS_SCHEMA_VERSION,
+    Mitochondrium,
+)
+
+from .test_mcs_geometry import _deep_u_mesh, _icosphere
+
+
+class _StubSource:
+    """Minimal source stand in for record aggregation tests."""
+
+    def __init__(self, project, label, volume=10.0, surface=20.0):
+        self.project = project
+        self.xml_path = project.path / "stub_source.xml"
+        self.mesh_properties = {
+            label: SimpleNamespace(volume=volume, area=surface)
+        }
+
+
+def _make_organelle(project, label=1, volume=10.0, surface=20.0):
+    source = _StubSource(project, label, volume=volume, surface=surface)
+    return Mitochondrium(source=source, label=label)
+
+
+def _mcs_meta(
+    mcs_label="0.0-0.1,-",
+    min_distance=0.0,
+    max_distance=0.1,
+    ids_filter_1="*",
+    ids_filter_2="*",
+):
+    return {
+        "ids_filter_1": ids_filter_1,
+        "ids_filter_2": ids_filter_2,
+        "min_distance": min_distance,
+        "max_distance": max_distance,
+    }
+
+
+def _patch(
+    self_id,
+    partner_id,
+    index,
+    distances,
+    area,
+    truncated=False,
+    partner_indices=(),
+):
+    return {
+        "patch_id": f"{self_id}~{partner_id}~{index}",
+        "faces_index": np.arange(len(distances), dtype=np.int64),
+        "distances": np.asarray(distances, dtype=np.float64),
+        "area": float(area),
+        "truncated": truncated,
+        "partner_patch_ids": tuple(
+            f"{partner_id}~{self_id}~{i}" for i in partner_indices
+        ),
+    }
+
+
+def _mcs_dict(mcs_label, self_id, partner_id, patches):
+    return {
+        "self_id": self_id,
+        "partner_id": partner_id,
+        "mcs_label": mcs_label,
+        "patches": patches,
+    }
+
+
+def _mcs_record(project, organelle_id, mcs_label):
+    records = [
+        rec
+        for rec in project.registry.get_by_type("McsData")
+        if rec.meta.organelle_id == organelle_id
+        and rec.meta.mcs_label == mcs_label
+    ]
+    assert len(records) == 1
+    return records[0]
 
 
 def test_organelle_init(project_with_sources):
@@ -56,3 +137,180 @@ def test_get_metadata(project_with_sources):
     assert getattr(meta, "source")
     assert getattr(meta, "label")
     assert getattr(meta, "id")
+
+
+def test_add_mcs_appends_patch_entries(project):
+    """A second call for the same pair appends instead of overwriting."""
+    org = _make_organelle(project)
+    label = "0.0-0.1,-"
+    partner = "mito_0002"
+    meta = _mcs_meta(label)
+
+    org.add_mcs(
+        _mcs_dict(label, org.id, partner, [_patch(org.id, partner, 0, [0.01], 1.0)]),
+        meta,
+    )
+    org.add_mcs(
+        _mcs_dict(label, org.id, partner, [_patch(org.id, partner, 1, [0.02], 2.0)]),
+        meta,
+    )
+
+    entries = org.mcs[label][partner]
+    assert isinstance(entries, list)
+    assert [entry["patch_id"] for entry in entries] == [
+        f"{org.id}~{partner}~0",
+        f"{org.id}~{partner}~1",
+    ]
+    assert all(entry["meta"] is meta for entry in entries)
+    assert [entry["area"] for entry in entries] == [1.0, 2.0]
+
+
+def test_calc_mcs_dict_entry_counts_patches_for_one_partner(project):
+    """One pair with two appositions gives two own patches, one partner."""
+    org = _make_organelle(project, volume=10.0, surface=20.0)
+    label = "0.0-0.1,-"
+    partner = "mito_0002"
+    meta = _mcs_meta(label)
+
+    distances_1 = np.array([0.02, 0.04])
+    distances_2 = np.array([0.06, 0.08, 0.10])
+    org.add_mcs(
+        _mcs_dict(
+            label,
+            org.id,
+            partner,
+            [
+                _patch(org.id, partner, 0, distances_1, 1.0),
+                _patch(org.id, partner, 1, distances_2, 3.0),
+            ],
+        ),
+        meta,
+    )
+    org.calc_mcs_dict_entry(label, meta)
+
+    data = _mcs_record(project, org.id, label).data
+    assert data.n_contacts == 2
+    assert data.n_partners == 1
+    assert data.partners == (partner,)
+    assert data.total_area == pytest.approx(4.0)
+    assert data.mean_area == pytest.approx(2.0)
+    assert data.std_area == pytest.approx(1.0)
+    assert data.min_dist == pytest.approx(0.02)
+    assert data.max_dist == pytest.approx(0.10)
+    assert data.min_dist_per_org == (pytest.approx(0.02),)
+    assert data.max_dist_per_org == (pytest.approx(0.10),)
+    assert data.n_contacts_per_area == pytest.approx(2 / 20.0)
+    assert data.area_per_area == pytest.approx(4.0 / 20.0)
+    assert data.n_contacts_per_volume == pytest.approx(2 / 10.0)
+    assert data.area_per_volume == pytest.approx(4.0 / 10.0)
+
+    # distances are averaged with the patch area as weight
+    mean_1, mean_2 = distances_1.mean(), distances_2.mean()
+    expected_mean = (1.0 * mean_1 + 3.0 * mean_2) / 4.0
+    expected_var = (
+        1.0 * (distances_1.var() + (mean_1 - expected_mean) ** 2)
+        + 3.0 * (distances_2.var() + (mean_2 - expected_mean) ** 2)
+    ) / 4.0
+    assert data.mean_dist == pytest.approx(expected_mean)
+    assert data.std_dist == pytest.approx(np.sqrt(expected_var))
+
+
+def test_calc_mcs_dict_entry_multi_partner_metadata(project):
+    """Metadata filters and band come from the label, not the last patch."""
+    org = _make_organelle(project)
+    label = "0.01-0.1,mito-er"
+    partner_a = "er_0001"
+    partner_b = "er_0002"
+    meta = _mcs_meta(
+        label,
+        min_distance=0.01,
+        max_distance=0.1,
+        ids_filter_1="mito*",
+        ids_filter_2="er*",
+    )
+
+    org.add_mcs(
+        _mcs_dict(
+            label,
+            org.id,
+            partner_a,
+            [
+                _patch(org.id, partner_a, 0, [0.01, 0.02], 1.0),
+                _patch(org.id, partner_a, 1, [0.05], 1.0),
+            ],
+        ),
+        meta,
+    )
+    org.add_mcs(
+        _mcs_dict(
+            label,
+            org.id,
+            partner_b,
+            [_patch(org.id, partner_b, 0, [0.09], 2.0)],
+        ),
+        meta,
+    )
+    org.calc_mcs_dict_entry(label, meta)
+
+    record = _mcs_record(project, org.id, label)
+    data = record.data
+    assert data.n_contacts == 3
+    assert data.n_partners == 2
+    assert data.partners == (partner_a, partner_b)
+    assert data.min_dist_per_org == (
+        pytest.approx(0.01),
+        pytest.approx(0.09),
+    )
+    assert data.max_dist_per_org == (
+        pytest.approx(0.05),
+        pytest.approx(0.09),
+    )
+
+    assert record.meta.schema_version == CURRENT_MCS_SCHEMA_VERSION
+    assert record.meta.filter_1 == "mito*"
+    assert record.meta.filter_2 == "er*"
+    assert record.meta.min_dist == pytest.approx(0.01)
+    assert record.meta.max_dist == pytest.approx(0.1)
+
+
+def test_calc_mcs_dict_entry_skips_when_no_patches(project):
+    org = _make_organelle(project)
+    org.calc_mcs_dict_entry("0.0-0.1,-")
+    assert project.registry.get_by_type("McsData") == []
+
+
+def test_u_case_patch_counts_per_side(project):
+    """Sphere has one MCS, the deep U has two, for the same label."""
+    sphere = _icosphere(radius=1.0, center=(0, 0, 0))
+    u_mesh = _deep_u_mesh()
+
+    sphere_patches, u_patches = pair_patches(
+        "sphere", "u", sphere, u_mesh, 0.0, 0.1
+    )
+    assert len(sphere_patches) == 1
+    assert len(u_patches) == 2
+
+    label = "0.0-0.1,-"
+    meta = _mcs_meta(label)
+    sphere_org = _make_organelle(project, label=1)
+    u_org = _make_organelle(project, label=2)
+
+    sphere_org.add_mcs(
+        _mcs_dict(label, sphere_org.id, u_org.id, sphere_patches), meta
+    )
+    u_org.add_mcs(_mcs_dict(label, u_org.id, sphere_org.id, u_patches), meta)
+    sphere_org.calc_mcs_dict_entry(label, meta)
+    u_org.calc_mcs_dict_entry(label, meta)
+
+    sphere_data = _mcs_record(project, sphere_org.id, label).data
+    u_data = _mcs_record(project, u_org.id, label).data
+    assert sphere_data.n_contacts == 1
+    assert u_data.n_contacts == 2
+    assert sphere_data.n_partners == 1
+    assert u_data.n_partners == 1
+    assert sphere_data.total_area == pytest.approx(
+        sum(p["area"] for p in sphere_patches)
+    )
+    assert u_data.total_area == pytest.approx(
+        sum(p["area"] for p in u_patches)
+    )

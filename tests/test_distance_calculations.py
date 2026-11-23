@@ -221,8 +221,8 @@ def test_generate_mcs(project_with_sources):
     assert stat.data.min_dist >= 0
 
 
-def test_calc_mcs_delayed_stopgap_shape():
-    """Ticket 01 keeps the old consumer keys plus the new patch list."""
+def test_calc_mcs_delayed_patch_shape():
+    """The delayed side result carries the per-patch records for add_mcs."""
     mesh_a = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
     mesh_b = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
     mesh_b.apply_translation((0.0, 0.0, 2.05))
@@ -240,15 +240,22 @@ def test_calc_mcs_delayed_stopgap_shape():
             "self_id",
             "partner_id",
             "mcs_label",
-            "vertices_index",
-            "distances",
-            "area",
             "patches",
         }
         assert mcs["self_id"] == self_id
         assert mcs["partner_id"] == partner_id
         assert mcs["mcs_label"] == "0-0.1,-"
         assert len(mcs["patches"]) == 1
-        assert mcs["area"] > 0
-        assert len(mcs["distances"]) > 0
-        assert set(mcs["vertices_index"]) <= set(range(len(mesh.vertices)))
+        patch = mcs["patches"][0]
+        assert set(patch) == {
+            "patch_id",
+            "faces_index",
+            "distances",
+            "area",
+            "truncated",
+            "partner_patch_ids",
+        }
+        assert patch["patch_id"].startswith(f"{self_id}~{partner_id}~")
+        assert patch["area"] > 0
+        assert len(patch["distances"]) > 0
+        assert set(patch["faces_index"]) <= set(range(len(mesh.faces)))

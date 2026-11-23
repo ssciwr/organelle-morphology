@@ -2,7 +2,11 @@ import pandas as pd
 
 from organelle_morphology.analysis import Misc_Analysis
 from organelle_morphology.records import Record, PropertyBlock
-from organelle_morphology.organelle import McsData, McsMetadata
+from organelle_morphology.organelle import (
+    CURRENT_MCS_SCHEMA_VERSION,
+    McsData,
+    McsMetadata,
+)
 
 
 def test_statistics_defaults(project_with_sources):
@@ -55,9 +59,15 @@ def test_statistics_mcs_aggregation(project_with_sources):
     """Verify that MCS data is correctly pulled from the mcs_dict."""
 
     # Create real dataclasses to pass the isinstance(stat.data, PropertyBlock) check natively
-    meta = McsMetadata(mcs_label="0-0.01", organelle_id="mito_0001", max_dist=0.01)
+    meta = McsMetadata(
+        mcs_label="0-0.01",
+        organelle_id="mito_0001",
+        max_dist=0.01,
+        schema_version=CURRENT_MCS_SCHEMA_VERSION,
+    )
     data = McsData(
         n_contacts=1,
+        n_partners=1,
         total_area=150.5,
         mean_area=150.5,
         std_area=0.0,

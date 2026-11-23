@@ -358,9 +358,20 @@ def test_mcs_dicts(project_with_sources):
     assert list(mcs_dicts.keys()) == ["0.0-10,-"]
     assert len(mcs_dicts["0.0-10,-"]) == 11
     assert len(mcs_dicts["0.0-10,-"]["mito_0019"]) == 3
+    patches = mcs_dicts["0.0-10,-"]["mito_0019"]["mito_0015"]
+    assert isinstance(patches, list)
+    assert len(patches) >= 1
     assert all(
-        k in mcs_dicts["0.0-10,-"]["mito_0019"]["mito_0015"].keys()
-        for k in ["area", "distances", "vertices_index"]
+        k in patches[0]
+        for k in [
+            "patch_id",
+            "faces_index",
+            "distances",
+            "area",
+            "truncated",
+            "partner_patch_ids",
+            "meta",
+        ]
     )
 
 
