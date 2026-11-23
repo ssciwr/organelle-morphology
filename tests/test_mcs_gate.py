@@ -222,6 +222,45 @@ def test_gate_selects_small_gap_icospheres():
         assert np.all(distances <= 0.1 + 1e-9)
 
 
+def _flipped_plane(extent=2.0, cells=10, z=0.0):
+    """A grid plane whose normals point away from a partner above it."""
+    plane = _grid_plane(extent=extent, cells=cells, z=z)
+    plane.faces = np.asarray(plane.faces)[:, ::-1]
+    return plane
+
+
+def test_gate_keeps_one_sided_contact():
+    """A side without its own MCS must not suppress the other side's record.
+
+    A sphere hovers above a plane whose winding points away from it, so the
+    plane has no facing (hence no member) surface points while the sphere
+    still has a facing bottom cap inside the band. The apposition is
+    one-sided; the sphere's side must still be recorded.
+    """
+    plane = _flipped_plane()
+    sphere = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    sphere.apply_translation((0.0, 0.0, 1.002))
+    upper, lower = _pair_matrices(
+        {"plane": plane, "sphere": sphere}, max_distance=0.1
+    )
+    org_plane = _GateOrganelle("plane", plane)
+    org_sphere = _GateOrganelle("sphere", sphere)
+    project = _GateProject(
+        [org_plane, org_sphere], upper, lower, max_distance=0.1
+    )
+
+    label = generate_mcs(project, "plane", "sphere", max_distance=0.1)
+
+    assert label in org_sphere.mcs
+    assert org_sphere.mcs[label]["plane"]
+    assert all(patch["area"] > 0 for patch in org_sphere.mcs[label]["plane"])
+    # the plane contributes no patch, so it gets no aggregate entry
+    assert label not in org_plane.mcs
+    assert org_plane.mcs_dict_entries == {}
+    assert org_sphere.mcs_dict_entries == {label: True}
+    assert project._mcs_labels[label]["organelles"] == {"sphere"}
+
+
 def test_gate_ignores_min_distance_pair_filter():
     """A pair whose global minimum is below min_distance is kept.
 

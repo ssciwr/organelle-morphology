@@ -309,6 +309,17 @@ class Organelle:
                 }
             )
 
+    def clear_mcs(self, mcs_label):
+        """Drop this organelle's in-memory MCS patches for ``mcs_label``.
+
+        Used by the overwrite path before recomputing a label so that repeated
+        runs replace their previous results instead of appending to them.
+
+        Args:
+            mcs_label (str): label of the MCS run to discard.
+        """
+        self._mcs.pop(mcs_label, None)
+
     def calc_mcs_dict_entry(self, mcs_label, mcs_meta=None):
         """Aggregate this organelle's patches for ``mcs_label`` into a record.
 

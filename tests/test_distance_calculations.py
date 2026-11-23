@@ -233,6 +233,75 @@ def test_generate_mcs(project_with_sources):
     assert stat.data.min_dist >= 0
 
 
+def _patch_ids(org, mcs_label):
+    return sorted(
+        patch["patch_id"]
+        for patches in org.mcs.get(mcs_label, {}).values()
+        for patch in patches
+    )
+
+
+def _mcs_record(project, organelle_id, mcs_label):
+    records = [
+        record
+        for record in project.registry.get_by_type("McsData")
+        if record.meta.organelle_id == organelle_id
+        and record.meta.mcs_label == mcs_label
+    ]
+    assert len(records) == 1
+    return records[0]
+
+
+def test_search_mcs_overwrite_replaces_instead_of_appending(project_with_sources):
+    """Re-running a label must not double counts, patch ids or records.
+
+    The overwrite path also has to drop partners that no longer pass the pair
+    gate instead of leaving their stale patches behind.
+    """
+    p = project_with_sources
+    p.simplify = 0.0
+    label = p.search_mcs(90)
+
+    org = p.get_organelles("mito_0007")[0]
+    first_ids = _patch_ids(org, label)
+    assert first_ids
+    first_counts = (
+        _mcs_record(p, org.id, label).data.n_contacts,
+        _mcs_record(p, org.id, label).data.n_partners,
+    )
+    first_records = len(p.registry.get_by_type("McsData"))
+
+    p.search_mcs(90, overwrite_mcs_label=True)
+
+    assert _patch_ids(org, label) == first_ids
+    assert len(_patch_ids(org, label)) == len(set(_patch_ids(org, label)))
+    data = _mcs_record(p, org.id, label).data
+    assert (data.n_contacts, data.n_partners) == first_counts
+    records = p.registry.get_by_type("McsData")
+    assert len(records) == first_records
+    keys = [(rec.meta.mcs_label, rec.meta.organelle_id) for rec in records]
+    assert len(keys) == len(set(keys))
+
+    # Force one partner of this organelle out of the conservative gate. On the
+    # next overwrite its stale patches must disappear from `org.mcs`.
+    partner = next(iter(org.mcs[label]))
+    lower = p.cache["distance_matrix_lower"]
+    lower.loc[org.id, partner] = 1e6
+    lower.loc[partner, org.id] = 1e6
+
+    p.search_mcs(90, overwrite_mcs_label=True)
+
+    assert partner not in org.mcs.get(label, {})
+    assert partner not in _mcs_record(p, org.id, label).data.partners
+    partner_records = [
+        rec
+        for rec in p.registry.get_by_type("McsData")
+        if rec.meta.mcs_label == label and rec.meta.organelle_id == partner
+    ]
+    for record in partner_records:
+        assert org.id not in record.data.partners
+
+
 def test_calc_mcs_delayed_patch_shape():
     """The delayed side result carries the per-patch records for add_mcs."""
     mesh_a = trimesh.creation.icosphere(subdivisions=2, radius=1.0)

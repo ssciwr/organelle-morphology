@@ -495,6 +495,14 @@ def generate_mcs(
     mcs_label = f"{min_distance}-{max_distance},{label_1}-{label_2}"
     if project._mcs_labels.get(mcs_label) and not overwrite:
         return mcs_label
+    if overwrite:
+        # Replace, never append: drop every organelle's in-memory patches for
+        # this label and unregister its aggregate records before recomputing.
+        for organelle in project.organelles:
+            organelle.clear_mcs(mcs_label)
+        for record in list(project.registry.get_by_type("McsData")):
+            if record.meta.mcs_label == mcs_label:
+                project.registry.clear_record(record)
     mcs_meta = {
         "ids_filter_1": ids_filter_1,
         "ids_filter_2": ids_filter_2,
@@ -560,26 +568,31 @@ def generate_mcs(
     empty_pairs = 0
     for id_1, id_2 in pairs:
         mcs_source, mcs_target = results[(id_1, id_2)]
-        if not mcs_source["patches"] or not mcs_target["patches"]:
+        org1 = project.get_organelles(id_1)[0]
+        org2 = project.get_organelles(id_2)[0]
+        if org1.id == mcs_source["self_id"]:
+            mcs_1, mcs_2 = mcs_source, mcs_target
+        else:
+            mcs_1, mcs_2 = mcs_target, mcs_source
+
+        # The two sides of an apposition are independent: one side may have no
+        # facing surface point in the band while the other does. Store each
+        # side on its own and only skip the pair when both are empty.
+        added = False
+        if mcs_1["patches"]:
+            org1.add_mcs(mcs_1, mcs_meta)
+            org_ids.add(id_1)
+            added = True
+        if mcs_2["patches"]:
+            org2.add_mcs(mcs_2, mcs_meta)
+            org_ids.add(id_2)
+            added = True
+        if not added:
             # The conservative gate also yields pairs without any in-band
             # surface point; they do not form an MCS on either side.
             empty_pairs += 1
-            continue
-
-        org1 = project.get_organelles(id_1)[0]
-        org2 = project.get_organelles(id_2)[0]
-        org_ids.add(id_1)
-        org_ids.add(id_2)
-
-        # add mcs to organelle
-        if org1.id == mcs_source["self_id"]:
-            org1.add_mcs(mcs_source, mcs_meta)
-            org2.add_mcs(mcs_target, mcs_meta)
-        else:
-            org1.add_mcs(mcs_target, mcs_meta)
-            org2.add_mcs(mcs_source, mcs_meta)
     if empty_pairs:
-        logger.debug(f"Skipped {empty_pairs} gated pairs without contact")
+        logger.debug(f"Skipped {empty_pairs} gated pairs without an MCS")
 
     project._mcs_labels[mcs_label] = {
         "max_distance": max_distance,

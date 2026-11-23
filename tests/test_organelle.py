@@ -218,6 +218,36 @@ def test_add_mcs_appends_patch_entries(project):
     assert [entry["area"] for entry in entries] == [1.0, 2.0]
 
 
+def test_clear_mcs_drops_only_the_requested_label(project):
+    """Overwrite support: clearing a label removes its patches on this organelle."""
+    org = _make_organelle(project)
+    label = "0.0-0.1,-"
+    other_label = "0.1-0.2,-"
+    partner = "mito_0002"
+    meta = _mcs_meta(label)
+    org.add_mcs(
+        _mcs_dict(label, org.id, partner, [_patch(org.id, partner, 0, [0.01], 1.0)]),
+        meta,
+    )
+    org.add_mcs(
+        _mcs_dict(
+            other_label,
+            org.id,
+            partner,
+            [_patch(org.id, partner, 0, [0.15], 1.0)],
+        ),
+        _mcs_meta(other_label),
+    )
+
+    org.clear_mcs(label)
+
+    assert label not in org.mcs
+    assert org.mcs[other_label][partner][0]["patch_id"] == f"{org.id}~{partner}~0"
+    # clearing an unknown label is a no-op
+    org.clear_mcs("missing")
+    assert other_label in org.mcs
+
+
 def test_calc_mcs_dict_entry_counts_patches_for_one_partner(project):
     """One pair with two appositions gives two own patches, one partner."""
     org = _make_organelle(project, volume=10.0, surface=20.0)
