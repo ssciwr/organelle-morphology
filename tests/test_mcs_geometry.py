@@ -306,6 +306,35 @@ def _clipped_sphere(radius=1.0):
     return clipped
 
 
+def test_truncated_flags_faces_touching_the_rim():
+    """A huge face lying flush on the rim is truncated even at its centre.
+
+    The two-triangle analytic planes have their face centroids far from the
+    open boundary, so the centroid-only test reported ``truncated=False``.
+    Every face vertex lies exactly on the rim, which must count as distance 0.
+    """
+    lower = _plane_mesh(z=0.0, size=10.0)
+    upper = _plane_mesh(z=0.05, size=10.0)
+    upper.faces = np.asarray(upper.faces)[:, ::-1]  # face down toward lower
+
+    patches_lower, patches_upper = pair_patches(
+        "lower", "upper", lower, upper, 0.0, 0.1
+    )
+
+    for patches in (patches_lower, patches_upper):
+        assert len(patches) == 1
+        assert patches[0]["truncated"] is True
+
+    # closed control: no rim, so a closed contact is never truncated
+    closed_a = trimesh.creation.box((1.0, 1.0, 1.0))
+    closed_b = closed_a.copy()
+    closed_b.apply_translation((0.0, 0.0, 1.05))
+    closed_patches, _ = pair_patches(
+        "a", "b", closed_a, closed_b, 0.0, 0.1
+    )
+    assert all(not patch["truncated"] for patch in closed_patches)
+
+
 def test_clipped_rim_contact_is_included_and_truncated():
     hemisphere = _clipped_sphere(radius=1.0)
     assert hemisphere.is_watertight is False

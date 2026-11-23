@@ -142,7 +142,8 @@ def test_parallel_planes_contact_area_is_exactly_l_squared():
 
     for patches, side in ((patches_lower, "lower"), (patches_upper, "upper")):
         assert len(patches) == 1
-        assert patches[0]["truncated"] is False
+        # the analytic planes are open and every triangle touches the rim
+        assert patches[0]["truncated"] is True
         assert np.allclose(patches[0]["distances"], gap)
         assert patches[0]["area"] == pytest.approx(
             size * size, rel=PLANE_RTOL

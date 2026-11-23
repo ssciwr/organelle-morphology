@@ -570,18 +570,26 @@ def _side_components(
     splits = np.flatnonzero(np.diff(member_labels)) + 1
     component_nodes = np.split(member_nodes, splits)
 
-    near_boundary = _points_near_segments(
-        sample_points[member_nodes],
-        geom_self.vertices[geom_self.boundary_edges[:, 0]]
-        if len(geom_self.boundary_edges)
-        else np.empty((0, 3)),
-        geom_self.vertices[geom_self.boundary_edges[:, 1]]
-        if len(geom_self.boundary_edges)
-        else np.empty((0, 3)),
-        max_distance,
-    )
-    near_all_nodes = np.zeros(n_nodes, dtype=bool)
-    near_all_nodes[member_nodes] = near_boundary
+    # ``truncated`` covers two ways a patch can reach the open rim: a sample
+    # (sub-face centroid) within ``max_distance`` of a rim edge, or a parent
+    # face with a vertex on/near the rim. The latter matters for huge faces
+    # lying flush on the rim, whose centroid is far from every boundary edge.
+    parent_near = np.zeros(n_faces, dtype=bool)
+    if len(geom_self.boundary_edges):
+        rim_start = geom_self.vertices[geom_self.boundary_edges[:, 0]]
+        rim_end = geom_self.vertices[geom_self.boundary_edges[:, 1]]
+        member_parents = np.unique(parent[member_nodes])
+        member_vertices = np.unique(faces[member_parents])
+        vertex_near = np.zeros(len(vertices), dtype=bool)
+        vertex_near[member_vertices] = _points_near_segments(
+            vertices[member_vertices], rim_start, rim_end, max_distance
+        )
+        parent_near = vertex_near[faces].any(axis=1)
+
+        centroid_near = _points_near_segments(
+            sample_points[member_nodes], rim_start, rim_end, max_distance
+        )
+        parent_near[parent[member_nodes[centroid_near]]] = True
 
     patches = []
     for nodes in component_nodes:
@@ -591,7 +599,7 @@ def _side_components(
                 faces_index=np.unique(parents),
                 distances=distance[nodes],
                 area=float(np.sum(area[nodes])),
-                truncated=bool(np.any(near_all_nodes[nodes])),
+                truncated=bool(np.any(parent_near[parents])),
                 partner_faces=np.unique(partner_face[nodes]),
                 min_parent=int(np.min(parents)),
                 min_node=int(np.min(nodes)),
