@@ -4,14 +4,17 @@ from time import time
 
 import numpy as np
 import pandas as pd
-import trimesh
 from dask.base import compute
 from dask.delayed import delayed
 from dask.distributed import span
-from scipy.spatial import KDTree
 import os
 
 import organelle_morphology
+from organelle_morphology.mcs_geometry import (
+    get_mesh_geometry,
+    min_dist_upper,
+    pair_patches,
+)
 from organelle_morphology.util import (
     block_to_coords,
     boxes_overlap,
@@ -27,9 +30,15 @@ MAX_ORGS_PER_DOMAIN = 500
 
 def get_min_dist(args):
     id_1, id_2, mesh_1, mesh_2, max_dist = args
-    mcs_calculator = MembraneContactSiteCalculator()
-    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2, max_dist)
-    return (id_1, id_2), mcs_calculator.min_distance
+    geometry_1 = get_mesh_geometry(mesh_1)
+    geometry_2 = get_mesh_geometry(mesh_2)
+    d_1, d_2 = min_dist_upper(geometry_1, geometry_2)
+    value = min(d_1, d_2)
+    # Keep the historical matrix semantics: pairs beyond max_dist stay
+    # uncomputed (-1) instead of storing an out-of-band distance.
+    if max_dist is not None and value > max_dist:
+        value = np.nan
+    return (id_1, id_2), value
 
 
 def _check_overlap(box, bounding_boxes):
@@ -178,217 +187,6 @@ def make_domains(
         if np.count_nonzero(m) > 1:
             filtered_masks.append(m)
     return filtered_masks
-
-
-class MembraneContactSiteCalculator:
-    def search_mcs(self, id_1, id_2, mesh_1, mesh_2, max_dist=None):
-        """
-        first search the entire membrane surface that is facing the other organelle
-        we do this by first performing a kd-tree search to find the nearest vertices.
-        Then we filter the vertices based on the dot product of the normal vectors
-        of the two meshes.
-        This will give us the vertices that are facing the other organelle.
-
-
-        Args:
-            id_1 (int): The ID of the first organelle.
-            id_2 (int): The ID of the second organelle.
-            mesh_1 (Mesh, optional): The mesh of the first organelle.
-            mesh_2 (Mesh, optional): The mesh of the second organelle.
-            If not provided, it will be retrieved from the project.
-
-        """
-        self._repair_meshes(mesh_1, mesh_2)
-
-        watertight = True
-        if len(mesh_1.vertices) < len(mesh_2.vertices):
-            if mesh_2.is_watertight:
-                ordering = 1
-            elif mesh_1.is_watertight:
-                ordering = 0
-            else:
-                # both not watertight -> smaller as target
-                ordering = 1
-                watertight = False
-        elif mesh_1.is_watertight:
-            ordering = 0
-        elif mesh_2.is_watertight:
-            ordering = 1
-        else:
-            # both not watertight -> smaller as target
-            ordering = 0
-            watertight = False
-
-        if ordering:
-            mesh_source = mesh_2
-            mesh_target = mesh_1
-            id_source = id_2
-            id_target = id_1
-        else:
-            mesh_source = mesh_1
-            mesh_target = mesh_2
-            id_source = id_1
-            id_target = id_2
-
-        self.id_source = id_source
-        self.id_target = id_target
-        self.mesh_source = mesh_source
-        self.mesh_target = mesh_target
-
-        if watertight:
-            distance, index_source = mesh_source.nearest.vertex(mesh_target.vertices)
-        else:
-            source_tree = KDTree(mesh_source.vertices)
-            distance, index_source = source_tree.query(mesh_target.vertices, k=1)
-
-        # skip rest of calculation if min distance too big
-        if max_dist is not None and min(distance) > max_dist:
-            self.distances = np.array([])
-            self.index_source = np.array([])
-            self.index_target = np.array([])
-            self.normals_source = np.array([])
-            self.normals_target = np.array([])
-            self.dot_products = np.array([])
-            return
-
-        self.distances = distance
-        self.index_source: np.ndarray = index_source
-        self.index_target: np.ndarray = np.asarray((range(len(mesh_target.vertices))))
-
-        self.normals_source = mesh_source.vertex_normals[index_source]
-        self.normals_target = mesh_target.vertex_normals
-
-        self.dot_products = np.einsum(
-            "ij,ij->i", self.normals_source, self.normals_target
-        )
-
-        # some of the meshes have inverted normal vectors,
-        # i think this can happen when the meshes are not watertight at the cell borders
-        # this means that sometimes we have to search for a negative dot product
-        # and other times for a positive.
-        # To determine which one to search for, we calculate the mean distance for both cases
-        # and choose the one with the smaller mean distance.
-
-        _normal_dists = [
-            self.distances[i]
-            for i in range(len(self.distances))
-            if self.dot_products[i] < 0
-        ]
-        mean_distance_normal = np.nan
-        if _normal_dists:
-            mean_distance_normal = np.mean(_normal_dists)
-
-        _inverse_dists = [
-            self.distances[i]
-            for i in range(len(self.distances))
-            if self.dot_products[i] > 0
-        ]
-        mean_distance_inverse = np.nan
-        if _inverse_dists:
-            mean_distance_inverse = np.mean(_inverse_dists)
-
-        if mean_distance_normal < mean_distance_inverse or np.isnan(
-            mean_distance_inverse
-        ):
-            self._filter_distances(lambda i: self.dot_products[i] < 0)
-        else:
-            self._filter_distances(lambda i: self.dot_products[i] > 0)
-
-    def analyze_mcs(self, mcs_label: str, max_distance: float, min_distance=0.0):
-        """After searching the entire surface we now filter only the area we are interested in
-
-        Args:
-            mcs_label (str): label of this mcs search
-            max_distance (float): Maximum distance to the other organelle
-            min_distance (float, optional): minimum distance. Defaults to 0.
-
-        Raises:
-            ValueError: search_mcs must be performed first.
-        """
-
-        self.mcs_label = mcs_label
-
-        filtered_indices = [
-            i
-            for i in range(len(self.distances))
-            if min_distance <= self.distances[i] <= max_distance
-        ]
-
-        self._vertices_index_source = self.index_source[filtered_indices]
-        self._vertices_index_target = self.index_target[filtered_indices]
-
-        self._vertices_source = self.mesh_source.vertices[self._vertices_index_source]
-        self._vertices_target = self.mesh_target.vertices[self._vertices_index_target]
-
-        faces_source = np.nonzero(
-            np.any(np.isin(self.mesh_source.faces, self._vertices_index_source), axis=1)
-        )
-        faces_target = np.nonzero(
-            np.any(np.isin(self.mesh_target.faces, self._vertices_index_target), axis=1)
-        )
-
-        area_source = self.mesh_source.area_faces[faces_source].sum()
-        area_target = self.mesh_target.area_faces[faces_target].sum()
-
-        self._distances = self.distances[filtered_indices]
-        self._area_source = area_source
-        self._area_target = area_target
-
-    def _filter_distances(self, filter_func):
-        # depending on the normal orientation, we need to filter the distances differently
-        filtered_indices = [i for i in range(len(self.distances)) if filter_func(i)]
-        self.distances = self.distances[filtered_indices]
-        self.index_source = self.index_source[filtered_indices]
-        self.index_target = self.index_target[filtered_indices]
-        self.normals_source = self.normals_source[filtered_indices]
-        self.normals_target = self.normals_target[filtered_indices]
-        self.dot_products = self.dot_products[filtered_indices]
-
-    @property
-    def min_distance(self):
-        if len(self.distances) == 0:
-            # this can sometimes happen, not sure why
-            return np.nan
-
-        return np.min(self.distances)
-
-    @property
-    def mcs_target(self):
-        if self.mcs_label is None:
-            raise ValueError(
-                "No MCS found. Please run 'search_mcs' and 'analyze_mcs' first."
-            )
-
-        return {
-            "self_id": self.id_target,
-            "partner_id": self.id_source,
-            "mcs_label": self.mcs_label,
-            "vertices_index": self._vertices_index_target,
-            "distances": self._distances,
-            "area": self._area_target,
-        }
-
-    @property
-    def mcs_source(self):
-        if self.mcs_label is None:
-            raise ValueError(
-                "No MCS found. Please run 'search_mcs' and 'analyze_mcs' first."
-            )
-
-        return {
-            "self_id": self.id_source,
-            "partner_id": self.id_target,
-            "mcs_label": self.mcs_label,
-            "vertices_index": self._vertices_index_source,
-            "distances": self._distances,
-            "area": self._area_source,
-        }
-
-    def _repair_meshes(self, mesh_source, mesh_target):
-        for mesh in [mesh_source, mesh_target]:
-            trimesh.repair.fix_inversion(mesh)
-            trimesh.repair.fix_winding(mesh)
-            trimesh.repair.fix_normals(mesh)
 
 
 def generate_distance_matrix(
@@ -680,6 +478,42 @@ def generate_mcs(
     return mcs_label
 
 
+def _mcs_patch_dict(mcs_label, self_id, partner_id, mesh, patches):
+    """Temporary stopgap record shape consumed by ``Organelle.add_mcs``.
+
+    Ticket 03 replaces the aggregate keys with per-patch records. Until then
+    keep the old consumer keys (``vertices_index``, ``distances``, ``area``)
+    plus the new ``patches`` list.
+    """
+    if patches:
+        distances = np.concatenate(
+            [np.asarray(patch["distances"], dtype=np.float64) for patch in patches]
+        )
+        area = float(sum(patch["area"] for patch in patches))
+        faces_index = np.unique(
+            np.concatenate(
+                [np.asarray(patch["faces_index"], dtype=np.int64) for patch in patches]
+            )
+        )
+        vertices_index = np.unique(
+            np.asarray(mesh.faces, dtype=np.int64)[faces_index].reshape(-1)
+        )
+    else:
+        distances = np.empty(0, dtype=np.float64)
+        area = 0.0
+        vertices_index = np.empty(0, dtype=np.int64)
+
+    return {
+        "self_id": self_id,
+        "partner_id": partner_id,
+        "mcs_label": mcs_label,
+        "vertices_index": vertices_index,
+        "distances": distances,
+        "area": area,
+        "patches": patches,
+    }
+
+
 @delayed
 def calc_mcs_delayed(
     mcs_label,
@@ -690,10 +524,14 @@ def calc_mcs_delayed(
     max_dist,
     min_dist,
 ):
-    mcs_calculator = MembraneContactSiteCalculator()
-    mcs_calculator.search_mcs(id_1, id_2, mesh_1, mesh_2, max_dist)
-    mcs_calculator.analyze_mcs(mcs_label, max_distance=max_dist, min_distance=min_dist)
-
-    mcs_source = mcs_calculator.mcs_source
-    mcs_target = mcs_calculator.mcs_target
-    return mcs_source, mcs_target
+    patches_1, patches_2 = pair_patches(
+        id_1,
+        id_2,
+        mesh_1,
+        mesh_2,
+        min_dist,
+        max_dist,
+    )
+    mcs_1 = _mcs_patch_dict(mcs_label, id_1, id_2, mesh_1, patches_1)
+    mcs_2 = _mcs_patch_dict(mcs_label, id_2, id_1, mesh_2, patches_2)
+    return mcs_1, mcs_2

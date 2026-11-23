@@ -17,6 +17,7 @@ from skimage.measure import regionprops
 
 import organelle_morphology
 from organelle_morphology.block_mesher import block_mesher
+from organelle_morphology.mcs_geometry import clear_geometry_cache
 from organelle_morphology.organelle import (
     Organelle,
     get_mesh_properties_delayed,
@@ -972,6 +973,7 @@ class DataSource:
         Necessary after change of compression level or clipping.
         """
         self.logger.debug(f"Resetting source {self.org_name}: {self.xml_path.name}")
+        clear_geometry_cache()
         self._basic_geometric_properties = {}
         self._meshes = None
         self._computed_compression = None

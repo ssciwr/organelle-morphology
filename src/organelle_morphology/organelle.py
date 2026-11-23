@@ -262,7 +262,7 @@ class Organelle:
         """Add mcs information to this organelle.
 
         Args:
-            mcs_dict (dict): mcs_dict created by the MembraneContactSiteCalculator
+            mcs_dict (dict): per-side MCS result from the geometry core.
         """
         mcs_target = mcs_dict["partner_id"]
         mcs_label = mcs_dict["mcs_label"]
