@@ -1019,10 +1019,12 @@ class Project:
 
         Each entry is ``min(d_AB, d_BA)``, the smaller of the two
         bidirectional vertex-to-surface minima. It overestimates the true
-        surface-to-surface minimum by at most ``max(h_A, h_B)``, the sampling
-        radii of the two meshes. ``-1`` marks pairs that were not evaluated
-        (domain decomposition) or lie beyond the computed ``max_distance``.
-        Use :attr:`distance_matrix_lower` for the rigorous lower bound.
+        surface-to-surface minimum by at most ``max(h_A, h_B)``: ``d_AB``
+        alone errs by at most ``h_A`` and ``d_BA`` by at most ``h_B``, where
+        ``h`` is a mesh's sampling radius. ``-1`` marks pairs that were not
+        evaluated (domain decomposition) or lie beyond the computed
+        ``max_distance``. Use :attr:`distance_matrix_lower` for the rigorous
+        lower bound.
         """
 
         return generate_distance_matrix(self)

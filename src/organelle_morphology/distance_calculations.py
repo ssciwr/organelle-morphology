@@ -31,15 +31,17 @@ def get_min_dist(args):
     """Bidirectional vertex-to-surface bounds for one organelle pair.
 
     ``d_AB`` is the smallest exact distance from a vertex of mesh A to the
-    surface of mesh B, ``d_BA`` the same with the roles swapped. Their minimum
-    is an upper bound on the true surface-to-surface minimum (error bounded by
-    the sampling radius of the queried mesh), while
+    surface of mesh B, ``d_BA`` the same with the roles swapped. ``d_AB``
+    overestimates the true surface-to-surface minimum by at most ``h_A``, A's
+    sampling radius; ``d_BA`` by at most ``h_B``. The stored
+    ``min(d_AB, d_BA)`` therefore has an error of at most
+    ``max(h_A, h_B)``, while
 
     ``max(d_AB - h_A, d_BA - h_B, 0)``
 
-    is a rigorous lower bound (``h`` = sampling radius from ticket 01). The
-    lower bound is clamped at zero because surface distances are non-negative;
-    this also keeps zero a valid, distinguishable bound.
+    is a rigorous lower bound (``h`` = sampling radius of the respective
+    mesh). The lower bound is clamped at zero because surface distances are
+    non-negative; this also keeps zero a valid, distinguishable bound.
 
     Args:
         args: ``(id_1, id_2, mesh_1, mesh_2, max_dist)``.
@@ -243,10 +245,11 @@ def generate_distance_matrix(
 
     The returned matrix holds, for every computed pair, the minimum of the two
     bidirectional vertex-to-surface minima (``min(d_AB, d_BA)``). That value is
-    an **upper bound** on the true surface-to-surface minimum; the error is
-    bounded by ``max(h_A, h_B)``, the sampling radii of the two meshes. Entries
-    are ``-1`` when the pair was not evaluated (domain decomposition) or lies
-    beyond ``max_distance``.
+    an **upper bound** on the true surface-to-surface minimum: ``d_AB`` alone
+    errs by at most ``h_A`` and ``d_BA`` by at most ``h_B``, so the minimum
+    errs by at most ``max(h_A, h_B)`` (``h`` = a mesh's sampling radius).
+    Entries are ``-1`` when the pair was not evaluated (domain decomposition)
+    or lies beyond ``max_distance``.
 
     Beside the upper-bound matrix, a second cached DataFrame
     (``cache["distance_matrix_lower"]``) holds the rigorous lower bound

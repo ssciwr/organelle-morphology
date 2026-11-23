@@ -421,6 +421,12 @@ class RecordRegistry:
                 self.add(Record.from_yaml(file))
                 count += 1
             except (ValueError, TypeError) as e:
+                # Both are schema rejections: an old MCS record lacks the now
+                # required ``schema_version`` field and raises TypeError from
+                # ``McsMetadata(**values)``; a stale non-MCS record can raise
+                # TypeError for other missing required fields. A current-version
+                # record with a bad value raises ValueError instead. Neither is
+                # widened further: unrelated failures should stay visible.
                 rejected.append((file, e))
                 logger.warning("Rejected record file %s: %s", file, e)
 

@@ -107,6 +107,10 @@ class Mcs_Analysis(Analysis):
 
         Filters: ``self.ids`` for organelles and ``self.mcs_label_filter`` for
         labels.
+
+        Returns:
+            pd.DataFrame: One row per in-memory patch, columns
+                :data:`PATCH_COLUMNS`.
         """
         rows = []
         for organelle in self.project.get_organelles(ids=self.ids):
@@ -166,6 +170,10 @@ class Mcs_Analysis(Analysis):
         Weights are own patch counts (``McsData.n_contacts``). ``total_pairs``
         counts unordered organelle edges (each reciprocal pair once) and does
         not require the partner to have its own record.
+
+        Returns:
+            pd.DataFrame: Overview with a ``(group, measure)`` MultiIndex and
+                one column per MCS label.
         """
 
         def _weighted_stats(x):
@@ -198,7 +206,7 @@ class Mcs_Analysis(Analysis):
             mean_contacts_per_vol = x["n_contacts_per_volume"].mean()
             mean_contacts_per_area = x["n_contacts_per_area"].mean()
 
-            # Deduplicate contact *pairs* without mutating record data. A pair
+            # Deduplicate organelle pairs without mutating record data. A pair
             # is an unordered edge; partners without their own record (e.g.
             # filtered out) still form an edge instead of raising.
             organelle_ids = x.index.get_level_values(1)
