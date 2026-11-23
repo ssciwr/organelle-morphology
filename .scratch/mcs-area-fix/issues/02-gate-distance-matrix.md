@@ -1,6 +1,6 @@
 # 02 — Pair gate & distance matrix: conservative surface bounds
 
-Status: ready-for-agent
+Status: resolved
 Spec: `../spec.md` · ADR: `docs/adr/0002-mcs-per-organelle-surface-distance.md`
 Depends on: 01 (shared geometry: AABB cache, sampling radius)
 
@@ -36,3 +36,5 @@ with the pair's closest approach.
 - Lower bound never exceeds the true minimum on analytic fixtures.
 
 ## Comments
+
+- 2026-11-23 — Resolved on integration branch `fix/mcs-area-fix` (merge `752ece8`; branch `fix/mcs-area-fix-02` @ `cd7c9bf`). `distance_matrix` keeps `min(d_AB, d_BA)` as a documented upper bound (error ≤ max(h_A, h_B)); a second cached `distance_matrix_lower` holds `max(d_AB − h_A, d_BA − h_B, 0)`. `generate_mcs` keeps a pair iff `0 ≤ lower ≤ max_distance`, so `min_distance` filters surface points only; domain decomposition, cache keys and the public API are unchanged, with caches missing the lower matrix recomputing. Vectorized `_check_overlap`, domain masks, matrix fill and pair selection; tuple task keys. Tests in `tests/test_mcs_gate.py` (0.05-gap missed-pair regression, band `[0.01, 0.1]` with a 0.05 region, symmetry, cache reuse, DD agreement). Code-review fix: the lower-bound test now calls `get_min_dist` directly and brackets independently known true minima in both argument orders.

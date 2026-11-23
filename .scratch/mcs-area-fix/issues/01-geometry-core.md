@@ -1,6 +1,6 @@
 # 01 — Geometry core: point-to-surface MCS patches
 
-Status: ready-for-agent
+Status: resolved
 Spec: `../spec.md` · ADR: `docs/adr/0002-mcs-per-organelle-surface-distance.md`
 Depends on: —
 
@@ -47,3 +47,5 @@ symmetric, per-side geometry core.
 - No `fix_inversion`/`fix_normals` calls remain in the MCS path.
 
 ## Comments
+
+- 2026-11-23 — Resolved on integration branch `fix/mcs-area-fix` (merge `d1b27fe`; branch `fix/mcs-area-fix-01` @ `54265f4`). New `src/organelle_morphology/mcs_geometry.py` replaces `MembraneContactSiteCalculator`: worker-local cached `igl.AABB`/`h`/face normals/rim edges, exact bidirectional point-to-surface queries, local facing test, depth-3 midpoint subdivision of straddling faces, edge-connected patches with deterministic `patch_id`, `truncated` against open rims, `partner_patch_ids`, and vectorized masks/components. Tests in `tests/test_mcs_geometry.py`: analytic spheres/planes, swap symmetry, U-case (1 vs 2 patches), clipped rim, and a guard that no mesh repair runs. Code-review fixes: rim-touching faces now set `truncated`, per-sample areas support area-weighted stats, and subdivision depth is configurable downstream.

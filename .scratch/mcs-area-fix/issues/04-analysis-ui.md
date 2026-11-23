@@ -1,6 +1,6 @@
 # 04 — Analysis & UI: aggregation fixes, per-patch views
 
-Status: ready-for-agent
+Status: resolved
 Spec: `../spec.md` · ADR: `docs/adr/0002-mcs-per-organelle-surface-distance.md`
 Depends on: 03
 
@@ -39,3 +39,5 @@ bugs in the same code paths.
   patch-based semantics and passing.
 
 ## Comments
+
+- 2026-11-23 — Resolved on integration branch `fix/mcs-area-fix` (merge `e09e1fb`; branch `fix/mcs-area-fix-04` @ `40755b6`). `Mcs_Analysis.get_mcs_patches()` returns an in-memory per-patch table (typed and empty after YAML-only load); `get_mcs_overview` weights by patch counts, dedups pairs with frozensets (no record mutation, no `list.index` failure) and reports `total_partners`/`mean_partners`. `get_contact_properties` includes `n_partners`, `min_dist`, `max_dist`; `get_contact_stats` returns `(mcs_label, property)` keys and `get_dataframe` returns a 2-level MultiIndex (`static` or the full MCS label × property), removing `rsplit("-", 1)` so labels such as `0-0.1,mito-er` survive. Scene coloring is per patch via `faces_index` (tab20). UI tables/plot formatting and an in-session patch table were adapted; no structural redesign. `tests/test_mcs_analysis.py`, `tests/test_analysis.py`, `tests/test_organelle.py` and `tests/test_source.py` updated and passing.

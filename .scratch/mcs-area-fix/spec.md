@@ -1,6 +1,7 @@
 # MCS area calculation fix
 
-Status: agreed — grilling session 2026-07-28, all decisions settled (Q1–Q20).
+Status: implemented on `fix/mcs-area-fix` (2026-11-23); all tickets resolved.
+Agreed — grilling session 2026-07-28, all decisions settled (Q1–Q20).
 ADR: `docs/adr/0002-mcs-per-organelle-surface-distance.md`
 Glossary terms: **MCS**, **Contact area**, **Distance band**, **Clipping**.
 

@@ -1,6 +1,6 @@
 # 03 — Records & schema: patch lists, versioning, clean break
 
-Status: ready-for-agent
+Status: resolved
 Spec: `../spec.md` · ADR: `docs/adr/0002-mcs-per-organelle-surface-distance.md`
 Depends on: 01 (patch shape)
 
@@ -38,3 +38,5 @@ so without versioning, wrong areas would silently persist).
 - `McsMetadata.filter_1/filter_2/min/max` correct for multi-partner organelles.
 
 ## Comments
+
+- 2026-11-23 — Resolved on integration branch `fix/mcs-area-fix` (merge `22eafd2`; branch `fix/mcs-area-fix-03` @ `6075128`). `_mcs[label][partner]` is a list of patch entries (`patch_id, faces_index, distances, sample_areas, area, truncated, partner_patch_ids, meta`); `add_mcs` appends. `McsData` adds `n_partners`, counts own patches, aggregates areas over patches and distance mean/std area-weighted (within and across patches); per-partner min/max stay aligned with `partners`; records use real tuples (no `.npz` sidecars). `McsMetadata.schema_version` is required (current 2); missing/old YAML is rejected on load with a warning listing the files, while current records round-trip; `filter_1/2` and min/max come from the label meta. Aggregate-only persistence kept. Code-review fixes: one-sided contacts are recorded independently, and `overwrite=True` clears the label's in-memory patches and stale `McsData` records before recomputing.
