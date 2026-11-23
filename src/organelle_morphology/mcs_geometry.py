@@ -326,6 +326,7 @@ def _subdivision_grid(depth: int) -> _SubdivisionGrid:
 class _PatchData:
     faces_index: np.ndarray
     distances: np.ndarray
+    sample_areas: np.ndarray
     area: float
     truncated: bool
     partner_faces: np.ndarray
@@ -598,6 +599,7 @@ def _side_components(
             _PatchData(
                 faces_index=np.unique(parents),
                 distances=distance[nodes],
+                sample_areas=area[nodes],
                 area=float(np.sum(area[nodes])),
                 truncated=bool(np.any(parent_near[parents])),
                 partner_faces=np.unique(partner_face[nodes]),
@@ -632,6 +634,7 @@ def _finish_patches(
                 "patch_id": f"{self_id}~{partner_id}~{index}",
                 "faces_index": patch.faces_index,
                 "distances": patch.distances,
+                "sample_areas": patch.sample_areas,
                 "area": patch.area,
                 "truncated": patch.truncated,
                 "partner_patch_ids": tuple(
@@ -671,7 +674,8 @@ def pair_patches(
     Returns:
         tuple[list[dict], list[dict]]: patches of the first and the second
         side. Every patch has the keys ``patch_id``, ``faces_index``,
-        ``distances``, ``area``, ``truncated`` and ``partner_patch_ids``.
+        ``distances``, ``sample_areas`` (one area per distance sample),
+        ``area``, ``truncated`` and ``partner_patch_ids``.
     """
     depth = max(int(subdivision_depth), 0)
     geom_self = get_mesh_geometry(mesh_self)

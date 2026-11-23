@@ -332,10 +332,13 @@ def test_calc_mcs_delayed_patch_shape():
             "patch_id",
             "faces_index",
             "distances",
+            "sample_areas",
             "area",
             "truncated",
             "partner_patch_ids",
         }
+        assert patch["sample_areas"].shape == patch["distances"].shape
+        assert patch["sample_areas"].sum() == pytest.approx(patch["area"])
         assert patch["patch_id"].startswith(f"{self_id}~{partner_id}~")
         assert patch["area"] > 0
         assert len(patch["distances"]) > 0

@@ -197,10 +197,14 @@ def test_pair_patches_sphere_area_matches_analytic_zone():
             "patch_id",
             "faces_index",
             "distances",
+            "sample_areas",
             "area",
             "truncated",
             "partner_patch_ids",
         }
+        # one sample area per distance sample; together they are the area
+        assert patch["sample_areas"].shape == patch["distances"].shape
+        assert patch["sample_areas"].sum() == pytest.approx(patch["area"])
         assert patch["patch_id"].startswith(f"{self_id}~")
         assert patch["truncated"] is False
         assert len(patch["faces_index"]) > 0

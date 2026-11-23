@@ -23,11 +23,15 @@ PATCH_COLUMNS = [
 ]
 
 
-def _patch(patch_id, area, distances, truncated=False):
+def _patch(patch_id, area, distances, truncated=False, sample_areas=None):
+    distances = np.asarray(distances, dtype=np.float64)
+    if sample_areas is None:
+        sample_areas = np.full(len(distances), float(area) / len(distances))
     return {
         "patch_id": patch_id,
         "faces_index": np.arange(len(distances), dtype=np.int64),
-        "distances": np.asarray(distances, dtype=np.float64),
+        "distances": distances,
+        "sample_areas": np.asarray(sample_areas, dtype=np.float64),
         "area": float(area),
         "truncated": truncated,
         "partner_patch_ids": (),
@@ -164,6 +168,37 @@ def test_get_mcs_patches_one_row_per_patch(project_with_sources):
 
     second = df[df["patch_id"] == "a~1"].iloc[0]
     assert bool(second["truncated"]) is False
+
+
+def test_get_mcs_patches_mean_dist_is_area_weighted(project_with_sources):
+    """Per-patch distance means use the sample areas, not equal weights."""
+    org = project_with_sources.get_organelles("mito_0015")[0]
+    label = "0.0-0.1,mito-er"
+    meta = _mcs_meta(label)
+    org.add_mcs(
+        _mcs_dict(
+            label,
+            org.id,
+            "er_9001",
+            [
+                _patch(
+                    "w~0",
+                    10.0,
+                    [0.02, 0.08],
+                    sample_areas=[9.0, 1.0],
+                )
+            ],
+        ),
+        meta,
+    )
+
+    analysis = Mcs_Analysis(project_with_sources)
+    analysis.set_filters(mcs_labels=[label])
+    df = analysis.get_mcs_patches()
+
+    assert df.iloc[0]["mean_dist"] == pytest.approx(0.026)
+    assert df.iloc[0]["min_dist"] == pytest.approx(0.02)
+    assert df.iloc[0]["max_dist"] == pytest.approx(0.08)
 
 
 def test_get_mcs_patches_empty_is_typed(project_with_sources):

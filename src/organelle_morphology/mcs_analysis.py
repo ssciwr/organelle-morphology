@@ -100,9 +100,10 @@ class Mcs_Analysis(Analysis):
         """Per-patch geometry for the current session.
 
         Flattens the in-memory ``Organelle.mcs`` patch lists into one row per
-        patch, with the columns listed in :data:`PATCH_COLUMNS`. Patch geometry
-        is never persisted, so after ``load_all_from_yaml`` (or before any MCS
-        search) this returns an empty DataFrame with the same typed columns.
+        patch, with the columns listed in :data:`PATCH_COLUMNS`. ``mean_dist``
+        is area-weighted over the patch's samples. Patch geometry is never
+        persisted, so after ``load_all_from_yaml`` (or before any MCS search)
+        this returns an empty DataFrame with the same typed columns.
 
         Filters: ``self.ids`` for organelles and ``self.mcs_label_filter`` for
         labels.
@@ -117,8 +118,20 @@ class Mcs_Analysis(Analysis):
                         distances = np.asarray(
                             patch["distances"], dtype=np.float64
                         )
+                        weights = patch.get("sample_areas")
+                        if weights is not None:
+                            weights = np.asarray(weights, dtype=np.float64)
                         if distances.size:
-                            mean_dist = float(np.mean(distances))
+                            if (
+                                weights is not None
+                                and weights.shape == distances.shape
+                                and float(weights.sum()) > 0.0
+                            ):
+                                mean_dist = float(
+                                    np.average(distances, weights=weights)
+                                )
+                            else:
+                                mean_dist = float(np.mean(distances))
                             min_dist = float(np.min(distances))
                             max_dist = float(np.max(distances))
                         else:
