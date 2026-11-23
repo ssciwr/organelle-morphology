@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import trimesh
+from dask import delayed
 
 from organelle_morphology.mcs_geometry import pair_patches
 from organelle_morphology.organelle import (
@@ -15,12 +17,13 @@ from .test_mcs_geometry import _deep_u_mesh, _icosphere
 class _StubSource:
     """Minimal source stand in for record aggregation tests."""
 
-    def __init__(self, project, label, volume=10.0, surface=20.0):
+    def __init__(self, project, label, volume=10.0, surface=20.0, mesh=None):
         self.project = project
         self.xml_path = project.path / "stub_source.xml"
         self.mesh_properties = {
             label: SimpleNamespace(volume=volume, area=surface)
         }
+        self.meshes = {label: delayed(mesh)} if mesh is not None else {}
 
 
 def _make_organelle(project, label=1, volume=10.0, surface=20.0):
@@ -120,15 +123,65 @@ def test_curvature_mesh(project_with_sources):
 def test_get_mesh_mcs_colored(project_with_sources):
     project_with_sources.search_mcs(10)
     o = project_with_sources.get_organelles("mito_0015")[0]
-    mesh = o.get_mesh_mcs_colored().compute()
-    # has three different mcs
-    assert np.unique(mesh.visual.vertex_colors, axis=0).shape == (4, 4)
+    label = next(iter(o.mcs))
+    n_partners = len(o.mcs[label])
+    n_patches = sum(len(patches) for patches in o.mcs[label].values())
+    mesh = o.get_mesh_mcs_colored(label).compute()
+    n_colors = np.unique(mesh.visual.vertex_colors, axis=0).shape[0]
+    # At least the background plus one colour per partner; at most one colour
+    # per patch. Shared boundary vertices can overwrite a patch colour, so the
+    # exact count is bounded rather than fixed. The per-patch behaviour itself
+    # is pinned by test_get_mesh_mcs_colored_uses_one_color_per_patch.
+    assert n_partners + 1 <= n_colors <= n_patches + 1
+    assert n_colors > n_partners
 
 
 def test_get_mesh_mcs_colored_missing(project_with_sources):
     o = project_with_sources.get_organelles("mito_0015")[0]
     mesh = o.get_mesh_mcs_colored().compute()
     assert np.unique(mesh.visual.vertex_colors, axis=0).shape == (1, 4)
+
+
+def test_get_mesh_mcs_colored_uses_one_color_per_patch(project):
+    """Two patches of the same partner must not share a colour."""
+    mesh = trimesh.Trimesh(
+        vertices=[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [11.0, 0.0, 0.0],
+            [10.0, 1.0, 0.0],
+        ],
+        faces=[[0, 1, 2], [3, 4, 5]],
+        process=False,
+    )
+    source = _StubSource(project, label=7, mesh=mesh)
+    org = Mitochondrium(source=source, label=7)
+    label = "0.0-0.1,-"
+    partner = "er_0001"
+    meta = _mcs_meta(label)
+
+    org.add_mcs(
+        _mcs_dict(
+            label,
+            org.id,
+            partner,
+            [
+                _patch(org.id, partner, 0, [0.01], 1.0),
+                _patch(org.id, partner, 1, [0.02], 1.0),
+            ],
+        ),
+        meta,
+    )
+
+    colored = org.get_mesh_mcs_colored(label).compute()
+    unique = np.unique(colored.visual.vertex_colors, axis=0)
+    # one colour per patch; every vertex here belongs to a patch
+    assert unique.shape == (2, 4)
+    assert not np.array_equal(
+        colored.visual.vertex_colors[0], colored.visual.vertex_colors[3]
+    )
 
 
 def test_get_metadata(project_with_sources):

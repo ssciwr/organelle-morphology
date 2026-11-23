@@ -16,6 +16,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Column group used for non-contact columns in the structured DataFrames built
+# by ``Misc_Analysis.get_dataframe``. Contact columns use their full MCS label
+# as the group, so a label containing "-" (e.g. "0-0.1,mito-er") stays intact.
+STATIC_COLUMN_GROUP = "static"
+
+
+def column_display_name(column) -> str:
+    """Human-readable label for a column of ``Misc_Analysis.get_dataframe``.
+
+    Structured columns are ``(group, property)`` tuples; non-contact columns
+    use :data:`STATIC_COLUMN_GROUP` and render as the bare property name,
+    contact columns as ``"<mcs_label> | <property>"``. Plain labels (for
+    example ``"Measure"``) are returned unchanged as strings.
+    """
+    if isinstance(column, tuple) and len(column) == 2:
+        group, prop = column
+        if group == STATIC_COLUMN_GROUP:
+            return str(prop)
+        return f"{group} | {prop}"
+    return str(column)
+
+
 
 class Analysis(ABC):
     """Analysis base class. Specific analysis workflows should subclass this."""
@@ -86,6 +108,16 @@ class Analysis(ABC):
         summary_df = summary_df.reindex(columns=target_order)
         summary_df.index.name = "Measure"
         summary_df = summary_df.reset_index()
+        if isinstance(summary_df.columns, pd.MultiIndex):
+            # A structured (group, property) frame keeps its tuples, but the
+            # inserted "Measure" index column would otherwise become
+            # ("Measure", ""). Collapse that one level back to a plain label.
+            summary_df.columns = pd.Index(
+                [
+                    "Measure" if (column[1] == "" and column[0] == "Measure") else column
+                    for column in summary_df.columns
+                ]
+            )
 
         return summary_df
 
@@ -129,11 +161,14 @@ class Misc_Analysis(Analysis):
         """
         contact_properties = [
             "n_contacts",
+            "n_partners",
             "total_area",
             "mean_area",
             "std_area",
             "mean_dist",
             "std_dist",
+            "min_dist",
+            "max_dist",
             "n_contacts_per_area",
             "n_contacts_per_volume",
             "area_per_area",
@@ -219,8 +254,13 @@ class Misc_Analysis(Analysis):
 
     def get_contact_stats(
         self, organelle: Organelle, selected: set[str]
-    ) -> dict[str, Any]:
-        """Extracts requested contact site (MCS) data."""
+    ) -> dict[tuple[str, str], Any]:
+        """Extracts requested contact site (MCS) data.
+
+        Returns a mapping keyed by ``(mcs_label, property)``. The MCS label is
+        kept whole (it may contain ``-``, e.g. ``"0-0.1,mito-er"``), so callers
+        never have to split a concatenated column name.
+        """
         contact_keys = set(self.get_contact_properties())
         to_extract = selected.intersection(contact_keys)
         if not to_extract:
@@ -232,12 +272,11 @@ class Misc_Analysis(Analysis):
                 continue
             if stat.meta.organelle_id == organelle.id:
                 mcs_label = stat.meta.mcs_label
-                # For each requested base property (e.g., "n_contacts")
                 for prop_name in to_extract:
-                    # If the metric exists for this MCS label, add it to the result
-                    # with a new key format: "MCS_LABEL-PROPERTY_NAME"
                     if hasattr(stat.data, prop_name):
-                        res[f"{mcs_label}-{prop_name}"] = getattr(stat.data, prop_name)
+                        res[(mcs_label, prop_name)] = getattr(
+                            stat.data, prop_name
+                        )
 
         return res
 
@@ -249,6 +288,13 @@ class Misc_Analysis(Analysis):
         from mesh, skeleton, geometry, and contact sources.
         check get_properties to see all potentially available properties.
 
+        Column contract: a 2-level column MultiIndex with names
+        ``("group", "property")``. Non-contact columns use
+        :data:`STATIC_COLUMN_GROUP` (``"static"``) as the group; contact
+        columns use the full MCS label as the group, for example
+        ``("0-0.1,mito-er", "n_contacts")``. This keeps labels containing
+        ``"-"`` intact and removes any string parsing of column names.
+
         :param ids: Glob-style filter for organelles (e.g., "mito_*").
         :param properties: List of keys to include. If None, defaults to
                            ['volume', 'sphericity', 'flatness_ratio'].
@@ -258,6 +304,19 @@ class Misc_Analysis(Analysis):
             properties = ["volume", "sphericity", "flatness_ratio"]
 
         selected_set = set(properties)
+        contact_props = set(self.get_contact_properties())
+        selected_contact_props = selected_set.intersection(contact_props)
+        static_props = selected_set - contact_props
+
+        def _empty_frame() -> pd.DataFrame:
+            columns = [(STATIC_COLUMN_GROUP, "ID")] + [
+                (STATIC_COLUMN_GROUP, prop) for prop in sorted(static_props)
+            ]
+            return pd.DataFrame(
+                columns=pd.MultiIndex.from_tuples(
+                    columns, names=["group", "property"]
+                )
+            )
 
         try:
             organelles = self.project.get_organelles(ids=ids)
@@ -266,41 +325,64 @@ class Misc_Analysis(Analysis):
                 f"Failed to retrieve organelles for ids '{ids}': {e}"
             )
             # If retrieval fails, return empty DF with correct columns
-            return pd.DataFrame(columns=["ID"] + sorted(list(selected_set)))
+            return _empty_frame()
 
         if not organelles:
-            return pd.DataFrame(columns=["ID"] + sorted(list(selected_set)))
+            return _empty_frame()
 
-        # Collect Data
+        # Collect Data. Every column key is already a structured
+        # (group, property) tuple, so no column name parsing is needed below.
         data_rows = []
         for org in organelles:
-            row = {"ID": org.id}
+            row = {(STATIC_COLUMN_GROUP, "ID"): org.id}
 
             # Aggregate properties from all specialized helper methods
-            row.update(self.get_organelle_mesh_properties(org, selected_set))
-            row.update(self.get_skeleton_stats(org, selected_set))
-            row.update(self.get_geometry_stats(org, selected_set))
+            row.update(
+                {
+                    (STATIC_COLUMN_GROUP, key): value
+                    for key, value in self.get_organelle_mesh_properties(
+                        org, selected_set
+                    ).items()
+                }
+            )
+            row.update(
+                {
+                    (STATIC_COLUMN_GROUP, key): value
+                    for key, value in self.get_skeleton_stats(
+                        org, selected_set
+                    ).items()
+                }
+            )
+            row.update(
+                {
+                    (STATIC_COLUMN_GROUP, key): value
+                    for key, value in self.get_geometry_stats(
+                        org, selected_set
+                    ).items()
+                }
+            )
             row.update(self.get_contact_stats(org, selected_set))
 
             data_rows.append(row)
 
         df = pd.DataFrame(data_rows)
+        df.columns = pd.MultiIndex.from_tuples(
+            df.columns, names=["group", "property"]
+        )
 
-        # Determine Final Columns and handle dynamic contact columns (e.g., "0-0.01-n_contacts")
-        # which correspond to the generic selected keys (e.g., "n_contacts").
-        contact_props = set(self.get_contact_properties())
-        selected_contact_props = selected_set.intersection(contact_props)
-        static_props = selected_set - contact_props
+        final_cols = [(STATIC_COLUMN_GROUP, "ID")] + [
+            (STATIC_COLUMN_GROUP, prop) for prop in sorted(static_props)
+        ]
+        dynamic_cols = sorted(
+            column
+            for column in df.columns
+            if column[0] != STATIC_COLUMN_GROUP
+            and column[1] in selected_contact_props
+        )
+        final_cols.extend(dynamic_cols)
 
-        final_cols = ["ID"] + sorted(list(static_props))
-
-        if not df.empty:
-            dynamic_cols = []
-            for col in df.columns:
-                # Check if the column ends with a selected contact property
-                parts = col.rsplit("-", 1)
-                if len(parts) == 2 and parts[1] in selected_contact_props:
-                    dynamic_cols.append(col)
-            final_cols.extend(sorted(dynamic_cols))
-
-        return df.reindex(columns=final_cols)
+        return df.reindex(
+            columns=pd.MultiIndex.from_tuples(
+                final_cols, names=["group", "property"]
+            )
+        )

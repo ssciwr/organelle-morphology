@@ -17,7 +17,7 @@ with app.setup:
     from dask.base import compute
     import pandas as pd
     import traceback
-    from organelle_morphology.analysis import Misc_Analysis
+    from organelle_morphology.analysis import Misc_Analysis, column_display_name
     from organelle_morphology.mcs_analysis import Mcs_Analysis
     from organelle_morphology.profile_calculations import ProfileCalculator
     import matplotlib.pyplot as plt
@@ -916,6 +916,30 @@ def mcs_analysis_properties(mcs_analysis, project, record_counts):
 
 
 @app.cell
+def mcs_analysis_patches(mcs_analysis, project, record_counts):
+    mo.stop(
+        not project.registry.get_by_type("McsData"),
+        mo.md("No MCS calculations run yet"),
+    )
+    mcs_patches_df = mcs_analysis.get_mcs_patches()
+    mo.stop(
+        mcs_patches_df.empty,
+        mo.md(
+            "Per-patch geometry is only available after an MCS search in this "
+            "session (records persist aggregates only)."
+        ),
+    )
+    mo.output.replace(
+        mo.vstack(
+            [
+                mo.md("### MCS patches"),
+                mo.ui.table(mcs_patches_df, selection=None, page_size=15),
+            ]
+        )
+    )
+
+
+@app.cell
 def geo_calc_ui_cell(sources):
     mo.stop(len(sources) < 1, "")
     run_geo_btn = mo.ui.run_button(label="Calculate Geometry")
@@ -1126,29 +1150,44 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
             df_summary = display_stats.get_summary_dataframe(df_data)
 
             if not df_data.empty:
-                # Identify column types for specialized formatting
+                # Identify column types for specialized formatting. Columns are
+                # structured (group, property) tuples; tables are rendered with
+                # flattened display labels.
                 bool_cols = df_data.select_dtypes(include=[bool]).columns.tolist()
                 float_cols = df_data.select_dtypes(
                     include=["float", "float64"]
                 ).columns.tolist()
+                bool_labels = [column_display_name(col) for col in bool_cols]
+                float_labels = [column_display_name(col) for col in float_cols]
 
                 # Define formatting for the Summary Table
                 # Booleans show as percentage in 'Average' and '-' elsewhere
                 summary_formats = {}
                 for col in df_summary.columns:
                     if col in bool_cols:
-                        summary_formats[col] = lambda x: (
+                        summary_formats[column_display_name(col)] = lambda x: (
                             f"{x * 100:.1f}%" if pd.notnull(x) else "-"
                         )
                     elif col in float_cols:
-                        summary_formats[col] = "{:.3f}".format
+                        summary_formats[column_display_name(col)] = "{:.3f}".format
 
                 # Define formatting for the Raw Data Table
-                data_formats = {col: "{:.3f}".format for col in float_cols}
+                data_formats = {
+                    column_display_name(col): "{:.3f}".format for col in float_cols
+                }
 
+                df_summary_display = df_summary.copy()
+                df_summary_display.columns = [
+                    column_display_name(col) for col in df_summary.columns
+                ]
                 df_display = df_data.copy()
-                for col in float_cols:
-                    df_display[col] = df_display[col].replace([np.inf, -np.inf], np.nan)
+                df_display.columns = [
+                    column_display_name(col) for col in df_data.columns
+                ]
+                for col in float_labels:
+                    df_display[col] = df_display[col].replace(
+                        [np.inf, -np.inf], np.nan
+                    )
 
                 for col in ["mesh_centroid", "mesh_inertia"]:
                     if col in df_display.columns:
@@ -1158,12 +1197,12 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                     [
                         mo.md("### Statistical Summary"),
                         mo.ui.table(
-                            df_summary,
+                            df_summary_display,
                             selection=None,
                             pagination=False,
                             format_mapping=summary_formats,
                             text_justify_columns={
-                                col: "right" for col in (bool_cols + float_cols)
+                                col: "right" for col in (bool_labels + float_labels)
                             },
                         ),
                         mo.md(f"### Raw Organelle Data ({len(df_data)} items)"),
@@ -1173,7 +1212,9 @@ def prop_display_cell(calc_stats_btn, mesh_id_filter, project, prop_selector):
                             pagination=True,
                             max_height=400,
                             format_mapping=data_formats,
-                            text_justify_columns={col: "right" for col in float_cols},
+                            text_justify_columns={
+                                col: "right" for col in float_labels
+                            },
                         ),
                     ]
                 )
@@ -1205,13 +1246,21 @@ def plot_selector_cell(calc_stats_btn, df_data):
     mo.stop(not plotable_columns, mo.md("No properties selected for plotting."))
 
     # Create the dropdown for the property to plot
+    plotable_labels = {
+        column_display_name(column): column for column in plotable_columns
+    }
     plot_property_ui = mo.ui.dropdown(
-        options=plotable_columns, value=plotable_columns[0], label="property:"
+        options=plotable_labels,
+        value=plotable_columns[0],
+        label="property:",
     )
 
     # Create dropdown for secondary plot options (e.g., histogram or scatter with another property)
     plot_selector_histogram = "freq. (->histogram)"
-    plot_selector_secondary_options = [plot_selector_histogram] + plotable_columns
+    plot_selector_secondary_options = {
+        plot_selector_histogram: plot_selector_histogram,
+        **plotable_labels,
+    }
     plot_secondary_property_ui = mo.ui.dropdown(
         options=plot_selector_secondary_options,
         value=plot_selector_histogram,
@@ -1245,6 +1294,8 @@ def plot_display_cell(
 
     prop_x = plot_property_ui.value
     prop_y = plot_secondary_property_ui.value
+    prop_x_label = column_display_name(prop_x)
+    prop_y_label = column_display_name(prop_y)
 
     fig, ax = plt.subplots(figsize=(8, 4))
 
@@ -1258,8 +1309,8 @@ def plot_display_cell(
             valid_data, bins=10, edgecolor="white", linewidth=1.2
         )
         ax.set_xticks(bins)
-        ax.set_title(f"Distribution of {prop_x}", fontsize=14, pad=15)
-        ax.set_xlabel(prop_x, fontsize=12)
+        ax.set_title(f"Distribution of {prop_x_label}", fontsize=14, pad=15)
+        ax.set_xlabel(prop_x_label, fontsize=12)
         ax.set_ylabel("Frequency", fontsize=12)
         ax.grid(axis="y", linestyle="--", alpha=0.4)
 
@@ -1274,9 +1325,9 @@ def plot_display_cell(
         )
 
         ax.scatter(valid_data[prop_x], valid_data[prop_y], alpha=0.7)
-        ax.set_title(f"{prop_y} vs {prop_x}", fontsize=14, pad=15)
-        ax.set_xlabel(prop_x, fontsize=12)
-        ax.set_ylabel(prop_y, fontsize=12)
+        ax.set_title(f"{prop_y_label} vs {prop_x_label}", fontsize=14, pad=15)
+        ax.set_xlabel(prop_x_label, fontsize=12)
+        ax.set_ylabel(prop_y_label, fontsize=12)
         ax.grid(axis="both", linestyle="--", alpha=0.4)
 
     plt.tight_layout()

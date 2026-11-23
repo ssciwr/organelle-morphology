@@ -221,23 +221,18 @@ class Organelle:
             mcs_label = labels[0]
 
         if mcs_partners_dict := self.mcs.get(mcs_label):
-            for i, patches in enumerate(mcs_partners_dict.values()):
-                if not patches:
-                    continue
-                # Colour per partner for now (ticket 04 moves to per patch).
-                faces = np.unique(
-                    np.concatenate(
-                        [
-                            np.asarray(patch["faces_index"], dtype=np.int64)
-                            for patch in patches
-                        ]
+            i = 0
+            for patches in mcs_partners_dict.values():
+                for patch in patches:
+                    faces = np.asarray(patch["faces_index"], dtype=np.int64)
+                    if faces.size == 0:
+                        continue
+                    colored = color_delayed_trimesh_faces(
+                        colored,
+                        faces,
+                        [c * 255 for c in cm(i % 20)],
                     )
-                )
-                colored = color_delayed_trimesh_faces(
-                    colored,
-                    faces,
-                    [c * 255 for c in cm(i % 20)],
-                )
+                    i += 1
         return colored
 
     @property
