@@ -252,6 +252,41 @@ def _mcs_record(project, organelle_id, mcs_label):
     return records[0]
 
 
+def test_calc_mcs_delayed_forwards_subdivision_depth():
+    """The pipeline exposes the refinement depth instead of hardcoding it."""
+    mesh_a = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    mesh_b = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    mesh_b.apply_translation((0.0, 0.0, 2.05))
+
+    coarse_a, _ = calc_mcs_delayed(
+        "0-0.1,-",
+        "a",
+        "b",
+        mesh_a,
+        mesh_b,
+        max_dist=0.1,
+        min_dist=0.0,
+        subdivision_depth=0,
+    ).compute()
+    fine_a, _ = calc_mcs_delayed(
+        "0-0.1,-",
+        "a",
+        "b",
+        mesh_a,
+        mesh_b,
+        max_dist=0.1,
+        min_dist=0.0,
+        subdivision_depth=3,
+    ).compute()
+
+    coarse_samples = sum(len(p["distances"]) for p in coarse_a["patches"])
+    fine_samples = sum(len(p["distances"]) for p in fine_a["patches"])
+    assert fine_samples > coarse_samples
+    assert sum(p["area"] for p in fine_a["patches"]) != pytest.approx(
+        sum(p["area"] for p in coarse_a["patches"]), rel=1e-9
+    )
+
+
 def test_search_mcs_overwrite_replaces_instead_of_appending(project_with_sources):
     """Re-running a label must not double counts, patch ids or records.
 

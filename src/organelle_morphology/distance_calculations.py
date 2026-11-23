@@ -464,6 +464,7 @@ def generate_mcs(
     max_distance: float,
     min_distance: float = 0,
     overwrite=False,
+    subdivision_depth: int = 3,
 ) -> str:
     """Generates the MCS (Membrane Contact Site) pairs for a given project.
     The MCSs are calculated between two sets of organelles, defined by the
@@ -483,6 +484,10 @@ def generate_mcs(
 
         overwrite (bool, optional): Whether to overwrite existing MCS data.
             Defaults to False.
+        subdivision_depth (int, optional): Maximum midpoint refinement depth
+            for faces straddling a band/facing boundary. Defaults to 3, the
+            documented accuracy setting; raising it refines boundary areas
+            further at 4x the leaves per level.
 
     Returns:
         str: The label of this MCS search
@@ -556,6 +561,7 @@ def generate_mcs(
             meshes[id_2],
             max_distance,
             min_distance,
+            subdivision_depth,
         )
         tasks[(id_1, id_2)] = mcs_calc_delayed
 
@@ -626,6 +632,9 @@ def calc_mcs_delayed(
     mesh_2,
     max_dist,
     min_dist,
+    # Depth 3 is the documented accuracy setting; its cost on the largest
+    # benchmark pair was accepted (ADR 0002), so it stays the default.
+    subdivision_depth=3,
 ):
     patches_1, patches_2 = pair_patches(
         id_1,
@@ -634,6 +643,7 @@ def calc_mcs_delayed(
         mesh_2,
         min_dist,
         max_dist,
+        subdivision_depth,
     )
     mcs_1 = _mcs_patch_dict(mcs_label, id_1, id_2, patches_1)
     mcs_2 = _mcs_patch_dict(mcs_label, id_2, id_1, patches_2)

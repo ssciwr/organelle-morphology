@@ -213,6 +213,30 @@ def test_pair_patches_sphere_area_matches_analytic_zone():
         assert patch["area"] == pytest.approx(expected, rel=0.02)
 
 
+def test_subdivision_depth_trades_area_precision():
+    """A larger refinement depth moves the area closer to the analytic zone."""
+    mesh_a = _icosphere(radius=SPHERE_RADIUS, subdivisions=3, center=(0, 0, 0))
+    mesh_b = _icosphere(
+        radius=SPHERE_RADIUS, subdivisions=3, center=(0, 0, CENTER_DISTANCE)
+    )
+    expected = _zone_area(
+        SPHERE_RADIUS, SPHERE_RADIUS, CENTER_DISTANCE, BAND_MAX
+    )
+
+    coarse, _ = pair_patches(
+        "a", "b", mesh_a, mesh_b, 0.0, BAND_MAX, subdivision_depth=0
+    )
+    fine, _ = pair_patches(
+        "a", "b", mesh_a, mesh_b, 0.0, BAND_MAX, subdivision_depth=3
+    )
+
+    assert len(coarse) == len(fine) == 1
+    assert coarse[0]["area"] != pytest.approx(fine[0]["area"], rel=1e-9)
+    assert abs(fine[0]["area"] - expected) < abs(coarse[0]["area"] - expected)
+    # leaves refine into samples: depth 3 has more of them than depth 0
+    assert len(fine[0]["distances"]) > len(coarse[0]["distances"])
+
+
 def test_pair_patches_swap_symmetry():
     mesh_a = _icosphere(radius=SPHERE_RADIUS, center=(0, 0, 0))
     mesh_b = _icosphere(
