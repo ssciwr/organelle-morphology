@@ -613,35 +613,6 @@ def show(meshes):
     return scene
 
 
-def boxes_overlap(box1, box2):
-    """
-    Determine if two bounding boxes overlap.
-
-    Args:
-        box1, box2: tuple of two numpy arrays
-            Each box is defined by two points: (min_point, max_point)
-            where min_point has the lowest x, y, z coordinates
-            and max_point has the highest x, y, z coordinates
-
-    Returns:
-        bool: True if boxes overlap, False otherwise
-    """
-    min1, max1 = box1
-    min2, max2 = box2
-
-    if (
-        max1[0] < min2[0]
-        or max2[0] < min1[0]
-        or max1[1] < min2[1]
-        or max2[1] < min1[1]
-        or max1[2] < min2[2]
-        or max2[2] < min1[2]
-    ):
-        return False
-
-    return True
-
-
 def dict_lists_to_tuples(d: dict) -> dict:
     for k, v in d.items():
         if isinstance(v, list):

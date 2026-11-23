@@ -426,14 +426,12 @@ class Organelle:
         mcs_dict["min_dist"] = float(np.min(patch_min))
         mcs_dict["max_dist"] = float(np.max(patch_max))
 
-        # Area-weighted mean and variance across patches. This is equivalent
-        # to weighting every distance sample by its patch's area, without
-        # concatenating the per-patch distance arrays.
-        total_weight = float(np.sum(patch_areas))
-        if total_weight > 0:
-            overall_mean = float(
-                np.average(patch_means, weights=patch_areas)
-            )
+        # Pool the per-patch (already area-weighted) means and variances,
+        # weighting each patch by its area. This is equivalent to weighting
+        # every distance sample by its own area, without concatenating the
+        # per-patch distance arrays.
+        if total_area > 0:
+            overall_mean = float(np.average(patch_means, weights=patch_areas))
             overall_var = float(
                 np.average(
                     patch_stds**2 + (patch_means - overall_mean) ** 2,

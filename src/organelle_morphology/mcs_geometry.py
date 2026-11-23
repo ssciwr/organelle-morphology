@@ -6,7 +6,7 @@ surface points lie within a distance band to a partner organelle's surface.
 Both sides of an apposition are computed by the same code path, so argument
 order does not change the result.
 
-The public interface is intentionally small; tickets 02-05 build on it:
+The public interface is intentionally small:
 
 ``MeshGeometry``
     Immutable-ish bundle of the per-mesh data needed by the MCS calculation:
@@ -20,8 +20,7 @@ The public interface is intentionally small; tickets 02-05 build on it:
 
 ``sampling_radius(V, F)``
     Maximum covering radius of a face over the mesh. Used by the pair gate
-    (ticket 02) to turn a vertex-to-surface minimum into a rigorous lower
-    bound.
+    to turn a vertex-to-surface minimum into a rigorous lower bound.
 
 ``vertex_surface_distances(geom_self, geom_partner)``
     Exact point-to-surface distance from every vertex of ``geom_self`` to the
@@ -64,7 +63,20 @@ from scipy.sparse.csgraph import connected_components
 
 @dataclass(eq=False)
 class MeshGeometry:
-    """Per-mesh data shared by all MCS calculations involving this mesh."""
+    """Per-mesh data shared by all MCS calculations involving this mesh.
+
+    Attributes:
+        vertices (np.ndarray): Mesh vertices, ``float64 (n, 3)``.
+        faces (np.ndarray): Triangle indices, ``int64 (m, 3)``.
+        tree (object | None): Cached ``igl.AABB`` over the mesh, or ``None``
+            for an empty mesh.
+        face_normals (np.ndarray): Unit face normals from the meshed winding,
+            ``(m, 3)``; zero on degenerate faces.
+        face_areas (np.ndarray): Triangle areas, ``(m,)``.
+        sampling_radius (float): Maximum face covering radius of the mesh.
+        boundary_edges (np.ndarray): Open rim edges (one incident face),
+            ``(k, 2)``; empty for a closed mesh.
+    """
 
     vertices: np.ndarray
     faces: np.ndarray
@@ -73,10 +85,6 @@ class MeshGeometry:
     face_areas: np.ndarray
     sampling_radius: float
     boundary_edges: np.ndarray
-
-    @property
-    def n_vertices(self) -> int:
-        return len(self.vertices)
 
     @property
     def n_faces(self) -> int:
@@ -100,6 +108,13 @@ def sampling_radius(V: np.ndarray, F: np.ndarray) -> float:
     circumcentre lies inside the face (acute triangle), otherwise half of the
     longest edge. Degenerate (zero-area) and empty inputs are guarded and
     yield half the longest edge or ``0.0`` respectively.
+
+    Args:
+        V: Vertices, ``(n, 3)``.
+        F: Triangle indices, ``(m, 3)``.
+
+    Returns:
+        float: The largest per-face covering radius; ``0.0`` for empty input.
     """
     V = np.asarray(V, dtype=np.float64)
     F = np.asarray(F, dtype=np.int64)
@@ -134,7 +149,16 @@ def sampling_radius(V: np.ndarray, F: np.ndarray) -> float:
 
 
 def build_mesh_geometry(mesh) -> MeshGeometry:
-    """Build a :class:`MeshGeometry` for ``mesh`` (no caching)."""
+    """Build a :class:`MeshGeometry` for ``mesh`` (no caching).
+
+    Args:
+        mesh: A ``trimesh.Trimesh``; its vertices and faces are copied into
+            contiguous float64/int64 arrays.
+
+    Returns:
+        MeshGeometry: Tree, normals, areas, sampling radius and rim edges.
+            Empty meshes yield the same bundle with ``tree=None``.
+    """
     vertices = np.ascontiguousarray(np.asarray(mesh.vertices, dtype=np.float64))
     faces = np.ascontiguousarray(np.asarray(mesh.faces, dtype=np.int64))
     if faces.ndim != 2:
@@ -174,7 +198,14 @@ def build_mesh_geometry(mesh) -> MeshGeometry:
 
 
 def get_mesh_geometry(mesh) -> MeshGeometry:
-    """Return the cached geometry for ``mesh``, building it on first use."""
+    """Return the cached geometry for ``mesh``, building it on first use.
+
+    Args:
+        mesh: A ``trimesh.Trimesh`` used as the cache key (identity semantics).
+
+    Returns:
+        MeshGeometry: The shared bundle for this mesh.
+    """
     geometry = _GEOMETRY_CACHE.get(mesh)
     if geometry is not None:
         return geometry
@@ -212,6 +243,10 @@ def _query_closest(geom_partner: MeshGeometry, points: np.ndarray):
 def vertex_surface_distances(geom_self: MeshGeometry, geom_partner: MeshGeometry):
     """Exact distance from all own vertices to the partner surface.
 
+    Args:
+        geom_self: Geometry whose vertices are queried.
+        geom_partner: Geometry whose cached AABB tree is queried.
+
     Returns:
         tuple: ``(distances, partner_face_index, closest_points)``, one entry
         per own vertex. Infeasible partners (no faces) yield ``inf``
@@ -223,10 +258,19 @@ def vertex_surface_distances(geom_self: MeshGeometry, geom_partner: MeshGeometry
 def min_dist_upper(geom_a: MeshGeometry, geom_b: MeshGeometry):
     """Bidirectional vertex-to-surface minima between two meshes.
 
-    Each value is an upper bound on the true surface-to-surface minimum
-    (error bounded by the sampling radius of the queried mesh). Both
-    directions are returned so the pair gate (ticket 02) can build a
-    conservative lower bound from them.
+    ``d_AB`` (A vertices to B surface) overestimates the true
+    surface-to-surface minimum by at most ``h_A``, A's sampling radius;
+    ``d_BA`` by at most ``h_B``. Both directions are returned so the pair
+    gate can build the conservative lower bound
+    ``max(d_AB - h_A, d_BA - h_B, 0)``.
+
+    Args:
+        geom_a: Geometry of the first organelle.
+        geom_b: Geometry of the second organelle.
+
+    Returns:
+        tuple[float, float]: ``(d_AB, d_BA)`` in micrometres; ``inf`` for an
+        empty side.
     """
     distances_ab, _, _ = vertex_surface_distances(geom_a, geom_b)
     distances_ba, _, _ = vertex_surface_distances(geom_b, geom_a)
