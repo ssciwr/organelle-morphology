@@ -8,7 +8,6 @@ and open-mesh ``truncated`` flags.
 
 import numpy as np
 import pytest
-from shapely.geometry import Polygon
 import trimesh
 
 from organelle_morphology.mcs_geometry import (
@@ -18,6 +17,8 @@ from organelle_morphology.mcs_geometry import (
     sampling_radius,
     vertex_surface_distances,
 )
+
+from .mesh_fixtures import deep_u_mesh, icosphere
 
 
 # ---------------------------------------------------------------------------
@@ -149,12 +150,6 @@ def test_vertex_surface_distances_against_empty_partner():
 # ---------------------------------------------------------------------------
 
 
-def _icosphere(radius=1.0, subdivisions=5, center=(0.0, 0.0, 0.0)):
-    mesh = trimesh.creation.icosphere(subdivisions=subdivisions, radius=radius)
-    mesh.apply_translation(center)
-    return mesh
-
-
 def _zone_area(radius_self, radius_partner, center_distance, max_distance):
     """Analytic area of the in-band spherical zone on ``radius_self``."""
     cos_theta = (
@@ -177,8 +172,8 @@ CENTER_DISTANCE = 2 * SPHERE_RADIUS + SPHERE_GAP
 
 
 def test_pair_patches_sphere_area_matches_analytic_zone():
-    mesh_a = _icosphere(radius=SPHERE_RADIUS, center=(0, 0, 0))
-    mesh_b = _icosphere(
+    mesh_a = icosphere(radius=SPHERE_RADIUS, center=(0, 0, 0))
+    mesh_b = icosphere(
         radius=SPHERE_RADIUS, center=(0, 0, CENTER_DISTANCE)
     )
     assert len(mesh_a.vertices) > 10000
@@ -215,8 +210,8 @@ def test_pair_patches_sphere_area_matches_analytic_zone():
 
 def test_subdivision_depth_trades_area_precision():
     """A larger refinement depth moves the area closer to the analytic zone."""
-    mesh_a = _icosphere(radius=SPHERE_RADIUS, subdivisions=3, center=(0, 0, 0))
-    mesh_b = _icosphere(
+    mesh_a = icosphere(radius=SPHERE_RADIUS, subdivisions=3, center=(0, 0, 0))
+    mesh_b = icosphere(
         radius=SPHERE_RADIUS, subdivisions=3, center=(0, 0, CENTER_DISTANCE)
     )
     expected = _zone_area(
@@ -238,8 +233,8 @@ def test_subdivision_depth_trades_area_precision():
 
 
 def test_pair_patches_swap_symmetry():
-    mesh_a = _icosphere(radius=SPHERE_RADIUS, center=(0, 0, 0))
-    mesh_b = _icosphere(
+    mesh_a = icosphere(radius=SPHERE_RADIUS, center=(0, 0, 0))
+    mesh_b = icosphere(
         radius=SPHERE_RADIUS, center=(0, 0, CENTER_DISTANCE)
     )
 
@@ -271,49 +266,9 @@ def test_pair_patches_swap_symmetry():
 # ---------------------------------------------------------------------------
 
 
-def _deep_u_mesh():
-    """A connected U-shaped mesh with two prongs pointing at the sphere.
-
-    The prong tips are close enough that their contact zones merge on the
-    sphere, but the notch between them runs deep, so the U's own contact
-    regions stay separate. Unlike concatenated boxes this is a single
-    connected, watertight surface, so the two U patches are separated by the
-    distance band and not by disconnected mesh components.
-    """
-    gap = 0.1
-    width = 0.4
-    z_top = -1.03
-    z_notch = -2.0
-    z_bottom = -3.0
-    depth = 0.2
-    half_width = width / 2
-    half_gap = gap / 2
-    outline = [
-        (-half_width, z_bottom),
-        (-half_width, z_top),
-        (-half_gap, z_top),
-        (-half_gap, z_notch),
-        (half_gap, z_notch),
-        (half_gap, z_top),
-        (half_width, z_top),
-        (half_width, z_bottom),
-    ]
-    u_mesh = trimesh.creation.extrude_polygon(Polygon(outline), height=depth)
-    # local (x, y, z) -> world (x, z, y): the outline's y is world z
-    u_mesh.apply_transform(
-        np.array(
-            [[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, 0], [0, 0, 0, 1]],
-            dtype=float,
-        )
-    )
-    u_mesh.apply_translation((0.0, depth / 2, 0.0))
-    assert u_mesh.is_watertight
-    return u_mesh
-
-
 def test_pair_patches_u_case_sphere_one_patch_u_two_patches():
-    sphere = _icosphere(radius=SPHERE_RADIUS, center=(0, 0, 0))
-    u_mesh = _deep_u_mesh()
+    sphere = icosphere(radius=SPHERE_RADIUS, center=(0, 0, 0))
+    u_mesh = deep_u_mesh()
 
     patches_sphere, patches_u = pair_patches(
         "sphere", "u", sphere, u_mesh, 0.0, BAND_MAX
@@ -367,7 +322,7 @@ def test_clipped_rim_contact_is_included_and_truncated():
     hemisphere = _clipped_sphere(radius=1.0)
     assert hemisphere.is_watertight is False
 
-    partner = _icosphere(radius=0.05, subdivisions=2, center=(1.12, 0.0, 0.0))
+    partner = icosphere(radius=0.05, subdivisions=2, center=(1.12, 0.0, 0.0))
 
     patches, _ = pair_patches(
         "clipped", "partner", hemisphere, partner, 0.0, BAND_MAX
@@ -397,8 +352,8 @@ def test_pair_patches_does_not_call_mesh_repair(monkeypatch):
     monkeypatch.setattr(trimesh.repair, "fix_winding", _fail)
     monkeypatch.setattr(trimesh.repair, "fix_normals", _fail)
 
-    mesh_a = _icosphere(radius=SPHERE_RADIUS, subdivisions=2, center=(0, 0, 0))
-    mesh_b = _icosphere(
+    mesh_a = icosphere(radius=SPHERE_RADIUS, subdivisions=2, center=(0, 0, 0))
+    mesh_b = icosphere(
         radius=SPHERE_RADIUS, subdivisions=2, center=(0, 0, CENTER_DISTANCE)
     )
     patches_a, patches_b = pair_patches(

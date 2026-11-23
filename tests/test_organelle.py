@@ -11,7 +11,7 @@ from organelle_morphology.organelle import (
     Mitochondrium,
 )
 
-from .test_mcs_geometry import _deep_u_mesh, _icosphere
+from .mesh_fixtures import deep_u_mesh, icosphere
 
 
 class _StubSource:
@@ -413,8 +413,8 @@ def test_calc_mcs_dict_entry_skips_when_no_patches(project):
 
 def test_u_case_patch_counts_per_side(project):
     """Sphere has one MCS, the deep U has two, for the same label."""
-    sphere = _icosphere(radius=1.0, center=(0, 0, 0))
-    u_mesh = _deep_u_mesh()
+    sphere = icosphere(radius=1.0, center=(0, 0, 0))
+    u_mesh = deep_u_mesh()
 
     sphere_patches, u_patches = pair_patches(
         "sphere", "u", sphere, u_mesh, 0.0, 0.1
