@@ -21,6 +21,8 @@ from organelle_morphology.distance_calculations import (
     generate_mcs,
     get_min_dist,
 )
+
+
 def _icosphere_pair(gap, radius=1.0, subdivisions=2):
     mesh_a = trimesh.creation.icosphere(subdivisions=subdivisions, radius=radius)
     mesh_b = mesh_a.copy()
