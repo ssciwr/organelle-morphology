@@ -229,8 +229,8 @@ class Project:
             clipping=clip,
             compression=self.compression_level,
             sources=tuple(self.sources.keys()),
-            blacklist=tuple(self.permanent_blacklist),
-            whitelist=tuple(self.permanent_whitelist),
+            blacklist=tuple(sorted(self.permanent_blacklist)),
+            whitelist=tuple(sorted(self.permanent_whitelist)),
         )
 
     @property

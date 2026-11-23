@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 from abc import ABC
 from collections import defaultdict
-from dataclasses import astuple, fields
+from dataclasses import astuple, fields, is_dataclass
 from pathlib import Path, PosixPath, WindowsPath
 from typing import TYPE_CHECKING, Hashable, List, Optional, Type, TypeVar
 
@@ -76,6 +78,30 @@ def dc_eq(dc1, dc2) -> bool:
     t1 = astuple(dc1)
     t2 = astuple(dc2)
     return all(array_safe_eq(a1, a2) for a1, a2 in zip(t1, t2))
+
+
+# Filename stem of records saved with the stable identity digest (sha256 hex).
+_STABLE_FILENAME_STEM = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _canonical_identity(obj):
+    """Recursively convert identity metadata to a process-stable plain structure.
+
+    Dataclasses become dicts, Paths become strings, tuples become lists and
+    numpy scalars become Python scalars, so the result serializes
+    deterministically (sorted-key YAML) regardless of ``PYTHONHASHSEED``.
+    """
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return {f.name: _canonical_identity(getattr(obj, f.name)) for f in fields(obj)}
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, (tuple, list)):
+        return [_canonical_identity(item) for item in obj]
+    if isinstance(obj, dict):
+        return {key: _canonical_identity(value) for key, value in obj.items()}
+    if isinstance(obj, np.generic):
+        return obj.item()
+    return obj
 
 
 def represent_property_block(dumper, obj):
@@ -276,15 +302,22 @@ class Record:
             meta_project=yaml_dict["meta_project"],
         )
 
-    def get_hash(self):
-        return hash(
-            (
-                hash(self.meta),
-                hash(self.name),
-                hash(self.meta_project),
-                hash(self.meta_sources),
-            )
-        )
+    def get_hash(self) -> str:
+        """Stable, process-independent identity digest used as the filename.
+
+        Covers the identity fields only (``name``, ``meta``, ``meta_project``,
+        ``meta_sources``); ``data`` is deliberately excluded so a re-run with the
+        same identity overwrites the same file. Uses sha256 over canonical
+        sorted-key YAML instead of the salted built-in ``hash()``.
+        """
+        identity = {
+            "name": self.name,
+            "meta": _canonical_identity(self.meta),
+            "meta_project": _canonical_identity(self.meta_project),
+            "meta_sources": _canonical_identity(self.meta_sources),
+        }
+        canonical = yaml.safe_dump(identity, sort_keys=True, default_flow_style=False)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def __eq__(self, value: object, /) -> bool:
         if name := getattr(value, "name", None):
@@ -411,7 +444,13 @@ class RecordRegistry:
         Loads records from a YAML file and adds them to the registry.
         """
 
-        files = list((self.project.path / "analysis").rglob("*.yaml"))
+        # Only load records saved with the stable identity digest. Legacy
+        # salted-hash / UUID-era files are ignored (left on disk, not migrated).
+        files = [
+            f
+            for f in (self.project.path / "analysis").rglob("*.yaml")
+            if _STABLE_FILENAME_STEM.match(f.stem)
+        ]
 
         logger.info(f"Found {len(files)} record files.")
         count = 0
