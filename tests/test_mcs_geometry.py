@@ -8,6 +8,7 @@ and open-mesh ``truncated`` flags.
 
 import numpy as np
 import pytest
+from shapely.geometry import Polygon
 import trimesh
 
 from organelle_morphology.mcs_geometry import (
@@ -243,27 +244,43 @@ def test_pair_patches_swap_symmetry():
 
 
 def _deep_u_mesh():
-    """Two prongs pointing at the sphere, joined far below it.
+    """A connected U-shaped mesh with two prongs pointing at the sphere.
 
     The prong tips are close enough that their contact zones merge on the
-    sphere, but the joining bar is far outside the band, so the U's own
-    contact regions stay separate.
+    sphere, but the notch between them runs deep, so the U's own contact
+    regions stay separate. Unlike concatenated boxes this is a single
+    connected, watertight surface, so the two U patches are separated by the
+    distance band and not by disconnected mesh components.
     """
-    tip_z = -1.03
     gap = 0.1
-    prong_size = (0.1, 0.2, 2.0)
-    parts = []
-    for side in (-1, 1):
-        box = trimesh.creation.box(prong_size)
-        box.apply_translation(
-            (side * gap / 2, 0.0, tip_z - prong_size[2] / 2)
+    width = 0.4
+    z_top = -1.03
+    z_notch = -2.0
+    z_bottom = -3.0
+    depth = 0.2
+    half_width = width / 2
+    half_gap = gap / 2
+    outline = [
+        (-half_width, z_bottom),
+        (-half_width, z_top),
+        (-half_gap, z_top),
+        (-half_gap, z_notch),
+        (half_gap, z_notch),
+        (half_gap, z_top),
+        (half_width, z_top),
+        (half_width, z_bottom),
+    ]
+    u_mesh = trimesh.creation.extrude_polygon(Polygon(outline), height=depth)
+    # local (x, y, z) -> world (x, z, y): the outline's y is world z
+    u_mesh.apply_transform(
+        np.array(
+            [[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, 0], [0, 0, 0, 1]],
+            dtype=float,
         )
-        parts.append(box)
-    # join the prongs well below the sphere
-    bar = trimesh.creation.box((gap + prong_size[0] + 0.2, 0.2, 0.1))
-    bar.apply_translation((0.0, 0.0, tip_z - prong_size[2] + 0.05))
-    parts.append(bar)
-    return trimesh.util.concatenate(parts)
+    )
+    u_mesh.apply_translation((0.0, depth / 2, 0.0))
+    assert u_mesh.is_watertight
+    return u_mesh
 
 
 def test_pair_patches_u_case_sphere_one_patch_u_two_patches():

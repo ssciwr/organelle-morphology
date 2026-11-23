@@ -2,6 +2,7 @@ import logging
 
 from organelle_morphology import distance_calculations
 from organelle_morphology.distance_calculations import (
+    calc_mcs_delayed,
     chunk_domain_masks,
     generate_distance_matrix,
     generate_mcs,
@@ -218,3 +219,36 @@ def test_generate_mcs(project_with_sources):
     assert stat.data.total_area > 0
     assert stat.data.n_contacts >= 1
     assert stat.data.min_dist >= 0
+
+
+def test_calc_mcs_delayed_stopgap_shape():
+    """Ticket 01 keeps the old consumer keys plus the new patch list."""
+    mesh_a = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    mesh_b = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    mesh_b.apply_translation((0.0, 0.0, 2.05))
+
+    result = calc_mcs_delayed(
+        "0-0.1,-", "a", "b", mesh_a, mesh_b, max_dist=0.1, min_dist=0.0
+    )
+    mcs_a, mcs_b = result.compute()
+
+    for mcs, self_id, partner_id, mesh in (
+        (mcs_a, "a", "b", mesh_a),
+        (mcs_b, "b", "a", mesh_b),
+    ):
+        assert set(mcs) == {
+            "self_id",
+            "partner_id",
+            "mcs_label",
+            "vertices_index",
+            "distances",
+            "area",
+            "patches",
+        }
+        assert mcs["self_id"] == self_id
+        assert mcs["partner_id"] == partner_id
+        assert mcs["mcs_label"] == "0-0.1,-"
+        assert len(mcs["patches"]) == 1
+        assert mcs["area"] > 0
+        assert len(mcs["distances"]) > 0
+        assert set(mcs["vertices_index"]) <= set(range(len(mesh.vertices)))
