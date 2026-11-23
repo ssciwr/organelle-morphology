@@ -29,10 +29,12 @@ with app.setup:
 
 
 @app.cell
-def _():
-    mo.md(r"""
-    # Organelle Morphology
-    """)
+def _(webbrowser):
+    DOCS_URL = "https://ssciwr.github.io/organelle-morphology/usage/"
+    button_open_docs = mo.ui.button(
+        label="Open Docs", on_click=lambda _: webbrowser.open_new_tab(DOCS_URL)
+    )
+    mo.md(f"# Organelle Morphology {button_open_docs}")
     return
 
 
@@ -254,7 +256,7 @@ def _(project):
     )
 
     mo.hstack([show_dashboard_button, reset_client_button], justify="center")
-    return
+    return (webbrowser,)
 
 
 @app.cell
