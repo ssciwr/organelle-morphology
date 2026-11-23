@@ -422,6 +422,11 @@ def _side_components(
     any_member = member_vertices.any(axis=1) | member_centroids
     straddling = any_member & ~all_member
 
+    if not np.any(all_member | straddling):
+        # The conservative pair gate may hand over pairs with no surface point
+        # in the band at all; there is nothing to classify or subdivide.
+        return _SideResult(patches=[], face_to_patch=face_to_patch)
+
     whole_faces = np.flatnonzero(all_member)
     subdivided_faces = np.flatnonzero(straddling)
     grid = _subdivision_grid(depth)
