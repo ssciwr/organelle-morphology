@@ -1251,7 +1251,7 @@ def plot_selector_cell(calc_stats_btn, df_data):
     }
     plot_property_ui = mo.ui.dropdown(
         options=plotable_labels,
-        value=next(iter(plotable_labels)),
+        value=plotable_columns[0],
         label="property:",
     )
 
